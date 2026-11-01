@@ -1,5 +1,5 @@
 {
-  "what": "RUPTURE turns the M-VAVE FM1 into a monophonic bass synthesizer with Cycle Exchange Synthesis, two independent sub-oscillators, eight effects, a 128-step sequencer, arpeggiator and project/sequence storage.",
+  "what": "A monophonic bass synth on Cycle Exchange Synthesis: two sub-oscillators, a ladder filter, Channel EQ, eight effects from MOSFET drive to octave fuzz, a step sequencer up to 128 steps and an arpeggiator.",
   "author": "Joppe Sikken (SikkenWorks)",
   "kinds": [
     "synth"
