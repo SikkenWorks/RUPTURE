@@ -1,0 +1,16 @@
+{
+  "app_sha256": "947e35dc86d47331a7b192b6bb6780c7d1a4bade7c9e1b8a68711f7c20d55009",
+  "storage_writes": true,
+  "ota_writes": true,
+  "readonly_hardware_test": false,
+  "flash_read_only": false,
+  "version": "RUPTURE V1.33",
+  "hardware_verified": false,
+  "usb_audio_44100": true,
+  "usb_audio_48000_experimental": true,
+  "extended_store_experimental": false,
+  "multi_project_experimental": true,
+  "product": "FM-1_968",
+  "application": "RUPTURE CXS mono6 + ladder",
+  "release_ready": false
+}

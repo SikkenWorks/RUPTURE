@@ -1,0 +1,213 @@
+{
+  "version": "1.33",
+  "project": "RUPTURE",
+  "synthesis": "Cycle Exchange Synthesis (CXS)",
+  "firmware_identity": "FM-1_968",
+  "firmware_file": "RUPTURE-V1.33.fwsc",
+  "firmware_bytes": 610086,
+  "firmware_sha256": "bf2d897af2fac889a89444e4093fc85defa6ee3cd5ea00a25569f2786d2e5a2c",
+  "app_bytes": 215464,
+  "app_sha256": "947e35dc86d47331a7b192b6bb6780c7d1a4bade7c9e1b8a68711f7c20d55009",
+  "native_screens": 54,
+  "physical_fm1_verified": false,
+  "auto_save_debounce_ms": 20000,
+  "auto_save_min_interval_ms": 60000,
+  "auto_save_requires_prior_explicit_save_or_load": true,
+  "limitations": [
+    "Physical FM1 SAVE/reboot with previously failing storage must be verified; host NOR tests cannot prove hardware writes.",
+    "True FM1-screen progress during the separate trusted OTA loader is not available without replacing and validating the loader; browser progress remains real-time.",
+    "USB runtime manufacturer/product strings change to SIKKENWORKS/RUPTURE; USB OS caches may require reconnect; unchanged FM-1_968 SysEx updater identity.",
+    "Project/sequence progress displays completed real flash operations; short RAM-only sequence loads may complete immediately.",
+    "Positive and negative K4 EQ AIR use a version marker in PJT33 enabled bit 5; backup projects before downgrade.",
+    "DMA deadline, flash timing and UI timing require physical FM1 validation.",
+    "V1.29 settings navigation plus V1.28 storage, USB disconnect and screensaver need physical FM1 verification by the author.",
+    "WIPE ALL irreversibly erases known user storage 0x97000..0xDFFFF, including legacy stored data; it does NOT erase application/boot/OTA sectors or unknown flash areas.",
+    "Deleting currently active project or shared wave-library owner is protected; select another project before deletion.",
+    "Managing sequences in a different project requires explicitly opening that project first (confirmation on FM1).",
+    "Scan the source white-on-black QR on a physical FM1 after updating; software verifies exact source parity, not every phone camera inversion capability.",
+    "Utrecht screensaver, configurable timeout, REC LED hardware mapping and physical refresh must be verified on an actual FM1.",
+    "Per-sequence BPM and length are reliably retained only for sequences saved with V1.33 or later. Older sequences lack a trustworthy per-sequence metadata marker; loading uses the last project values. If a previous failed save never committed note data to flash, the new firmware cannot recover that unsaved data."
+  ],
+  "named_project_slots": 12,
+  "named_sequence_slots_per_project": 8,
+  "keyboard_step_leds": 16,
+  "suboscillators": 2,
+  "sub_types": [
+    "OFF",
+    "CXS",
+    "CLASSIC (band-limited square-like)"
+  ],
+  "sub_parameters": [
+    "type",
+    "octave",
+    "detune",
+    "drift",
+    "blend (per project)"
+  ],
+  "sub_storage_persistent": true,
+  "sub_osc_gain_model": "additive full main; max 50% each; peak guard",
+  "sub2_default_octave": -1,
+  "sub2_default_detune_cents": 4,
+  "classic_waveform": "band-limited odd-harmonic square-like",
+  "sub_ui_labels_fixed": true,
+  "sub_storage_format": "existing PJT32 tagged bit 6; 33-byte record unchanged; no flash map changes",
+  "performance_storage": "PJT32 33-byte tagged per-CXS-preset record; no new flash sectors",
+  "note_memory_persistent": true,
+  "master_volume_persistent": "device-global 8-byte NOR journal in existing project bank; host-tested",
+  "global_volume_record_bytes": 8,
+  "global_volume_journal_capacity": 28,
+  "nor_manifest_page_write_fix": true,
+  "fx_bypass_ramps": "chorus/delay/reverb; shared state +8 bytes",
+  "fx_ram_free_bytes": {
+    "DSP_POOL": 8944,
+    "RAM": 4216,
+    "NOINIT": 3500,
+    "UAC_RAM": 5684
+  },
+  "hardware_verified": false,
+  "fx_new": [
+    "COMPRESSOR",
+    "TILT EQ",
+    "OCTAVE FUZZ",
+    "SANDPAPER"
+  ],
+  "fx_new_session_only": [],
+  "sandpaper": {
+    "parameters": [
+      "SMOOTH",
+      "SOFT",
+      "WARMTH",
+      "MIX"
+    ],
+    "default_enabled": false,
+    "storage": "per project PJT33",
+    "per-sample_ram_states": 4,
+    "physical_listening_tested": false,
+    "per_sample_ram_states": 6
+  },
+  "fx_memory": {
+    "format": "PJT33",
+    "extension_bytes": 21,
+    "scope": "per named project",
+    "validated": true,
+    "hardware_verified": false,
+    "included_controls": [
+      "SUB1 BLEND",
+      "SUB2 BLEND",
+      "TILT EQ",
+      "OCTAVE FUZZ",
+      "SANDPAPER"
+    ],
+    "bypass_mask_bits": 22
+  },
+  "fx_stability_v118": {
+    "peak_guard_q15_start": 22000,
+    "wet_peak_ceiling_q15": 28000,
+    "stress_test_peak_q15": 26038,
+    "stress_frames": 220500,
+    "full_scale_clips": 0,
+    "systematic_dropouts": 0,
+    "host_sanitizer": "PASS",
+    "native_dma_soak": "NOT TESTED",
+    "native_deadline_guaranteed": false,
+    "feedback": "bounded",
+    "output_fx_off": "bit-exact dry",
+    "new_audio_buffers": 0
+  },
+  "v119": {
+    "dma_render_max": "on-device live read only",
+    "dma_publish_max": "on-device live read only",
+    "minimum_dma_slack": "on-device live read only",
+    "scope_pressure_threshold": 16,
+    "scope_utilization_ceiling_percent": 75,
+    "total_fx_maximum_host_stress": "PASS inherited V1.18 regression",
+    "fx_pcm_changed": false,
+    "native_hardware_dma_deadline_verified": false,
+    "protected_ota_unchanged": true
+  },
+  "v120": {
+    "splash": "24-frame deterministic jagged tear in native 240x240 1-bit C UI",
+    "reveal_text": "SIKKENWORKS / Born out of passion.",
+    "immutable_art_rom_bytes": 7200,
+    "native_frames": 24,
+    "additional_ram_bytes": 0,
+    "guard": "boot pre-audio, recovery priority preserved; physical hardware untested",
+    "startup_ms_estimate_excluding_spi": 2019,
+    "frame_24_bit_exact": true,
+    "protected_first_16k_byte_equal_v119": true,
+    "ota_loader_byte_equal_v119": true,
+    "existing_audio_fx_dsp_modified": false
+  },
+  "release_feature": "Removed WAVEFOLDER + TRANSIENT; 8 FX; fuzz auto loudness; TILT/SAND repair; EQ K4 HIGH AIR; ALGORITHM SUB BLEND",
+  "save_routing": {
+    "main": "PROJECTS",
+    "sound_shape": "PROJECTS",
+    "sub_1": "PROJECTS",
+    "sub_2": "PROJECTS",
+    "seq": "SEQUENCE SLOTS",
+    "seq_slots": "SEQUENCE SLOTS",
+    "fx_save_chord": "reserved"
+  },
+  "v122": {
+    "removed_effects": [
+      "WAVEFOLDER",
+      "TRANSIENT SHAPER"
+    ],
+    "remaining_fx_count": 8,
+    "sub_blend_control": "ALGORITHM on both SUB pages",
+    "blend_storage": "PJT33 tagged repurpose of retired transient bytes, 21-byte record unchanged",
+    "legacy_pjt33_default_blend": 75,
+    "downgrade_warning": "V1.21 and older cannot read V1.22-saved projects",
+    "physical_verified": false
+  },
+  "v123_features": [
+    "larger Born out of passion boot slogan",
+    "SEQ ALGORITHM extends native note duration through empty steps up to next trigger/end",
+    "ten scrollable HELP cards",
+    "SEL/SAVE save from project and sequence name editor; status and failed-save name preservation",
+    "SAVE in open project/sequence library executes save rather than reopening",
+    "project selection rollback on failed write"
+  ],
+  "v126": {
+    "slot_policy": "SEL load with confirmation; SAVE current immediately, other used after confirmation; empty slot enters name editor",
+    "rename_shortcut": "SEL+SAVE occupied slot",
+    "battery_full_adc_threshold": 578,
+    "ota_write_progress": "unique host transfer byte coverage, not device flash erase progress",
+    "device_flash_progress": "trusted loader unchanged, on-device progress during actual WRITE not available",
+    "physical_testing": "user reports repeated physical FM1 testing; this build has not been physically tested by the assistant"
+  },
+  "auto_save_default": false,
+  "auto_save_persistent": true,
+  "idle_screensaver_seconds": 30,
+  "screensaver_render_mode": "240x240 native 1-bit Utrecht cityscape (author-provided image) with staged fracturing street; UI only",
+  "screensaver_default": true,
+  "storage_management": "12 projects; eight sequences per project; copy/rename/delete; YES/NO bounded legacy-user wipe; CRC-checked A/B commit",
+  "about_ui": "full exact biography; SELECT scroll; 240x240 word wrapping",
+  "settings_behavior": "SELECT selects row; SEL toggles AUTO SAVE directly; K1 adjusts MASTER VOLUME in list; SEL opens detail; OTHER/SCREENSAVER direct toggle",
+  "global_menu_diagnostics_label": "AUDIO DIAGNOSTICS",
+  "qr_issues_url": "https://github.com/SikkenWorks/RUPTURE/issues",
+  "qr_modules": 29,
+  "v130": {
+    "storage_catalog": "refresh independently when STORAGE is opened",
+    "legacy_etch_seq": "discard only default ETCH 24..31 without pattern data",
+    "settings": "right hand values vertically/optically aligned",
+    "glo": "fifth REPORT A BUG menu opens scan-tested 29-module QR",
+    "physical_validation": "not carried out by assistant"
+  },
+  "qr_module_parity": "841/841 exact original supplied bitmap",
+  "qr_source_sha256": "10c58f4684cea5dcbe9597e5569657f5c63fa74e33a4102a24b40342e16ac9f2",
+  "qr_display": "white modules on black as supplied; nearest-neighbor 5x scale",
+  "screensaver_default_seconds": 30,
+  "screensaver_timer_seconds_options": [
+    15,
+    30,
+    45,
+    60,
+    90,
+    120,
+    180,
+    300
+  ],
+  "screensaver_timer_storage": "existing device-global 8-byte CRC-protected NOR journal with backwards compatible legacy records, no new flash region",
+  "rec_led": "OFF unless sequence live recording is toggled ON"
+}
