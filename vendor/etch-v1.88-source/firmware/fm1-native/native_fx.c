@@ -82,7 +82,7 @@ void etch_fx_reset(struct etch_native_fx *s){
   for(int k=0;k<2;k++)s->eq2.target[k][b].b0=RU_EQ2_ONE;
  }
 #endif
- s->comp_gain=32767;s->comp_target=32767;s->rupture_fuzz_makeup=32767;
+ s->comp_gain=32767;s->comp_target=32767;s->rupture_fuzz_makeup=32767;s->rupture_fuzz_makeup_target=32767;
 }
 /* Ring Mod and channel EQ run once after the voice sum, never per voice.
  * No heap, no trigonometry, no flash access inside the audio ISR. */
@@ -219,7 +219,13 @@ static int16_t rupture_transient_process(struct etch_native_fx *s,int16_t sample
 }
 /* Tilt EQ and octave-up fuzz: zero delay allocation, bounded Q15 state. */
 static volatile uint8_t rt_tilt_amount=50u,rt_tilt_freq=50u,rt_tilt_mix=0u,rt_tilt_output=50u,rt_tilt_on=0u;
+/* V1.42: Convert knob values to audio-domain Q15 targets ONCE in the UI.
+ * The audio IRQ only slews and multiplies. These are not stored project data. */
 static volatile uint8_t rt_fuzz_drive=55u,rt_fuzz_octave=75u,rt_fuzz_tone=65u,rt_fuzz_mix=0u,rt_fuzz_on=0u;
+static volatile int32_t rt_fuzz_gain_q15=32767+55000;
+static volatile int32_t rt_fuzz_anti_alpha=32767-6600;
+static volatile int32_t rt_fuzz_octave_q15=24575;
+static volatile int32_t rt_fuzz_tone_alpha=600+20800;
 void rupture_tilt_controls(uint8_t tilt,uint8_t frequency,uint8_t mix,uint8_t output,uint8_t enabled){
  rt_tilt_amount=tilt>100u?100u:tilt;rt_tilt_freq=frequency>100u?100u:frequency;
  rt_tilt_mix=mix>100u?100u:mix;rt_tilt_output=output>100u?100u:output;rt_tilt_on=enabled?1u:0u;
@@ -227,6 +233,10 @@ void rupture_tilt_controls(uint8_t tilt,uint8_t frequency,uint8_t mix,uint8_t ou
 void rupture_fuzz_controls(uint8_t drive,uint8_t octave,uint8_t tone,uint8_t mix,uint8_t enabled){
  rt_fuzz_drive=drive>100u?100u:drive;rt_fuzz_octave=octave>100u?100u:octave;
  rt_fuzz_tone=tone>100u?100u:tone;rt_fuzz_mix=mix>100u?100u:mix;rt_fuzz_on=enabled?1u:0u;
+ rt_fuzz_gain_q15=32767+(int32_t)rt_fuzz_drive*1000;
+ rt_fuzz_anti_alpha=32767-(int32_t)rt_fuzz_drive*120;
+ rt_fuzz_octave_q15=((int32_t)rt_fuzz_octave*32767+50)/100;
+ rt_fuzz_tone_alpha=600+(int32_t)rt_fuzz_tone*320;
 }
 static int16_t rupture_tilt_process(struct etch_native_fx *s,int16_t sample){
  int32_t x=sample,target=rt_tilt_on?(uint32_t)rt_tilt_mix*32767u/100u:0u;
@@ -248,40 +258,133 @@ static int16_t rupture_tilt_process(struct etch_native_fx *s,int16_t sample){
  wet=clip16(wet);
  return clip16(rupture_q15_mix(x,wet,(uint16_t)s->rupture_tilt_mix));
 }
+/* Band-limit the octave rectifier at its zero-crossing without costly
+ * oversampling. The polynomial is C1-continuous at +/-4096 PCM, exact
+ * abs(x) outside that narrow region, and exactly zero for silence.
+ * All products are <= 4096^2 and use shifts instead of division. */
+/* V1.42 periodic fuzz makeup: 2 KiB flash-only reciprocal table.
+ * wet_ref is 256..33023, so index is 4..516. No variable integer
+ * division inside the audio IRQ; linear interpolation limits quantization.
+ * Q24 reciprocal * dry_ref >> 9 produces Q15 output ratio. */
+static const uint32_t rupture_fuzz_recip_q24[518]={
+ 0,0,0,0,65536,52429,43691,37449,32768,29127,
+ 26214,23831,21845,20165,18725,17476,16384,15420,14564,13797,
+ 13107,12483,11916,11398,10923,10486,10082,9709,9362,9039,
+ 8738,8456,8192,7944,7710,7490,7282,7085,6899,6722,
+ 6554,6394,6242,6096,5958,5825,5699,5578,5461,5350,
+ 5243,5140,5041,4946,4855,4766,4681,4599,4520,4443,
+ 4369,4297,4228,4161,4096,4033,3972,3913,3855,3799,
+ 3745,3692,3641,3591,3542,3495,3449,3404,3361,3318,
+ 3277,3236,3197,3158,3121,3084,3048,3013,2979,2945,
+ 2913,2881,2849,2819,2789,2759,2731,2703,2675,2648,
+ 2621,2595,2570,2545,2521,2497,2473,2450,2427,2405,
+ 2383,2362,2341,2320,2300,2280,2260,2241,2222,2203,
+ 2185,2166,2149,2131,2114,2097,2081,2064,2048,2032,
+ 2016,2001,1986,1971,1956,1942,1928,1913,1900,1886,
+ 1872,1859,1846,1833,1820,1808,1796,1783,1771,1759,
+ 1748,1736,1725,1713,1702,1691,1680,1670,1659,1649,
+ 1638,1628,1618,1608,1598,1589,1579,1570,1560,1551,
+ 1542,1533,1524,1515,1507,1498,1489,1481,1473,1464,
+ 1456,1448,1440,1432,1425,1417,1409,1402,1394,1387,
+ 1380,1372,1365,1358,1351,1344,1337,1331,1324,1317,
+ 1311,1304,1298,1291,1285,1279,1273,1266,1260,1254,
+ 1248,1242,1237,1231,1225,1219,1214,1208,1202,1197,
+ 1192,1186,1181,1176,1170,1165,1160,1155,1150,1145,
+ 1140,1135,1130,1125,1120,1116,1111,1106,1101,1097,
+ 1092,1088,1083,1079,1074,1070,1066,1061,1057,1053,
+ 1049,1044,1040,1036,1032,1028,1024,1020,1016,1012,
+ 1008,1004,1001,997,993,989,986,982,978,975,
+ 971,967,964,960,957,953,950,946,943,940,
+ 936,933,930,926,923,920,917,913,910,907,
+ 904,901,898,895,892,889,886,883,880,877,
+ 874,871,868,865,862,859,857,854,851,848,
+ 846,843,840,838,835,832,830,827,824,822,
+ 819,817,814,812,809,807,804,802,799,797,
+ 794,792,790,787,785,783,780,778,776,773,
+ 771,769,767,764,762,760,758,755,753,751,
+ 749,747,745,743,741,738,736,734,732,730,
+ 728,726,724,722,720,718,716,714,712,710,
+ 708,707,705,703,701,699,697,695,694,692,
+ 690,688,686,684,683,681,679,677,676,674,
+ 672,670,669,667,665,664,662,660,659,657,
+ 655,654,652,650,649,647,646,644,643,641,
+ 639,638,636,635,633,632,630,629,627,626,
+ 624,623,621,620,618,617,615,614,612,611,
+ 610,608,607,605,604,603,601,600,599,597,
+ 596,594,593,592,590,589,588,586,585,584,
+ 583,581,580,579,577,576,575,574,572,571,
+ 570,569,567,566,565,564,563,561,560,559,
+ 558,557,555,554,553,552,551,550,548,547,
+ 546,545,544,543,542,541,539,538,537,536,
+ 535,534,533,532,531,530,529,527,526,525,
+ 524,523,522,521,520,519,518,517,516,515,
+ 514,513,512,511,510,509,508,507,
+};
+static inline int32_t rupture_fuzz_ratio_q15(int32_t dry_ref,int32_t wet_ref){
+ if(dry_ref>=wet_ref)return 32767;
+ uint32_t idx=(uint32_t)wet_ref>>6, frac=(uint32_t)wet_ref&63u;
+ uint32_t a=rupture_fuzz_recip_q24[idx],b=rupture_fuzz_recip_q24[idx+1u];
+ uint32_t recip=(uint32_t)((int32_t)a+(((int32_t)b-(int32_t)a)*(int32_t)frac)/64);
+ int32_t ratio=(int32_t)(((uint32_t)dry_ref*recip)>>9);
+ return ratio<4096?4096:ratio>32767?32767:ratio;
+}
+static inline int32_t rupture_fuzz_soft_rect(int32_t x){
+ int32_t mag=x<0?-x:x;
+ if(mag>=4096)return mag;
+ int32_t q=(mag*mag)>>12;
+ return (3*q-((q*q)>>12))>>1;
+}
 static int16_t rupture_fuzz_process(struct etch_native_fx *s,int16_t sample){
- int32_t x=sample,target=rt_fuzz_on?(uint32_t)rt_fuzz_mix*32767u/100u:0u;
+ int32_t x=sample;
+ int32_t target=rt_fuzz_on?(uint32_t)rt_fuzz_mix*32767u/100u:0u;
  s->rupture_fuzz_mix=etch_fx_slew(s->rupture_fuzz_mix,target);
- if(!s->rupture_fuzz_mix){s->rupture_fuzz_dc=s->rupture_fuzz_tone=s->rupture_fuzz_input_lp=0;
-  s->rupture_fuzz_in_env=s->rupture_fuzz_wet_env=0;s->rupture_fuzz_makeup=32767;s->rupture_fuzz_tick=0;return sample;}
- /* One controlled input pole before rectification/overdrive prevents the
-  * strongest high-frequency input partials from producing as much folded
-  * alias energy. Never 2x oversample inside the time-critical IRQ. */
- int32_t anti_alpha=32767-(uint32_t)rt_fuzz_drive*12000u/100u;
- s->rupture_fuzz_input_lp+=((x-s->rupture_fuzz_input_lp)*anti_alpha)/32768;
- int32_t gain=32767+(uint32_t)rt_fuzz_drive*100000u/100u;
- /* Shift gain before multiplying: 32768 * (132767 >> 2) < INT32_MAX. */
- int32_t driven=clip16((s->rupture_fuzz_input_lp*(gain>>2))/8192);
- int32_t rect=driven<0?-driven:driven;
- /* Full-wave rectifier doubles predominant harmonic, highpass removes DC. */
+ if(!s->rupture_fuzz_mix){
+  s->rupture_fuzz_dc=s->rupture_fuzz_tone=s->rupture_fuzz_input_lp=0;
+  s->rupture_fuzz_in_env=s->rupture_fuzz_wet_env=0;
+  s->rupture_fuzz_makeup=32767;s->rupture_fuzz_makeup_target=32767;
+  s->rupture_fuzz_drive_slew=rt_fuzz_gain_q15;
+  s->rupture_fuzz_anti_slew=rt_fuzz_anti_alpha;
+  s->rupture_fuzz_oct_slew=rt_fuzz_octave_q15;
+  s->rupture_fuzz_tone_slew=rt_fuzz_tone_alpha;
+  s->rupture_fuzz_tick=0;return sample;
+ }
+ /* Knobs are now audio-rate smoothed; no instantaneous gain or tone jumps. */
+ s->rupture_fuzz_drive_slew=etch_fx_slew(s->rupture_fuzz_drive_slew,rt_fuzz_gain_q15);
+ s->rupture_fuzz_anti_slew=etch_fx_slew(s->rupture_fuzz_anti_slew,rt_fuzz_anti_alpha);
+ s->rupture_fuzz_oct_slew=etch_fx_slew(s->rupture_fuzz_oct_slew,rt_fuzz_octave_q15);
+ s->rupture_fuzz_tone_slew=etch_fx_slew(s->rupture_fuzz_tone_slew,rt_fuzz_tone_alpha);
+ int32_t delta=x-s->rupture_fuzz_input_lp;
+ s->rupture_fuzz_input_lp+=(delta*s->rupture_fuzz_anti_slew)/32768;
+ /* The original clipping is retained to preserve aggressive fuzz identity.
+  * 32-bit product bound: abs(input_lp) <= 32768; gain>>2 <= 33192. */
+ int32_t driven=clip16((s->rupture_fuzz_input_lp*(s->rupture_fuzz_drive_slew>>2))/8192);
+ int32_t rect=rupture_fuzz_soft_rect(driven);
+ /* Full-wave octave DC tracker; no surprise nonzero output at silence. */
  s->rupture_fuzz_dc+=(rect-s->rupture_fuzz_dc)/128;
  int32_t octave=clip16((rect-s->rupture_fuzz_dc)*2);
- int32_t mixoct=(driven*(100-(int32_t)rt_fuzz_octave)+octave*(int32_t)rt_fuzz_octave)/100;
- int32_t alpha=600u+(uint32_t)rt_fuzz_tone*32000u/100u;
- s->rupture_fuzz_tone+=((mixoct-s->rupture_fuzz_tone)*alpha)/32768;
+ int32_t oct=s->rupture_fuzz_oct_slew;
+ int32_t mixoct=driven+((octave-driven)*oct)/32767;
+ s->rupture_fuzz_tone+=((mixoct-s->rupture_fuzz_tone)*s->rupture_fuzz_tone_slew)/32768;
  int32_t wet=clip16(s->rupture_fuzz_tone);
- /* V1.22: loudness-matched wet signal, never change the drive/fuzz shape.
-  * 1/256 env tracking and 32-sample control rate keep ISR cost bounded.
-  * Only attenuate excess fuzz level: dry remains at 100%. */
+ /* Gain matching detects the envelope every sample. A new gain target is
+  * computed at control rate, but APPLIED EVERY SAMPLE rather than jumping
+  * once per 32 samples (which could produce an audible buzz). */
  int32_t in_mag=x<0?-x:x,wet_mag=wet<0?-wet:wet;
  s->rupture_fuzz_in_env+=(in_mag-s->rupture_fuzz_in_env)/256;
  s->rupture_fuzz_wet_env+=(wet_mag-s->rupture_fuzz_wet_env)/256;
  if(++s->rupture_fuzz_tick>=32u){
   s->rupture_fuzz_tick=0u;
-  int32_t dry_ref=s->rupture_fuzz_in_env+256,wet_ref=s->rupture_fuzz_wet_env+256;
-  int32_t ratio=(dry_ref*32767)/wet_ref;
-  if(ratio>32767)ratio=32767;
-  if(ratio<4096)ratio=4096;
-  s->rupture_fuzz_makeup+=((ratio-s->rupture_fuzz_makeup)*1)/8;
+  int32_t dry_ref=s->rupture_fuzz_in_env+256;
+  int32_t wet_ref=s->rupture_fuzz_wet_env+256;
+  s->rupture_fuzz_makeup_target=rupture_fuzz_ratio_q15(dry_ref,wet_ref);
+ }
+ s->rupture_fuzz_makeup+=
+  (s->rupture_fuzz_makeup_target-s->rupture_fuzz_makeup)/256;
+ /* Minimum 1-count progress prevents a stalled ramp on tiny differences. */
+ if(s->rupture_fuzz_makeup!=s->rupture_fuzz_makeup_target){
+  int32_t diff=s->rupture_fuzz_makeup_target-s->rupture_fuzz_makeup;
+  if(diff>0)s->rupture_fuzz_makeup++;
+  else if(diff<0)s->rupture_fuzz_makeup--;
  }
  wet=(wet*s->rupture_fuzz_makeup)/32767;
  return clip16(rupture_q15_mix(x,wet,(uint16_t)s->rupture_fuzz_mix));

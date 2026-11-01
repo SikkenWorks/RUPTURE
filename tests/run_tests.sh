@@ -231,3 +231,10 @@ python3 tests/test_v133_source_contract.py
 "$cc" -std=c11 -O2 -DRUPTURE_BUILD -D_DEFAULT_SOURCE -Wno-unused-function \
  tests/test_v141_eq2_regressions.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v141_eq2 && /tmp/rupture_v141_eq2
+
+# V1.42: OCTAVE FUZZ must remain silent at zero, click-free on extreme controls,
+# exactly dry after OFF, and free of variable-integer division in its IRQ loop.
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wno-unused-function \
+ tests/test_v142_fuzz_stability.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v142_fuzz && /tmp/rupture_v142_fuzz
+python3 tests/test_v142_reciprocal.py

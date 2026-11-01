@@ -1,3 +1,11 @@
+# RUPTURE V1.42 — OCTAVE FUZZ Audio Stability
+
+- Fixed a reproducible audible-scale PCM discontinuity during rapid DRIVE/OCTAVE/TONE adjustments, without changing the existing controls or project data.
+- DRIVE, OCTAVE and TONE control values are converted to fixed-point targets outside the ISR and smoothed sample by sample, preventing instantaneous distortion and tone jumps.
+- OCTAVE FUZZ full-wave rectification now has a bounded, first-derivative-continuous transition at the zero crossing, reducing high-frequency alias-generating edges while retaining its aggressive octave-up character.
+- The loudness-matching target updates at the existing control rate, but makeup gain now ramps every sample instead of stepping once every 32 samples. A flash-resident reciprocal table replaces the variable-integer divide in the audio callback.
+- Kept existing four-band EQ, all other FX, project data PJT34, settings, audio deadline protection and OTA loader unchanged. Physical FM1 playback/DMA stress verification is required.
+
 ## V1.41 — Channel EQ 2.0 gain and realtime stability (2026-11-01)
 
 - Corrected Channel EQ 2.0 gain staging. The previous fixed `-sum(positive band boosts)` trim could reduce total volume by up to 36 dB even when the musical intent was to boost bass. This global attenuation is removed. A bounded, signal-dependent peak guard engages only close to digital clipping.

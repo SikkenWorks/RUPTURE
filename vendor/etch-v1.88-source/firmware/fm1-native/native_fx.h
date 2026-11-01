@@ -94,7 +94,10 @@ struct etch_native_fx {
  int32_t rupture_transient_fast,rupture_transient_slow,rupture_transient_mix;
  int32_t rupture_tilt_lp,rupture_tilt_mix;
  int32_t rupture_fuzz_dc,rupture_fuzz_tone,rupture_fuzz_mix;
- int32_t rupture_fuzz_in_env,rupture_fuzz_wet_env,rupture_fuzz_makeup;uint8_t rupture_fuzz_tick;
+ int32_t rupture_fuzz_in_env,rupture_fuzz_wet_env,rupture_fuzz_makeup;
+ int32_t rupture_fuzz_makeup_target;
+ int32_t rupture_fuzz_drive_slew,rupture_fuzz_anti_slew,rupture_fuzz_oct_slew,rupture_fuzz_tone_slew;
+ uint8_t rupture_fuzz_tick;
  /* Pre-nonlinearity anti-alias smoothing, two Q15 poles, no delay lines. */
  int32_t rupture_fuzz_input_lp,rupture_folder_input_lp;
  /* Sandpaper: two smoothing poles, sub-bass body, zero-delay wet slew. */
