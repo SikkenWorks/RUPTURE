@@ -1,3 +1,11 @@
+# RUPTURE V1.44 — Official Stock V15 OTA Compatibility (ERROR 3)
+
+- Reproduced `OTA PREP FAILED / ERROR 3` with the **original M-VAVE stock V15** `FM-1_015` firmware package, SHA-256 `db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a` (699,956 bytes). The official package has **eight UFW entries**, while the old OTA validator erroneously required **exactly two**. The firmware refused it during CHECK before flash was erased.
+- Recognize the exact eight-entry stock V15 metadata structure (`flash.bin`, `info.log`, `USR`, `isd_config.ini`, `ota.bin`, `script.ver`, `blimit.bin`, `tail.bin`) as a separate, strictly validated package family. Keep the original two-entry rules for all app-only firmware; do not stage auxiliary metadata. Bounds, ordering, list/header CRC, full flash CRC and the pinned stock image and loader SHA-256 remain mandatory.
+- Fixed a second refusal that followed the first one: the RUPTURE boot area differs from official V15 in only **four known bytes** (`uboot.boot` directory CRCs at `0x20..0x23`). Accept only this exact, verified difference when restoring the exact pinned official V15; any other bootheader mismatch remains error 5. Official V15 uses its own verified full-flash loader, not the custom app-only writer.
+- Native C host replay of the complete original V15 SysEx file now reaches the OTA handoff/commit with a RUPTURE V1.43 boot image. Negative tests confirm no staging writes on corrupted header or flash, unknown OTA residual, or unknown bootheader. Two-entry app-only firmware regression retained.
+- No synthesis, audio DSP, UI, storage, firmware identity, bootheader, included OTA-loader binary or project format changes. Physical FM1 tests of the return to stock and interrupted transitions are still necessary; users already running a blocking older firmware need a functioning OTA or ROM-rescue path to install this fix.
+
 # RUPTURE V1.43 — Cross-Firmware OTA compatibility and stock-restore safety
 
 - Accept and safely reclaim a bounded, structurally recognized legacy `LOADER.BIN` left in the OTA staging region by a previously installed compatible firmware. Previously the exact SHA allowlist only recognized ETCH's own staged loader or official V15, so some FM1 units failed OTA PREP with a valid loader from another firmware already present.

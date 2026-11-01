@@ -1,13 +1,13 @@
 {
-  "version": "1.43",
+  "version": "1.44",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS)",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.43.fwsc",
+  "firmware_file": "RUPTURE-V1.44.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "1c2d9e0fca28d77309c452a05845122b758142977c24f59912b64c43ee797723",
-  "app_bytes": 232700,
-  "app_sha256": "08c7a3b398e27ecb2009fa54b9372b99b33443ea0b5e60170c30c7692ab42a0f",
+  "firmware_sha256": "eca3d7fb6bc0014dccb0f309adac0290a7ca03e1614fe498c59d31e7e874095f",
+  "app_bytes": 233120,
+  "app_sha256": "4668d29c81e592c12aa978e818b04d82105c188ab51d335ccb3880ff6b24550a",
   "native_screens": 57,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -43,7 +43,8 @@
     "V1.41 corrects excessive EQ2 auto-trim (-36 dB possible at four boosts), EQ OFF dry parity, and active EQ coefficient-update cost. FM1 physical DMA and audio quality must still be verified. Peak guard only acts near clipping.",
     "V1.42 smooths OCTAVE FUZZ gain, drive, octave and tone changes at sample rate, softens the rectifier zero crossing, and replaces its periodic variable division with a fixed reciprocal lookup. The original clipping character is retained. Real FM1 listening and DMA timing must still be verified.",
     "V1.42 smooths OCTAVE FUZZ gain, drive, octave and tone changes at sample rate, softens the rectifier zero crossing, and replaces its periodic variable division with a fixed reciprocal lookup. The original clipping character is retained. Real FM1 listening and DMA timing must still be verified.",
-    "V1.43 OTA native tests demonstrate a residual LOADER.BIN recovery route, but exact official stock V15 full-session replay and device-specific physical FM1 transitions have not been validated. On a bootheader mismatch the official V15 downgrade is refused to avoid unsafe boot writes; use a validated USB ROM rescue rather than forcing an unsafe flash."
+    "V1.43 OTA native tests demonstrate a residual LOADER.BIN recovery route, but exact official stock V15 full-session replay and device-specific physical FM1 transitions have not been validated. On a bootheader mismatch the official V15 downgrade is refused to avoid unsafe boot writes; use a validated USB ROM rescue rather than forcing an unsafe flash.",
+    "V1.44 supports the exact archived official M-VAVE V15 eight-entry firmware (SHA-256 db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a). Native OTA host replay reaches handoff; full on-device stock install has not been physically verified and requires backup/rescue readiness."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,

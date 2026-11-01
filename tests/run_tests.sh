@@ -244,3 +244,12 @@ fwsc_name=$(python3 -c 'import json;print(json.load(open("RELEASE-MANIFEST.json"
 "$cc" -std=c11 -O2 -Wno-unused-function tests/test_v143_ota_reclaim.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_digest.c -o /tmp/rupture_v143_ota
 /tmp/rupture_v143_ota "$fwsc_name"
+
+# V1.44: official V15 eight-entry container native replay, when the exact
+# upstream vendor file and prior RUPTURE build are provided by the test runner.
+# Never ship proprietary stock binaries as part of the source ZIP.
+if [ -n "${RUPTURE_STOCK_V15_FWSC:-}" ] && [ -n "${RUPTURE_V143_FWSC:-}" ]; then
+ "$cc" -std=c11 -O2 -Wno-unused-function tests/test_v144_stock_v15.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_digest.c -o /tmp/rupture_v144_stock_v15
+ /tmp/rupture_v144_stock_v15 "$RUPTURE_STOCK_V15_FWSC" "$RUPTURE_V143_FWSC"
+fi

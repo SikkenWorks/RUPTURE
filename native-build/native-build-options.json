@@ -1,5 +1,5 @@
 {
-  "app_sha256": "08c7a3b398e27ecb2009fa54b9372b99b33443ea0b5e60170c30c7692ab42a0f",
+  "app_sha256": "4668d29c81e592c12aa978e818b04d82105c188ab51d335ccb3880ff6b24550a",
   "storage_writes": true,
   "ota_writes": true,
   "readonly_hardware_test": false,
