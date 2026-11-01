@@ -50,5 +50,6 @@ else if(strncmp(argv[1],"eq2",3)==0){
  rupture_eq2_response_curve(coeff,v.eq_curve);
  ru_render(&v);
 }
+else if(strcmp(argv[1],"audio-fault")==0){v.page=RU_PAGE_SAFE;v.audio_fault=1u;ru_render(&v);}
 else if(strcmp(argv[1],"saver")==0){v.saver_active=1u;v.saver_frame=argc>=4?(uint8_t)atoi(argv[3]):32u;ru_render(&v);}
 else ru_render(&v);FILE *f=fopen(argv[2],"wb");if(!f)return 3;fprintf(f,"P5\n240 240\n255\n");for(int y=0;y<240;y++)for(int x=0;x<240;x++)fputc(ru_get(x,y)?255:0,f);fclose(f);return 0;}

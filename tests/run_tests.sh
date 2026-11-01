@@ -223,3 +223,6 @@ python3 tests/test_v133_source_contract.py
  tests/test_v134_eq2_storage.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v134_storage && /tmp/rupture_v134_storage
+# V1.38: exact reference comparisons for cached native LP/BP/HP/LADDER coefficients.
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation tests/test_v138_all_filters.c -o /tmp/rupture_v138_all_filters
+/tmp/rupture_v138_all_filters

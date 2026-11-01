@@ -1,3 +1,19 @@
+# RUPTURE V1.38 — Full filter optimization & monophonic DMA protection
+
+- Prepared and cached filter coefficients for LOWPASS, BANDPASS, HIGHPASS and 24 dB/oct LADDER. Stable controls no longer recompute the same coefficients for every sample. The filter output and internal state remain sample-exact against previous kernels.
+- Corrected the DMA overload response for RUPTURE's actual one-voice architecture: ineffective 8→2 voice shedding is replaced with immediate nonessential UI/scope throttling. Persistent genuine missed deadlines still trigger the audio safety stop.
+- Kept DSP pole counts, cutoff/resonance mapping, fixed-point gain, project files (PJT34), effects, EQ2, panel controls, USB, flash layout and trusted OTA loader unchanged.
+- Native crossbuild and 2.5 million new sample/state comparisons pass. This does not replace physical FM1 deadline, audio and power-on stress tests.
+
+# RUPTURE V1.37 — Ladder realtime stability and audio fault diagnostics
+
+- Replaced five signed 64-bit multiplies per sample/voice in the resonant four-pole ladder hot path with overflow-bounded 32-bit Q15 arithmetic. The resulting output and all four internal states are exact matches to V1.36 for valid audio input, including maximum resonance.
+- Added Q15 input bounding in the ladder branch to prevent upstream values outside the documented audio range from destabilizing the feedback loop. Ordinary signals are unaffected.
+- Kept audio DMA deadline preflight, voice-budget relief, audio-stop protection, boot/recovery behavior, project formats and stored sounds intact. The audio watchdog is **not disabled**.
+- A deadline-induced audio shutdown now shows **AUDIO STOP / DMA TIMING FAULT** rather than incorrectly presenting it as a boot SAFE MODE. Genuine Safe Mode remains available with its original meaning.
+- Completed native JieLi crossbuild and 972,000 sample-exact filter comparisons, including 300,000 automated parameter-sweep samples. Physical FM1 measurements remain necessary before declaring the reported crackle and shutdown fixed on hardware.
+- Preserved the original protected 16 KiB flash header, OTA-loader bytes, firmware identity `FM-1_968` and existing PJT34 storage format. All features from V1.36 retained.
+
 # RUPTURE V1.36 — Storage recovery and Auto Load Project
 
 - WIPE ALL uses a dedicated confirmed and address-restricted native NOR erase/readback path over known user flash 0x97000..0xDFFFF. Standard project writes remain confined to the existing RUPTURE A/B banks. Boot, application and OTA sectors remain protected.

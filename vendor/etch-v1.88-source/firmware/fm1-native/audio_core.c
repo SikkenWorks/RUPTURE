@@ -5,6 +5,8 @@
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
+#include "rupture_ladder_fast.h"
+#include "rupture_filter_fast.h"
 #endif
 #include "native_tables.h"
 #include "native_bend.h"
@@ -42,6 +44,18 @@ static struct organic_voice_state *organic_at(uint32_t i){
 static uint16_t living_voice_age[ETCH_NATIVE_VOICES] __attribute__((section(".noinit")));
 static uint32_t evolution_phase __attribute__((section(".pool")));
 static int32_t evolution_smooth __attribute__((section(".pool")));
+#ifdef RUPTURE_BUILD
+struct rupture_filter_transition {int16_t last,held;uint8_t mode,remaining;};
+/* Cached filter coefficients live on the render callback's stack, not in the
+ * saturated FM1 DSP POOL.  A shared coeff pair can serve consecutive samples
+ * and every voice using the same patch. */
+struct rupture_filter_coeff_cache {
+ struct rupture_ladder_coeff ladder;
+ struct rupture_svf_coeff svf;
+ uint8_t ladder_valid,svf_valid;
+};
+static struct rupture_filter_transition filter_transition[ETCH_NATIVE_VOICES];
+#endif
 /* Separate .bss states: FM1 audio POOL has no room to grow. */
 static int32_t filter_cutoff_smooth __attribute__((section(".noinit")));
 static int32_t filter_resonance_smooth __attribute__((section(".noinit")));
@@ -158,7 +172,11 @@ void etch_native_reset(struct etch_native_audio *s){
  for(uint32_t oi=0;oi<ETCH_NATIVE_VOICES;oi++){
   living_voice_age[oi]=0u;
   uint8_t *q=(uint8_t*)organic_at(oi);for(uint32_t b=0;b<sizeof(struct organic_voice_state);b++)q[b]=0;
- }preview_mix=0u;preview_selected=0u;filter_cutoff_smooth=0;filter_resonance_smooth=0;drive_smooth=0;s->voice_limit=8u;s->poly_div_q10=4096;
+ }preview_mix=0u;preview_selected=0u;filter_cutoff_smooth=0;filter_resonance_smooth=0;drive_smooth=0;
+#ifdef RUPTURE_BUILD
+ for(uint32_t i=0;i<ETCH_NATIVE_VOICES;i++){filter_transition[i].last=0;filter_transition[i].held=0;filter_transition[i].mode=0;filter_transition[i].remaining=0;}
+#endif
+ s->voice_limit=8u;s->poly_div_q10=4096;
 #ifdef RUPTURE_BUILD
  s->mono_mode=1u; /* MIDI events before first audio block must use mono stack. */
 #endif
@@ -414,51 +432,72 @@ static void envelope_with_steps(struct etch_native_voice *v,uint32_t attack,uint
  }
  v->env=(int32_t)(v->eg>>16);
 }
+/* V1.38: the three SVF modes share a division-free, numerically
+ * equivalent DSP kernel. The filter-choice transitions are independent
+ * of oscillator state and smoothed per voice without changing POOL RAM.
+ * Only 48 bytes of BSS are needed for all eight possible voices. */
+#ifdef RUPTURE_BUILD
+static int32_t rupture_ladder(struct etch_native_voice *v,
+             const struct etch_native_controls *c,int32_t input,
+             struct rupture_filter_coeff_cache *cache){
+ if(!cache->ladder_valid || cache->ladder.cutoff!=c->cutoff ||
+    cache->ladder.resonance!=c->resonance){
+  rupture_ladder_prepare(&cache->ladder,c->cutoff,c->resonance);
+  cache->ladder_valid=1u;
+ }
+ return rupture_ladder_step_prepared(v->ladder,&cache->ladder,input);
+}
+#endif
+/* Original filter retained for non-RUPTURE builds. */
+#ifndef RUPTURE_BUILD
 static int32_t state_bound(int32_t v){return v<-262144?-262144:v>262144?262144:v;}
-/* Bounded Chamberlin SVF, two iterations/sample; coefficients <= 0.25.
-   Filter disabled is a true bypass. Saturate state before feedback. */
-/* V1.45 exact Q15 filter multiply with no 64-bit divide.
- * Inputs: -262144 <= state <= 262144 and 0 <= coefficient <= 65536.
- * q and r have the same sign, so C truncation-toward-zero is identical to
- * ((int64_t)state*coefficient)/32768. |r*coefficient| <= 2147418112,
- * therefore the 32-bit intermediate cannot overflow. */
 static inline int32_t filter_mul_q15(int32_t state,int32_t coefficient){
  int32_t q=state/32768;
  int32_t r=state%32768;
  return q*coefficient+(r*coefficient)/32768;
 }
+#endif
+static int32_t filter(struct etch_native_voice *v,const struct etch_native_controls *c,
+                       int32_t x,uint32_t voice_index
 #ifdef RUPTURE_BUILD
-/* RUPTURE: four-stage, resonant 24 dB/oct ladder approximation. The
- * four state integrators are kept per voice. Asymmetric, bounded feedback
- * and fixed-point input conditioning produce a classic ladder character;
- * this is NOT a circuit-accurate Moog transistor model. No heap/exp/tan,
- * no flash or UI in the hard-realtime callback. */
-static int32_t rupture_ladder(struct etch_native_voice *v,const struct etch_native_controls *c,int32_t input){
- uint32_t f=c->cutoff>8192u?8192u:c->cutoff;
- int32_t g=(int32_t)(f*3u); /* 0..24576 Q15, safe for a 4-pole cascade */
- uint32_t res=c->resonance>32767u?32767u:c->resonance;
- /* Max feedback about 3.65x; 64-bit multiplication bounded, no division. */
- int32_t k=(int32_t)((res*365u)/100u); /* Q15: 0..119599 */
- int32_t x=input-(int32_t)(((int64_t)v->ladder[3]*k)>>15);
- /* Soft feedback clamp before a four-stage filter; avoids runaway. */
- if(x>32767)x=32767+(x-32767)/8;
- if(x< -32767)x=-32767+(x+32767)/8;
- if(x>49151)x=49151;if(x< -49151)x=-49151;
- for(uint32_t stage=0;stage<4;stage++){
-  int32_t z=v->ladder[stage];
-  int32_t delta=(int32_t)(((int64_t)(x-z)*g)>>15);
-  z+=delta;
-  if(z>32767)z=32767;if(z< -32767)z=-32767;
-  v->ladder[stage]=z;x=z;
+                       ,struct rupture_filter_coeff_cache *cache
+#endif
+                       ){
+#ifdef RUPTURE_BUILD
+ struct rupture_filter_transition *t=&filter_transition[voice_index];
+ uint8_t mode=c->filter_type<5u?c->filter_type:0u;
+ if(mode!=t->mode){
+  t->held=t->last;
+  /* The inactive filter's old internal state must not leak into a
+   * different topology after a mode change or bypass. */
+  if(mode==4u){for(uint32_t k=0;k<4u;k++)v->ladder[k]=0;}
+  else if(t->mode==4u || t->mode==0u){v->low=v->band=0;}
+  t->mode=mode;t->remaining=128u;
  }
- return v->ladder[3];
-}
-#endif
-static int32_t filter(struct etch_native_voice *v,const struct etch_native_controls *c,int32_t x){
+ int32_t out;
+ if(!mode){v->low=v->band=0;out=x;}
+ else if(mode==4u)out=rupture_ladder(v,c,x,cache);
+ else {
+  if(!cache->svf_valid || cache->svf.cutoff!=c->cutoff ||
+     cache->svf.resonance!=c->resonance){
+   rupture_svf_prepare(&cache->svf,c->cutoff,c->resonance);
+   cache->svf_valid=1u;
+  }
+  out=rupture_svf_step_prepared(&v->low,&v->band,&cache->svf,x,mode);
+ }
+ out=clamp15(out);
+ if(t->remaining){
+  /* Smooth exactly 128 samples (~2.9ms at 44.1kHz) on an explicit mode
+   * change; no extra filter, buffer, or DSP-thread allocation. */
+  int32_t progress=128-(int32_t)t->remaining;
+  out=(int32_t)t->held+((out-(int32_t)t->held)*progress)/128;
+  t->remaining--;
+ }
+ t->last=(int16_t)out;
+ return out;
+#else
+ (void)voice_index;
  if(!c->filter_type){v->low=v->band=0;return x;}
-#ifdef RUPTURE_BUILD
- if(c->filter_type==4u)return clamp15(rupture_ladder(v,c,x));
-#endif
  uint32_t f=c->cutoff>8192?8192:c->cutoff;
  uint32_t res=c->resonance>32767?32767:c->resonance;
  int32_t damping=65536-(int32_t)res*3/2,high=0;
@@ -468,6 +507,7 @@ static int32_t filter(struct etch_native_voice *v,const struct etch_native_contr
   v->band=state_bound(v->band+(int32_t)(filter_mul_q15(high,(int32_t)f)));
  }
  return clamp15(c->filter_type==2?v->band:c->filter_type==3?high:v->low);
+#endif
 }
 /* Each Wave A/B has two independent, bounded pre-morph inserts.
  * Time-based MASTER effects remain global: allocating e.g. a full reverb
@@ -833,6 +873,9 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
  uint8_t motion_play=(uint8_t)(c->motion_play&&c->motion&&c->motion->length&&c->motion->mask);
  if(motion_play&&!s->motion_was_playing)s->motion_sample=0u;
  s->motion_was_playing=motion_play;
+#ifdef RUPTURE_BUILD
+ struct rupture_filter_coeff_cache filter_coeff_cache={0};
+#endif
  uint16_t motion_values[4]={0};
  const struct etch_evolution_settings *e=&c->evolution;
  uint8_t evolving=(uint8_t)(c->mono_mode && etch_evolution_valid(e)&&e->depth!=0u);
@@ -1171,7 +1214,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
     locked.cutoff=voice_cutoff;locked.resonance=group_patch->resonance;
     locked.filter_type=group_patch->filter_type;
    }else if(parts[owner].matrix_active)locked.cutoff=voice_cutoff;
-   sample=filter(v,&locked,sample);
+   sample=filter(v,&locked,sample,i
+#ifdef RUPTURE_BUILD
+    ,&filter_coeff_cache
+#endif
+   );
 #ifdef RUPTURE_BUILD
    /* CLASSIC oscillators stay audible even with the CXS filter closed.
     * Independent blend and soft-knee protect the FX input against peaks. */

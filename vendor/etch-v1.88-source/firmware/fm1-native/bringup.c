@@ -2666,7 +2666,7 @@ static void rupture_native_screen(void){
  }
  if(native_audio.fx.eq2_enabled!=native_project_cfg.eq2.enabled)ru_eq2_apply();
  ru_footer_status=((int32_t)(ru_save_feedback_until-etch_ms)>0)?ru_save_feedback:0u;
- RuState v={0};v.page=ru_page;v.selected=ru_selected;
+ RuState v={0};v.page=ru_page;v.selected=ru_selected;v.audio_fault=(uint8_t)(native_tripped&&!native_safe);
  if(native_safe||native_tripped)v.page=RU_PAGE_SAFE;
  else if(native_updating)v.page=RU_PAGE_UPDATE;
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;

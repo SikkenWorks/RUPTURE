@@ -221,6 +221,17 @@ extern void isr_alnk0(void);
 static void native_stop(void){native_suspended=1;native_output_enabled=0u;fm1_audio_output_enable(0u);fm1_audio_stop();native_tripped=1;}
 static void native_budget_late(void){
  native_healthy_blocks=0;
+#ifdef RUPTURE_BUILD
+ /* RUPTURE is hard mono (render_internal limit==1), so reducing the nominal
+  * 8-voice budget cannot save a SINGLE DSP cycle. Immediately suspend
+  * optional LCD/scope work instead. NEVER weaken the true DMA ownership
+  * check, skip an audio block, or mask a persistent underrun. */
+ native_ui_pressure=32u;
+ if(native_missed_streak<255u)++native_missed_streak;
+ if(native_missed_streak>=8u){
+  etch_boot_audio_fault(&etch_boot);native_stop();
+ }
+#else
  if(native_audio.voice_limit>2u){
   native_audio.voice_limit=etch_voice_budget_reduce(native_audio.voice_limit);
   ++native_voice_shed_count;
@@ -228,6 +239,7 @@ static void native_budget_late(void){
  }else if(++native_missed_streak>=8u){
   etch_boot_audio_fault(&etch_boot);native_stop();
  }
+#endif
 }
 static void native_budget_ok(void){
  native_missed_streak=0;

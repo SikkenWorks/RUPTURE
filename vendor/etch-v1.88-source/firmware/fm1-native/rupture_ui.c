@@ -62,7 +62,7 @@
 #define RU_PAGE_COUNT 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
- uint8_t settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,saver_enabled,saver_delay_index,saver_options_selected;
+ uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -653,7 +653,7 @@ static void ru_bug_qr(void){
  }
  ru_center("SCAN TO REPORT A BUG",120,211,1);
 }
-static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE";ru_header(t,v);
+static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
  static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","PROJECTS","MIDI"};
@@ -684,7 +684,22 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
  if(page==RU_PAGE_SHAPE){ru_frame(8,50,224,30);ru_center("CXS SOUND SHAPING",120,61,1);ru_draw_knobs(v);ru_footer("HOME SUB 1 / LONG HOLD MAIN");return;}
  if(page==RU_PAGE_PLAY){ru_frame(8,50,224,30);ru_dither(11,64,217,1,0);int py=66;for(int x=11;x<229;x++){int k=(x/12+v->macro[0]/15)%7;int y=66+((k&1)?-9:9)+(int)(v->macro[1]/22);ru_line(x==11?11:x-1,py,x,y);py=y;}ru_draw_knobs(v);ru_footer("HOME SOUND SHAPE / GLO MENU");return;}
  if(page==RU_PAGE_FOREIGN||page==RU_PAGE_FORMAT_CONFIRM){ru_center("FOREIGN DATA DETECTED",120,63,1);ru_center("FORMAT USER DATA?",120,91,1);ru_frame(18,133,98,42);ru_frame(124,133,98,42);ru_center("NO",66,150,2);ru_center("YES",173,150,2);ru_dither(v->format_yes?128:22,137,90,4,1);ru_footer("SEL CONFIRM   HOME BACK");return;}
- if(page==RU_PAGE_SAFE){ru_center("SAFE MODE",120,84,2);ru_center("USB RECOVERY",120,119,1);ru_center("BOOT DATA PROTECTED",120,153,1);ru_footer("HOME BACK");return;}
+ if(page==RU_PAGE_SAFE){
+  /* A DMA deadline shutdown is not a boot/storage Safe Mode. Keep the
+   * protective audio stop but show the actual reason to the musician. */
+  if(v->audio_fault){
+   ru_center("AUDIO STOP",120,79,2);
+   ru_center("DMA TIMING FAULT",120,116,1);
+   ru_center("HOME RESTART",120,155,1);
+   ru_footer("GLO AUDIO DIAGNOSTICS");
+  }else{
+   ru_center("SAFE MODE",120,84,2);
+   ru_center("USB RECOVERY",120,119,1);
+   ru_center("BOOT DATA PROTECTED",120,153,1);
+   ru_footer("HOME BACK");
+  }
+  return;
+ }
  if(page==RU_PAGE_UPDATE){
   ru_center("FIRMWARE UPDATE",120,87,1);
   const char *phase=v->selected==3u?"STAGING OTA LOADER":v->selected==4u?"READY FOR HANDOFF":

@@ -19,6 +19,10 @@ try:
   output=root/'ui/screens'/(title+'.png');temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),title,str(temp)],check=True)
   Image.open(temp).save(output,optimize=True);temp.unlink()
+ for scene in ('audio-fault',):
+  output=root/'ui/screens'/(scene+'.png');temp=output.with_suffix('.pgm')
+  subprocess.run([str(exe),scene,str(temp)],check=True)
+  Image.open(temp).save(output,optimize=True);temp.unlink()
  for scene in ('storage-save','storage-load'):
   output=root/'ui/screens'/(scene+'.png');temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),scene,str(temp)],check=True)
