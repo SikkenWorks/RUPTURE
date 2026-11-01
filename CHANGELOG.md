@@ -1,3 +1,11 @@
+# RUPTURE V1.39 — Dry Audio Stability Fix
+
+- Fixed Channel EQ 2.0 at 0 dB incorrectly preventing the global FX dry fast-path. It previously forced non-trivial EQ and effect processing even with all filters/FX off.
+- Flat EQ2 coefficients and inactive bands now bypass their heavy realtime calculations while preserving active-EQ processing, stored settings and parameter transition behavior.
+- Fast neutral pitch-bend and filter-OFF paths reduce unnecessary operations for RUPTURE's monophonic CXS engine.
+- Native FM1 build and targeted host regression tests pass. A physical FM1 DMA soak test remains required; this is not a claim of independently measured elimination of crackling.
+- The DMA buffer ownership protection, audio-stop guard, protected boot header, trusted OTA loader and project storage format are unchanged.
+
 # RUPTURE V1.38 — Full filter optimization & monophonic DMA protection
 
 - Prepared and cached filter coefficients for LOWPASS, BANDPASS, HIGHPASS and 24 dB/oct LADDER. Stable controls no longer recompute the same coefficients for every sample. The filter output and internal state remain sample-exact against previous kernels.

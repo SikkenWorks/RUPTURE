@@ -540,7 +540,10 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   * have naturally reached zero, and previous EQ/compression must be unity. */
  if(etch_fx_controls_dry(cfg,chorus,delay,reverb) &&
 #ifdef RUPTURE_BUILD
-    !s->eq2_enabled && /* EQ2 parameters live outside legacy FX settings */
+    (!s->eq2_enabled || (bypass_mask&ETCH_FXB_BIT(ETCH_FXB_EQ)) || rupture_eq2_is_unity(&s->eq2)) &&
+    /* RUPTURE 1.39: when the parametrical EQ is at unity, its 4 biquads
+     * must not keep every supposedly DRY sample in the expensive wet chain.
+     * Active/tailing EQ still processes normally until all ramps settle. */
 #endif
     !s->reverb_mix_smooth && !s->chorus_mix_smooth && !s->delay_mix_smooth &&
     !s->ring_mix_smooth && !s->trem_mix_smooth && !s->phaser_mix_smooth &&
@@ -559,6 +562,17 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
     * Clear one indexed position per sample during dry playback; after
     * 16384 samples (~372 ms @44.1 kHz) every FX ring is flushed.
     * This costs bounded stores and NEVER stalls the DMA IRQ with memset. */
+#ifdef RUPTURE_BUILD
+   /* A neutral EQ2 is mathematically an exact pass-through. Keep only its
+    * two latest samples warm while skipping all 20 coefficients/biquads:
+    * activating a bell/shelf will not start with stale zero IIR history. */
+   if(s->eq2_enabled && rupture_eq2_is_unity(&s->eq2)){
+    for(uint8_t b=0u;b<4u;b++){
+     s->eq2.x2[b]=s->eq2.x1[b];s->eq2.x1[b]=in;
+     s->eq2.y2[b]=s->eq2.y1[b];s->eq2.y1[b]=in;
+    }
+   }
+#endif
    if(s->dry_was_wet){
     s->dry_was_wet=0u;s->dry_flush_active=1u;s->dry_flush_cursor=0u;
    }

@@ -466,6 +466,11 @@ static int32_t filter(struct etch_native_voice *v,const struct etch_native_contr
 #ifdef RUPTURE_BUILD
  struct rupture_filter_transition *t=&filter_transition[voice_index];
  uint8_t mode=c->filter_type<5u?c->filter_type:0u;
+ if(!mode && !t->mode && !t->remaining){
+  v->low=v->band=0;
+  t->last=(int16_t)x;
+  return x; /* exact filter-OFF PCM parity, no coeff or xfade computation */
+ }
  if(mode!=t->mode){
   t->held=t->last;
   /* The inactive filter's old internal state must not leak into a
@@ -1140,8 +1145,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
      int32_t scaled=65536+delta;
      mfactor=(uint32_t)(scaled<16384?16384:scaled>131072?131072:scaled);
     }
-    uint64_t adjusted=((uint64_t)s->mono_current_inc*mfactor)>>16;
-    pitch_inc=(uint32_t)(adjusted>0xffffffffu?0xffffffffu:adjusted);
+    if(mfactor==65536u) pitch_inc=s->mono_current_inc;
+    else {
+     uint64_t adjusted=((uint64_t)s->mono_current_inc*mfactor)>>16;
+     pitch_inc=(uint32_t)(adjusted>0xffffffffu?0xffffffffu:adjusted);
+    }
    }
    if(c->mod_target==0u && depth){
     /* +/- one semitone at 100%, scaled from center, never negative. */

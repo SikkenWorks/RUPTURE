@@ -73,7 +73,17 @@ void rupture_eq2_publish(struct rupture_eq2_state *s,const struct rupture_eq2_bq
  s->headroom_q15[next]=ru_eq2_auto_trim[halfdb];
  __asm__ volatile("" ::: "memory");s->index=next;
 }
+uint8_t rupture_eq2_is_unity(const struct rupture_eq2_state *s){
+ if(s->current_headroom!=32767u || s->headroom_q15[s->index]!=32767u)return 0u;
+ for(uint8_t b=0u;b<4u;b++){
+  const struct rupture_eq2_bq *v=&s->current[b],*t=&s->target[s->index][b];
+  if(v->b0!=RU_EQ2_ONE||v->b1||v->b2||v->a1||v->a2||
+     t->b0!=RU_EQ2_ONE||t->b1||t->b2||t->a1||t->a2)return 0u;
+ }
+ return 1u;
+}
 int32_t rupture_eq2_process(struct rupture_eq2_state *s,int32_t x){
+ if(rupture_eq2_is_unity(s))return x;
  /* No division, floating point or allocation in real-time callback.
   * Integer coefficients are slewed per-sample; DF1 delay states are clamped. */
  uint8_t idx=s->index;
@@ -88,6 +98,14 @@ int32_t rupture_eq2_process(struct rupture_eq2_state *s,int32_t x){
   for(int j=0;j<5;j++){
    int64_t delta=(int64_t)u[j]-v[j];
    if(delta){int32_t step=(int32_t)(delta/64);if(!step)step=delta>0?1:-1;v[j]+=step;}
+  }
+  /* A neutral band within an active EQ needs only to preserve its input
+   * history for later automation. The original multiply-accumulate is
+   * exactly x with (ONE,0,0,0,0), so skip five 64-bit products. */
+  if(c->b0==RU_EQ2_ONE && !c->b1 && !c->b2 && !c->a1 && !c->a2){
+   s->x2[i]=s->x1[i];s->x1[i]=x;
+   s->y2[i]=s->y1[i];s->y1[i]=x;
+   continue;
   }
   int64_t y64=(int64_t)c->b0*x+(int64_t)c->b1*s->x1[i]+(int64_t)c->b2*s->x2[i]
              -(int64_t)c->a1*s->y1[i]-(int64_t)c->a2*s->y2[i];

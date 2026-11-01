@@ -22,6 +22,9 @@ static inline uint8_t rupture_eq2_valid(const struct rupture_eq2_params *p){
 void rupture_eq2_compute(const struct rupture_eq2_params *p,const uint16_t gains[4],struct rupture_eq2_bq out[4]);
 void rupture_eq2_publish(struct rupture_eq2_state *s,const struct rupture_eq2_bq coeff[4],const uint16_t gains[4]);
 int32_t rupture_eq2_process(struct rupture_eq2_state *s,int32_t x);
+/* A four-band 0 dB EQ must be an exact zero-CPU DSP bypass once its
+ * existing coefficient/headroom ramps have settled. */
+uint8_t rupture_eq2_is_unity(const struct rupture_eq2_state *s);
 uint16_t rupture_eq2_frequency(uint8_t band,uint8_t index);
 uint16_t rupture_eq2_gain_index(uint16_t legacy_q15);
 void rupture_eq2_response_curve(const struct rupture_eq2_bq c[4],uint8_t out[54]);
