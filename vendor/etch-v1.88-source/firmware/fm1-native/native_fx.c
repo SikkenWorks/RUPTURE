@@ -338,6 +338,50 @@ static int16_t rupture_sandpaper_process(struct etch_native_fx *s,int16_t sample
 }
 static int16_t fx_v102_process(struct etch_native_fx *s,int16_t sample,const struct etch_fx_settings *c){
  int32_t x=sample,wet=0;
+#ifdef RUPTURE_BUILD
+ /* Normal RUPTURE tiles use COMP + TILT + OCT FUZZ + SANDPAPER.
+  * All the remaining ETCH modulation engines have no active page on the
+  * instrument. When their wet parameters AND fades are zero, skip their
+  * expensive per-sample setup, math and unneeded delay-buffer updates.
+  * If a saved legacy project uses one, retain the original full path. */
+ if(!c->trem_mix && !c->vibrato_mix && !c->wah_mix &&
+    !c->phaser_mix && !c->flanger_mix && !c->tape_mix &&
+    !c->decim_mix && !c->folder_mix &&
+    !s->trem_mix_smooth && !s->vibrato_mix_smooth &&
+    !s->wah_mix_smooth && !s->phaser_mix_smooth &&
+    !s->flanger_mix_smooth && !s->tape_mix_smooth &&
+    !s->decim_mix_smooth && !s->folder_mix_smooth){
+  if(c->comp_ratio){
+   int32_t mag=x<0?-x:x;
+   int32_t atk=2+(32767u-qclamp(c->comp_attack))/512u;
+   int32_t rel=1+(32767u-qclamp(c->comp_release))/2048u;
+   int32_t step=mag>s->comp_env?atk:rel;
+   s->comp_env+=((mag-s->comp_env)*step)/32768;
+   if(++s->comp_tick>=16){
+    s->comp_tick=0;
+    int32_t thr=2000+(32767u-qclamp(c->comp_threshold))*25000u/32767u;
+    int32_t ratio=1+qclamp(c->comp_ratio)*11u/32767u;
+    int32_t target=32767;
+    if(s->comp_env>thr){
+     int32_t limited=thr+(s->comp_env-thr)/ratio;
+     target=(limited*32767)/s->comp_env;
+    }
+    s->comp_target=target;
+   }
+   s->comp_gain=etch_fx_slew(s->comp_gain,s->comp_target);
+   x=(x*s->comp_gain)/32767;
+  }else{
+   /* Release compressor gain smoothly when bypassed. The old immediate
+    * reset from a compressed gain to unity made a click, and kept the
+    * non-dry chain busy on successive effects. Exact when already unity. */
+   s->comp_target=32767;
+   s->comp_gain=etch_fx_slew(s->comp_gain,32767);
+   if(s->comp_gain!=32767)x=(x*s->comp_gain)/32767;
+   s->comp_env=0;s->comp_tick=0;
+  }
+  return rupture_sandpaper_process(s,rupture_fuzz_process(s,rupture_tilt_process(s,clip16(x))));
+ }
+#endif
  /* Compressor: envelope follower, 16-sample control rate, smoothly applied
   * gain. Ratio 1:1 (zero control) provides exact bypass. */
  if(c->comp_ratio){
@@ -359,7 +403,15 @@ static int16_t fx_v102_process(struct etch_native_fx *s,int16_t sample,const str
   }
   s->comp_gain=etch_fx_slew(s->comp_gain,s->comp_target);
   x=(x*s->comp_gain)/32767;
- }else{s->comp_gain=32767;s->comp_target=32767;s->comp_env=0;s->comp_tick=0;}
+ }else{
+   /* Release compressor gain smoothly when bypassed. The old immediate
+    * reset from a compressed gain to unity made a click, and kept the
+    * non-dry chain busy on successive effects. Exact when already unity. */
+   s->comp_target=32767;
+   s->comp_gain=etch_fx_slew(s->comp_gain,32767);
+   if(s->comp_gain!=32767)x=(x*s->comp_gain)/32767;
+   s->comp_env=0;s->comp_tick=0;
+  }
  /* Tremolo: 0.15..15Hz, triangle -> square, wet/dry blend. */
  s->trem_mix_smooth=etch_fx_slew(s->trem_mix_smooth,qclamp(c->trem_mix));
  if(s->trem_mix_smooth){
@@ -649,7 +701,11 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
  }else in=etch_fx_ring_eq(s,in,cfg,bypass_mask);
  in=fx_v102_process(s,in,cfg);
  int32_t chorus_delta=0,chorus_right=0;
- if(!(bypass_mask&ETCH_FXB_BIT(ETCH_FXB_CHORUS))||chorus_render){
+ /* V1.40: disabled sends MUST NOT run the expensive wet DSP merely
+ * because their bypass flag is clear. The old OR condition rendered three
+ * delay engines at MIX=0 whenever DRIVE/FUZZ broke the dry fast path.
+ * The slewed mix is authoritative, so switch-off tails still finish. */
+ if(chorus_render){
  uint32_t phase=s->chorus_phase;
  s->chorus_phase=(phase+s->rate_step)&65535u;
  uint32_t tri=phase<32768u?phase:65535u-phase;
@@ -672,7 +728,7 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
  /* Echo spans about 9..360ms @ 44.1kHz. Never read the write head. */
  int32_t delay_delta=0,delay_right=0;
  int32_t fxin=cfg->routing==1?in:clip16((int32_t)in+chorus_delta);
- if(!(bypass_mask&ETCH_FXB_BIT(ETCH_FXB_DELAY))||delay_render){
+ if(delay_render){ /* active or fading delay only */
  uint32_t didx=(s->delay_pos-s->delay_samples)&(ETCH_DELAY_SIZE-1u);
  int32_t wetd=s->delay[didx];
  int32_t wetd_right=s->delay[(didx-97u)&(ETCH_DELAY_SIZE-1u)];
@@ -686,7 +742,7 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   s->delay_pos=(s->delay_pos+1u)&(ETCH_DELAY_SIZE-1u);
  }
  int32_t output=0,output_right=0;
- if(!(bypass_mask&ETCH_FXB_BIT(ETCH_FXB_REVERB))||s->reverb_mix_smooth){
+ if(reverb_target || s->reverb_mix_smooth){ /* active or fading reverb only */
  /* Three size-dependent taps share the original 4096-sample tank. */
  int32_t r1=s->reverb[(s->reverb_pos-s->tap1)&(ETCH_REVERB_SIZE-1u)];
  int32_t r2=s->reverb[(s->reverb_pos-s->tap2)&(ETCH_REVERB_SIZE-1u)];

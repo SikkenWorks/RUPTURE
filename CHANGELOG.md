@@ -1,3 +1,11 @@
+## V1.40 — FX CPU budget and default EQ bypass (2026-11-01)
+
+- Fixed the shared post-mix FX scheduler: disabled chorus, delay and reverb no longer process full wet DSP at MIX 0 when DRIVE, OCT FUZZ or another effect is on. Their current smoothed MIX remains authoritative, preserving audible fade-outs and original algorithms.
+- Optimized the RUPTURE eight-effect dispatch to bypass dormant legacy ETCH modulation engines while retaining the full path when a legacy project uses them.
+- Removed a compressor toggle click: disengaging compression now releases its gain smoothly instead of jumping instantly to unity.
+- New projects start with Channel EQ 2.0 selected but fully bypassed (OFF), with neutral gain parameters. Existing saved project EQ state and bypass mask remain unchanged when loaded.
+- No changed bootloader, OTA loader, storage structure, filter algorithm or DMA safety cutoff. Physical FM1 timing and stability are not yet validated for this revision.
+
 # RUPTURE V1.39 — Dry Audio Stability Fix
 
 - Fixed Channel EQ 2.0 at 0 dB incorrectly preventing the global FX dry fast-path. It previously forced non-trivial EQ and effect processing even with all filters/FX off.

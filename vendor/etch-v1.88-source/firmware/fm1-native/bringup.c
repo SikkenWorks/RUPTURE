@@ -1328,6 +1328,16 @@ static void native_new_project(void){
  native_project_cfg.matrix=(struct etch_mod_matrix){0};
  native_patch_slot=0;native_library.reserved=0;native_blend_on=0;native_blend_pct=0;
  native_controls.morph=8192;native_controls.depth=8192;
+#ifdef RUPTURE_BUILD
+ /* NEW is a fresh sound, not the previous project's active EQ settings. */
+ native_fx_settings.eq_low=16384u;
+ native_fx_settings.eq_mid=16384u;
+ native_fx_settings.eq_high=16384u;
+ native_fx_settings.eq_hpf=0u;
+ rupture_eq2_defaults(&native_project_cfg.eq2,1u);
+ native_fx_bypass_mask|=ETCH_FXB_BIT(ETCH_FXB_EQ);
+ ru_eq2_apply();
+#endif
  native_mod_mode=0;native_mod_ratio=3;
  native_page=ETCH_UI_PLAY;native_draw=0;
 }
@@ -2761,6 +2771,7 @@ static void rupture_native_screen(void){
    int32_t air=raw==0?0:(raw<=16384?(int32_t)(raw*100u/16384u):-(int32_t)((raw-16384u)*100u/16383u));
    v.k[3]=(uint16_t)(air+100);
   }
+  v.eq_bypassed=(uint8_t)!!(native_fx_bypass_mask & ETCH_FXB_BIT(ETCH_FXB_EQ));
   v.eq_on=(uint8_t)(native_fx_settings.eq_low!=16384u||native_fx_settings.eq_mid!=16384u||native_fx_settings.eq_high!=16384u||native_fx_settings.eq_hpf);
   break;
  case RU_PAGE_FX:
@@ -4626,6 +4637,9 @@ void fm1_cstart(void){
  /* Newly-created projects use Channel EQ 2.0; legacy decoded projects
   * explicitly override this with enabled=0 for unchanged historical audio. */
  rupture_eq2_defaults(&native_project_cfg.eq2,1u);
+ /* New RUPTURE projects keep EQ2 selected but fully bypassed by default.
+  * Existing saved PJT34 projects restore their own mask and coefficients. */
+ native_fx_bypass_mask|=ETCH_FXB_BIT(ETCH_FXB_EQ);
 #endif
  etch_project_bind_preset_dsp(&native_project_cfg,&native_preset_dsp);
  etch_native_groups_configure(&native_preset_dsp.groups);
