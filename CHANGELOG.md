@@ -1,3 +1,12 @@
+## V1.41 — Channel EQ 2.0 gain and realtime stability (2026-11-01)
+
+- Corrected Channel EQ 2.0 gain staging. The previous fixed `-sum(positive band boosts)` trim could reduce total volume by up to 36 dB even when the musical intent was to boost bass. This global attenuation is removed. A bounded, signal-dependent peak guard engages only close to digital clipping.
+- Fixed EQ BYPASS with saved non-neutral controls: an OFF EQ is now genuinely dry and cannot activate wet output compression merely because stored EQ gains are nonzero.
+- Reduced active-EQ audio-interrupt work by updating coefficients at controlled intervals, caching unity/active-band status and skipping coefficient ramps once settled. Nominal frequency responses and Q controls remain unchanged.
+- Corrected neutral-EQ publication so 0 dB is always exact passthrough, including freshly initialised EQ states.
+- Added repeatable tests for bass boosts combined with other bands, cut/boost/frequency/Q sweeps, dry parity, clipping protection and UBSan.
+- Retained existing PJT34 project format, Q controls, source filter coefficients, protection of boot/OTA sectors and DMA watchdog. No firmware update or test run can establish physical FM1 stability until measured on hardware.
+
 ## V1.40 — FX CPU budget and default EQ bypass (2026-11-01)
 
 - Fixed the shared post-mix FX scheduler: disabled chorus, delay and reverb no longer process full wet DSP at MIX 0 when DRIVE, OCT FUZZ or another effect is on. Their current smoothed MIX remains authoritative, preserving audible fade-outs and original algorithms.

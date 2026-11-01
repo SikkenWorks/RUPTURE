@@ -64,45 +64,72 @@ void rupture_eq2_compute(const struct rupture_eq2_params *p,const uint16_t gains
 void rupture_eq2_publish(struct rupture_eq2_state *s,const struct rupture_eq2_bq coeff[4],const uint16_t gains[4]){
  uint8_t next=(uint8_t)(s->index^1u);
  for(int i=0;i<4;i++)s->target[next][i]=coeff[i];
- uint32_t halfdb=0;
- for(int b=0;b<4;b++){
-  int g=(int)rupture_eq2_gain_index(gains[b])-18;
-  if(g>0)halfdb+=(uint32_t)g;
+ /* V1.41: NEVER attenuate the entire EQ by the sum of positive gains.
+  * A +9 dB low shelf previously attenuated the entire signal by -9 dB,
+  * and four +9 dB boosts attenuated everything by -36 dB. Besides being
+  * musically wrong, the resulting gain change was not in the response plot.
+  * Keep unity globally. Saturation is handled only at the output, where
+  * the actual peak (not knob positions) can be examined. */
+ (void)gains;
+ s->headroom_q15[next]=32767u;
+ uint8_t pending=0u,active=0u,unity_targets=1u;
+ for(uint8_t b=0u;b<4u;b++){
+  const int32_t *from=&s->current[b].b0;
+  const int32_t *to=&coeff[b].b0;
+  for(uint8_t k=0u;k<5u;k++)if(from[k]!=to[k])pending=1u;
+  if(from[0]!=RU_EQ2_ONE||from[1]||from[2]||from[3]||from[4])
+    active|=(uint8_t)(1u<<b);
+  if(to[0]!=RU_EQ2_ONE||to[1]||to[2]||to[3]||to[4])unity_targets=0u;
  }
- if(halfdb>72)halfdb=72;
- s->headroom_q15[next]=ru_eq2_auto_trim[halfdb];
+ s->slew_active=pending;
+ s->active_mask=active;
+ s->unity_hint=(uint8_t)(!pending && !active && unity_targets && s->current_headroom==32767u);
  __asm__ volatile("" ::: "memory");s->index=next;
 }
 uint8_t rupture_eq2_is_unity(const struct rupture_eq2_state *s){
- if(s->current_headroom!=32767u || s->headroom_q15[s->index]!=32767u)return 0u;
- for(uint8_t b=0u;b<4u;b++){
-  const struct rupture_eq2_bq *v=&s->current[b],*t=&s->target[s->index][b];
-  if(v->b0!=RU_EQ2_ONE||v->b1||v->b2||v->a1||v->a2||
-     t->b0!=RU_EQ2_ONE||t->b1||t->b2||t->a1||t->a2)return 0u;
- }
- return 1u;
+ /* Fast cached status; valid after every publish and smoothing tick. */
+ return s->unity_hint;
 }
 int32_t rupture_eq2_process(struct rupture_eq2_state *s,int32_t x){
  if(rupture_eq2_is_unity(s))return x;
  /* No division, floating point or allocation in real-time callback.
   * Integer coefficients are slewed per-sample; DF1 delay states are clamped. */
  uint8_t idx=s->index;
- int32_t trim=s->current_headroom;
- int32_t diff=(int32_t)s->headroom_q15[idx]-trim;
- if(diff){int32_t step=diff/64;if(!step)step=diff>0?1:-1;trim+=step;s->current_headroom=(uint16_t)trim;}
- x=(int32_t)(((int64_t)x*trim)/32767);
- for(int i=0;i<4;i++){
-  struct rupture_eq2_bq *c=&s->current[i];
-  const struct rupture_eq2_bq *t=&s->target[idx][i];
-  int32_t *v=&c->b0;const int32_t *u=&t->b0;
-  for(int j=0;j<5;j++){
-   int64_t delta=(int64_t)u[j]-v[j];
-   if(delta){int32_t step=(int32_t)(delta/64);if(!step)step=delta>0?1:-1;v[j]+=step;}
+ /* Coefficient slew runs once per eight samples, not twenty 64-bit
+  * coefficient updates per audio sample. The approximately 64-sample
+  * response time remains unchanged. Coefficients are atomically published
+  * from the control thread; the audio ISR performs no design maths. */
+ if(s->slew_active && (++s->slew_phase & 7u)==0u){
+  uint8_t settled=1u,mask=0u;
+  s->current_headroom=32767u;
+  for(int i=0;i<4;i++){
+   struct rupture_eq2_bq *c=&s->current[i];
+   const struct rupture_eq2_bq *t=&s->target[idx][i];
+   int32_t *v=&c->b0;const int32_t *u=&t->b0;
+   for(int j=0;j<5;j++){
+    int64_t delta=(int64_t)u[j]-v[j];
+    if(delta){
+     int32_t step=(int32_t)(delta/8);
+     if(!step)step=delta>0?1:-1;
+     v[j]+=step;
+    }
+    if(v[j]!=u[j])settled=0u;
+   }
+   if(c->b0!=RU_EQ2_ONE || c->b1 || c->b2 || c->a1 || c->a2)
+     mask|=(uint8_t)(1u<<i);
   }
+  s->active_mask=mask;
+  if(settled){
+   s->slew_active=0u;
+   s->unity_hint=(uint8_t)(!mask && s->headroom_q15[idx]==32767u);
+  }
+ }
+ for(int i=0;i<4;i++){
+  const struct rupture_eq2_bq *c=&s->current[i];
   /* A neutral band within an active EQ needs only to preserve its input
    * history for later automation. The original multiply-accumulate is
    * exactly x with (ONE,0,0,0,0), so skip five 64-bit products. */
-  if(c->b0==RU_EQ2_ONE && !c->b1 && !c->b2 && !c->a1 && !c->a2){
+  if(!(s->active_mask & (1u<<i))){
    s->x2[i]=s->x1[i];s->x1[i]=x;
    s->y2[i]=s->y1[i];s->y1[i]=x;
    continue;
@@ -112,6 +139,21 @@ int32_t rupture_eq2_process(struct rupture_eq2_state *s,int32_t x){
   int32_t y=clamp(y64>>RU_EQ2_SHIFT);
   if(y>131071)y=131071;else if(y<-131071)y=-131071;
   s->x2[i]=s->x1[i];s->x1[i]=x;s->y2[i]=s->y1[i];s->y1[i]=y;x=y;
+ }
+ /* Peak protection is signal-dependent. Below -~2 dBFS (26000 Q15)
+  * there is NO compression/attenuation at all; this preserves the normal
+  * EQ transfer, unlike old global auto-trim. Extreme boosts use a bounded
+  * continuous knee rather than a hard wrap or the old -36 dB blanket cut.
+  * Nonlinearity here only engages at a level that would otherwise clip
+  * when etch_fx_ring_eq returns int16 audio to the remaining FX chain. */
+ int32_t ax=x<0?-x:x;
+ if(ax>26000){
+  int32_t excess=ax-26000;
+  /* Two inexpensive linear knees, continuous at 32000. */
+  int32_t shaped=excess<=6000?26000+(excess*3)/4:
+                 30500+((excess-6000)>>4);
+  if(shaped>32767)shaped=32767;
+  x=x<0?-shaped:shaped;
  }
  return x;
 }

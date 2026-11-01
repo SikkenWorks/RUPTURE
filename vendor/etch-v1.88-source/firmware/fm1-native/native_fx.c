@@ -74,6 +74,9 @@ void etch_fx_reset(struct etch_native_fx *s){
  s->eq2.current_headroom=32767u;
  s->eq2.headroom_q15[0]=s->eq2.headroom_q15[1]=32767u;
  s->eq2.initialized=1u;
+ s->eq2.unity_hint=1u;
+ s->eq2.active_mask=0u;
+ s->eq2.slew_active=0u;
  for(int b=0;b<4;b++){
   s->eq2.current[b].b0=RU_EQ2_ONE;
   for(int k=0;k<2;k++)s->eq2.target[k][b].b0=RU_EQ2_ONE;
@@ -590,7 +593,18 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   * multiple circular-buffer reads and the serial wet safety knee.
   * Never cut an ongoing wet->dry slew short: all smooth controls must
   * have naturally reached zero, and previous EQ/compression must be unity. */
- if(etch_fx_controls_dry(cfg,chorus,delay,reverb) &&
+ /* EQ bypass must be truly dry even if a stored EQ page still has nonzero
+  * gains/frequencies. The old dry-control test inspected EQ knobs without
+  * respecting the EQ bypass flag, activating the wet safety knee while EQ
+  * was OFF. Do not copy/modify the large FX settings struct per sample. */
+ const uint8_t eq_masked=(uint8_t)!!(bypass_mask&ETCH_FXB_BIT(ETCH_FXB_EQ));
+ const uint8_t controls_dry=(uint8_t)(etch_fx_controls_dry(cfg,chorus,delay,reverb) ||
+    (eq_masked && !chorus && !delay && !reverb &&
+     !cfg->ring_mix && !cfg->comp_ratio && !cfg->trem_mix &&
+     !cfg->phaser_mix && !cfg->flanger_mix && !cfg->decim_mix &&
+     !cfg->folder_mix && !cfg->tape_mix && !cfg->reverse_mix &&
+     !cfg->vibrato_mix && !cfg->rotary_mix && !cfg->wah_mix));
+ if(controls_dry &&
 #ifdef RUPTURE_BUILD
     (!s->eq2_enabled || (bypass_mask&ETCH_FXB_BIT(ETCH_FXB_EQ)) || rupture_eq2_is_unity(&s->eq2)) &&
     /* RUPTURE 1.39: when the parametrical EQ is at unity, its 4 biquads
@@ -859,13 +873,14 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
        cfg->trem_mix||cfg->phaser_mix||cfg->flanger_mix||
        cfg->decim_mix||cfg->tape_mix||cfg->reverse_mix||
        cfg->vibrato_mix||cfg->rotary_mix||cfg->wah_mix||
-       cfg->eq_hpf||
+       (!eq_masked &&
+         (cfg->eq_hpf||
 #ifdef RUPTURE_BUILD
-       (s->eq2_enabled && s->eq2.current_headroom!=32767u)||
+          (s->eq2_enabled && !rupture_eq2_is_unity(&s->eq2))||
 #endif
+          cfg->eq_low!=16384u||cfg->eq_mid!=16384u||cfg->eq_high!=16384u))||
        s->rupture_transient_mix||s->rupture_tilt_mix||
-       s->rupture_fuzz_mix||s->rupture_sand_mix||
-       cfg->eq_low!=16384u||cfg->eq_mid!=16384u||cfg->eq_high!=16384u);
+       s->rupture_fuzz_mix||s->rupture_sand_mix);
  *left=etch_fx_wet_safety(output,wet_active);
  *right=etch_fx_wet_safety(output_right,wet_active);
 }

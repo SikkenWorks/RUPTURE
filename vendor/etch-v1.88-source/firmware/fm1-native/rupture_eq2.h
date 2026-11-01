@@ -9,7 +9,7 @@
 #define RU_EQ2_ONE (1L<<RU_EQ2_SHIFT)
 struct rupture_eq2_params {uint8_t enabled;uint8_t freq[4];uint8_t q[2];};
 struct rupture_eq2_bq {int32_t b0,b1,b2,a1,a2;};
-struct rupture_eq2_state {struct rupture_eq2_bq target[2][4],current[4];int32_t x1[4],x2[4],y1[4],y2[4];uint16_t headroom_q15[2],current_headroom;uint8_t index;uint8_t initialized;};
+struct rupture_eq2_state {struct rupture_eq2_bq target[2][4],current[4];int32_t x1[4],x2[4],y1[4],y2[4];uint16_t headroom_q15[2],current_headroom;uint8_t index;uint8_t initialized;uint8_t slew_phase;uint8_t slew_active;uint8_t unity_hint;uint8_t active_mask;};
 static inline void rupture_eq2_defaults(struct rupture_eq2_params *p,uint8_t enabled){
  p->enabled=enabled;for(uint8_t i=0;i<4;i++)p->freq[i]=50;
  p->q[0]=9;p->q[1]=9;

@@ -1,13 +1,13 @@
 {
-  "version": "1.40",
+  "version": "1.41",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS)",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.40.fwsc",
+  "firmware_file": "RUPTURE-V1.41.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "7cea744a04bf4b38812720ed3ef8e55065ac7c48f83a7392c08f23912c4ed7d2",
-  "app_bytes": 229888,
-  "app_sha256": "92fe159bab39bbb20d4161bf93fb6209a11a2d596f086a22cc0267bdb2ee7bbe",
+  "firmware_sha256": "4d5622051a6f24e4bd22f3d3eeaf8f4c159b6e75763d13e63f019241195b57e1",
+  "app_bytes": 229936,
+  "app_sha256": "3b5f8ca21e870be399f99594792b14682d92bd3fd37bffe477c000dad15787aa",
   "native_screens": 57,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -39,7 +39,8 @@
     "V1.40 fixes off-state wet algorithm CPU waste across chorus/delay/reverb when other effects are enabled; all twelve host FX PCM parity cases match V1.39, but physical FM1 DMA stops and full multi-FX soak remain to be verified.",
     "New unsaved projects default EQ2 to bypass OFF. Previously saved projects keep original EQ-on/off and sound. Firmware update does not wipe project storage.",
     "V1.40 fixes off-state wet algorithm CPU waste across chorus/delay/reverb when other effects are enabled; all twelve host FX PCM parity cases match V1.39, but physical FM1 DMA stops and full multi-FX soak remain to be verified.",
-    "New unsaved projects default EQ2 to bypass OFF. Previously saved projects keep original EQ-on/off and sound. Firmware update does not wipe project storage."
+    "New unsaved projects default EQ2 to bypass OFF. Previously saved projects keep original EQ-on/off and sound. Firmware update does not wipe project storage.",
+    "V1.41 corrects excessive EQ2 auto-trim (-36 dB possible at four boosts), EQ OFF dry parity, and active EQ coefficient-update cost. FM1 physical DMA and audio quality must still be verified. Peak guard only acts near clipping."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -239,7 +240,8 @@
     "gain_step_db": 0.5,
     "new_projects_enabled": true,
     "legacy_project_default": "LEGACY EQ",
-    "physical_validated": false
+    "physical_validated": false,
+    "gain_compensation": "No summed positive gain trim; signal-dependent only near-clipping peak guard"
   },
   "auto_load_project_default": "NEW",
   "auto_load_project_options": "NEW or saved existing project slots",

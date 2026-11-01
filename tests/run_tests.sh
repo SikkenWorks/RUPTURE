@@ -226,3 +226,8 @@ python3 tests/test_v133_source_contract.py
 # V1.38: exact reference comparisons for cached native LP/BP/HP/LADDER coefficients.
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation tests/test_v138_all_filters.c -o /tmp/rupture_v138_all_filters
 /tmp/rupture_v138_all_filters
+
+# V1.41: EQ2 headroom and bypass correctness, cross-band changes and clipping guard.
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -D_DEFAULT_SOURCE -Wno-unused-function \
+ tests/test_v141_eq2_regressions.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v141_eq2 && /tmp/rupture_v141_eq2
