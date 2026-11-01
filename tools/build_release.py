@@ -11,7 +11,7 @@ root=Path(__file__).resolve().parents[1]
 base=root.parent
 meta=json.loads((root/'RELEASE-MANIFEST.json').read_text())
 ver=meta['version']
-assert ver=='1.37', 'Release version mismatch'
+assert ver=='1.43', 'Release version mismatch'
 fw=root/meta['firmware_file']
 assert hashlib.sha256(fw.read_bytes()).hexdigest()==meta['firmware_sha256']
 assert len(fw.read_bytes())==meta['firmware_bytes']
@@ -40,7 +40,7 @@ shutil.copy2(root/'index.html',base/'index.html')
 shutil.copy2(root/'index.html',base/f'RUPTURE-V{ver}-INDEX.html')
 shutil.copy2(root/'WebInstaller.html',base/f'RUPTURE-WebInstaller-V{ver}.html')
 shutil.copy2(root/'CHEAT-SHEET.html',base/f'RUPTURE-CHEAT-SHEET-V{ver}.html')
-shutil.copy2(root/'docs/TEST-V1.37.md',base/f'RUPTURE-TEST-RESULTS-V{ver}.md')
+shutil.copy2(root/'docs/TEST-V1.43.md',base/f'RUPTURE-TEST-RESULTS-V{ver}.md')
 files=[
  'index.html','README.md','CHANGELOG.md','CHEAT-SHEET.html','WebInstaller.html',
  fw.name,'RELEASE-MANIFEST.json','WEBSITE-DEPLOY.md','LICENSE',

@@ -238,3 +238,9 @@ python3 tests/test_v133_source_contract.py
  tests/test_v142_fuzz_stability.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v142_fuzz && /tmp/rupture_v142_fuzz
 python3 tests/test_v142_reciprocal.py
+
+# V1.43: cross-firmware OTA staging and stock bootheader safety.
+fwsc_name=$(python3 -c 'import json;print(json.load(open("RELEASE-MANIFEST.json"))["firmware_file"])')
+"$cc" -std=c11 -O2 -Wno-unused-function tests/test_v143_ota_reclaim.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_digest.c -o /tmp/rupture_v143_ota
+/tmp/rupture_v143_ota "$fwsc_name"

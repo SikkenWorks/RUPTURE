@@ -350,19 +350,64 @@ static int etch_ota_hash(uint32_t off,uint8_t *b,uint8_t from_host){
 }
 /* No automatic claim of nonblank unknown bytes in this reserved region.
  * A complete pinned older loader or our ownership token permits a retry. */
+/* RUPTURE V1.43: OTA stage can be left occupied by the *previous* firmware's
+ * completed update, even though the newly installed RUPTURE app is healthy.
+ * Do not assume every FM1 has a blank staging sector or the ETCH SHA-pinned
+ * loader. Only a recognizable, bounded JLFS LOADER.BIN may be reclaimed.
+ * Nothing is erased here: the foreign executable is never run, and every
+ * subsequent write still targets only the dedicated 0xE0000..0xE4FFF area.
+ */
+static int etch_old_loader_stage(uint32_t staged_len){
+ uint8_t inner[32];
+ uint32_t body_len;
+ if(staged_len<32u+96u || staged_len>OTA_AREA_LEN-0x100u)return 0;
+ body_len=staged_len-32u;
+ if(ota_fread(OTA_AREA+32u,inner,32u))return 0;
+ if(ota_rd16(inner)!=ota_crc16(inner+2u,30u,0u) ||
+    ota_rd32(inner+8u)!=0x01C0A800u ||
+    !ota_memeq(inner+16u,(const uint8_t*)"usb_hid_ota.bin",15u) ||
+    (ota_rd32(inner+4u)&3u)!=0u ||
+    ota_rd32(inner+4u)<64u || ota_rd32(inner+4u)>0x14000u ||
+    body_len>OTA_AREA_LEN-0x200u)return 0;
+ /* The inner header's compressed-archive CRC is verified when the loader is
+  * received as a new package. This old executable will NOT be executed:
+  * a structurally recognized residual OTA file only authorizes *reclaiming*
+  * the dedicated staging area after validating the new incoming package. */
+ return 1;
+}
 static int etch_ota_available(uint8_t *b){
  uint8_t head[32];
  if(ota_fread(ETCH_OTA_OWNER,b,16))return 0;
  if(ota_memeq(b,etch_ota_owner,16))return 1;
  if(ota_fread(OTA_AREA,head,32))return 0;
- if(ota_rd16(head)==ota_crc16(head+2,30,0)&&ota_rd32(head+4)==OTA_AREA&&
-    ota_memeq(head+16,(const uint8_t*)"LOADER.BIN",10)){
-     uint32_t staged_len=ota_rd32(head+8);
-     if(staged_len==ETCH_OTA_BODY_LEN+32&&etch_ota_hash(OTA_AREA+32,b,0))return 1;
-     if(staged_len==ETCH_STOCK_OTA_BODY_LEN+32&&
-        etch_ota_hash_pinned(OTA_AREA+32,b,0,ETCH_STOCK_OTA_BODY_LEN,etch_stock_ota_digest))return 1;
+ if(ota_rd16(head)==ota_crc16(head+2u,30u,0u)&&
+    ota_rd32(head+4u)==OTA_AREA && head[12]==0x41u &&
+    ota_memeq(head+16u,(const uint8_t*)"LOADER.BIN",10u)){
+     uint32_t staged_len=ota_rd32(head+8u);
+     if(staged_len==ETCH_OTA_BODY_LEN+32u&&etch_ota_hash(OTA_AREA+32u,b,0))return 1;
+     if(staged_len==ETCH_STOCK_OTA_BODY_LEN+32u&&
+        etch_ota_hash_pinned(OTA_AREA+32u,b,0,ETCH_STOCK_OTA_BODY_LEN,etch_stock_ota_digest))return 1;
+     /* Felucca/BEETLE/X0X and other compatible families may leave a distinct
+      * valid loader in this reserved region after a successful installation. */
+     if(etch_old_loader_stage(staged_len))return 1;
  }
- for(uint32_t i=0;i<OTA_AREA_LEN;i+=512){if(ota_fread(OTA_AREA+i,b,512))return 0;for(uint32_t j=0;j<512;j++)if(b[j]!=255)return 0;ota_idle();}
+ for(uint32_t i=0;i<OTA_AREA_LEN;i+=512u){
+  if(ota_fread(OTA_AREA+i,b,512u))return 0;
+  for(uint32_t j=0;j<512u;j++)if(b[j]!=255u)return 0;
+  ota_idle();
+ }
+ return 1;
+}
+/* The official stock loader can overwrite the protected first 16 KiB.
+ * Reject a full-flash stock handoff if the board actually has a different
+ * boot image (e.g. FM1 V16 revision). Never gamble with a bootloader.
+ * App-only updates intentionally do NOT require this comparison. */
+static int etch_stock_boot_head_matches(uint32_t flash_off,uint8_t *host,uint8_t *installed){
+ for(uint32_t off=0u;off<0x4000u;off+=512u){
+  if(ota_read(flash_off+off,host,512u)||ota_fread(off,installed,512u)||
+     !ota_memeq(host,installed,512u))return 0;
+  ota_idle();
+ }
  return 1;
 }
 #ifndef ETCH_TEST_RESTORE_ONLY
@@ -617,6 +662,10 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
         pinned_digest=etch_stock_ota_digest;
         if(!etch_ota_hash_pinned(ota_off+32,b,1,len,pinned_digest))return -16;
         if(!etch_ota_stock(fl_off,b))return -20;
+        /* Distinguish V15's signed package from an FM1 with a different
+         * installed bootheader; the former alone does not make a full-flash
+         * downgrade safe. No staging or erase before this comparison. */
+        if(!etch_stock_boot_head_matches(fl_off,b,mine))return -5;
     }else{
         if(!etch_host_loader_crc(ota_off+32,len,incoming_crc,b) ||
            !etch_host_loader_compatible(ota_off+32,len,b))return -16;

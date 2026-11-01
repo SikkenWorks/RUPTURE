@@ -64,6 +64,14 @@ Normal USB manufacturer/product names are **SIKKENWORKS / RUPTURE**. The trusted
 
 Install only on compatible hardware, back up projects, keep the device connected while the loader is active and preserve your known recovery route. RUPTURE is regularly tested on physical FM1 hardware by its author. New revisions should still be checked for the specific changed behaviors before release. An emulator or successful firmware build cannot prove reliable on-device operation.
 
+## Cross-firmware switching, OTA failures and stock V15
+
+RUPTURE V1.43 recognizes a valid legacy `LOADER.BIN` in the FM1's dedicated OTA staging area, even when it belongs to a previously installed firmware. It does not execute the foreign loader: it stages only the trusted pinned update loader after checking the destination package. Unidentified flash data still stops the update, so no arbitrary storage can be erased by a misidentified OTA file.
+
+A stock V15 restore uses the official loader, which can rewrite the protected FM1 boothead. For this reason V1.43 verifies that the currently installed 16 KiB boothead matches the official target's. Mismatched devices show error `5` and must use a validated hardware-specific recovery route, not an installer-side check bypass. An existing V1.42 instance continues running V1.42's older OTA check until it is replaced; if no OTA package works, use the FM1 Firmware Hub's **OCT− power-on USB rescue** instructions, after backing up projects. Do not power off during a real OTA WRITE. Firmware Hub: https://thefirmwarehub.com/kb/.
+
+The UPDATE screen displays a numeric error after `OTA PREP FAILED` (`15` unknown stage, `5` incompatible boothead, `20` wrong stock payload). Preserve the exact code when reporting problems. Installing a custom firmware over another project's storage may leave stale presets when returning to stock; follow the destination firmware's reset/backup instructions.
+
 ## Source code and build
 
 The complete native source, firmware build scripts, OTA packaging scripts, GPL notices, tests, UI renderer and documentation are included in the full-source release. The native sources reside under `vendor/etch-v1.88-source/firmware/fm1-native/`. The `tests/` directory includes host regressions. Build against the supported JieLi pi32v2 toolchain using `build.py --storage --updater --usb-audio-48k --multi-project`.

@@ -67,7 +67,7 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
  uint16_t diag_wall,diag_dsp,diag_render,diag_copy,diag_slack;
- uint32_t diag_late,diag_guard,diag_scope;} RuState;
+ uint32_t diag_late,diag_guard,diag_scope;uint16_t ota_error;} RuState;
 #ifdef RU_BITS_EXTERNAL
 /* Display scratch is unused while drawing RUPTURE. */
 #define ru_bits ((uint8_t*)etch_scope_canvas)
@@ -708,8 +708,15 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
   ru_frame(17,120,207,22);
   ru_dither(20,123,(v->k[0]*2u>200u?200u:v->k[0]*2u),15,1);
   char number[12];ru_uint(v->k[0],number);ru_center(number,120,159,1);
-  ru_center("FLASH PROGRESS IN WEBINSTALLER",120,180,1);
-  ru_footer("DO NOT DISCONNECT");return;
+  if(v->selected==9u){
+   char code[16]="ERROR ";ru_uint(v->ota_error,code+6);
+   ru_center(code,120,183,1);
+   ru_footer("OTA ABORTED / NO WRITE");
+  }else{
+   ru_center("FLASH PROGRESS IN WEBINSTALLER",120,180,1);
+   ru_footer("DO NOT DISCONNECT");
+  }
+  return;
  }
  if(page==RU_PAGE_HELP){
   uint8_t pageindex=v->help_page%RU_HELP_CARD_COUNT;

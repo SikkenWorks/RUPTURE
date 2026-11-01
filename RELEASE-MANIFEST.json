@@ -1,13 +1,13 @@
 {
-  "version": "1.42",
+  "version": "1.43",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS)",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.42.fwsc",
+  "firmware_file": "RUPTURE-V1.43.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "5c0ef2342aaffa584c6061d6189e9d6dbbd878655cb9009d0103aabf8300dfbc",
-  "app_bytes": 232144,
-  "app_sha256": "518039282cd0fc8d078b7d0850f4024a6eb55138e2afd60655179ea03f0deb6d",
+  "firmware_sha256": "1c2d9e0fca28d77309c452a05845122b758142977c24f59912b64c43ee797723",
+  "app_bytes": 232700,
+  "app_sha256": "08c7a3b398e27ecb2009fa54b9372b99b33443ea0b5e60170c30c7692ab42a0f",
   "native_screens": 57,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -42,7 +42,8 @@
     "New unsaved projects default EQ2 to bypass OFF. Previously saved projects keep original EQ-on/off and sound. Firmware update does not wipe project storage.",
     "V1.41 corrects excessive EQ2 auto-trim (-36 dB possible at four boosts), EQ OFF dry parity, and active EQ coefficient-update cost. FM1 physical DMA and audio quality must still be verified. Peak guard only acts near clipping.",
     "V1.42 smooths OCTAVE FUZZ gain, drive, octave and tone changes at sample rate, softens the rectifier zero crossing, and replaces its periodic variable division with a fixed reciprocal lookup. The original clipping character is retained. Real FM1 listening and DMA timing must still be verified.",
-    "V1.42 smooths OCTAVE FUZZ gain, drive, octave and tone changes at sample rate, softens the rectifier zero crossing, and replaces its periodic variable division with a fixed reciprocal lookup. The original clipping character is retained. Real FM1 listening and DMA timing must still be verified."
+    "V1.42 smooths OCTAVE FUZZ gain, drive, octave and tone changes at sample rate, softens the rectifier zero crossing, and replaces its periodic variable division with a fixed reciprocal lookup. The original clipping character is retained. Real FM1 listening and DMA timing must still be verified.",
+    "V1.43 OTA native tests demonstrate a residual LOADER.BIN recovery route, but exact official stock V15 full-session replay and device-specific physical FM1 transitions have not been validated. On a bootheader mismatch the official V15 downgrade is refused to avoid unsafe boot writes; use a validated USB ROM rescue rather than forcing an unsafe flash."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -154,7 +155,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "Storage recovery: restricted verified legacy WIPE ALL, last-project delete, recoverable catalog errors; persistent AUTO LOAD PROJECT default NEW, backward-compatible device journal",
+  "release_feature": "OTA staging compatibility: recognizable legacy LOADER.BIN recovery; stock V15 bootheader mismatch protection; explicit OTA error code",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -256,5 +257,12 @@
     "controls": "per-sample ramp from UI-precomputed targets",
     "division_in_audio_ratio": false,
     "physical_fm1_verified": false
+  },
+  "ota_v143": {
+    "legacy_stage_policy": "Recognized bounded LOADER.BIN inner archive may be reclaimed without executing its body; unrecognized staging remains protected",
+    "official_v15": "Exact original V15 digest and pinned stock loader, plus on-board 16-KiB boothead match (reject -5 otherwise)",
+    "on_screen_errors": "OTA PREP FAILED, numeric native error",
+    "physical_validation": false,
+    "old_release_constraint": "Existing V1.42 units run their old OTA code until reinstalled via a working route"
   }
 }

@@ -1,3 +1,12 @@
+# RUPTURE V1.43 — Cross-Firmware OTA compatibility and stock-restore safety
+
+- Accept and safely reclaim a bounded, structurally recognized legacy `LOADER.BIN` left in the OTA staging region by a previously installed compatible firmware. Previously the exact SHA allowlist only recognized ETCH's own staged loader or official V15, so some FM1 units failed OTA PREP with a valid loader from another firmware already present.
+- Never run that foreign residual loader. Validate the new incoming package normally, stage the pinned trusted loader for app-only updates, protect reserved areas, and retain failure-safe cleanup.
+- Reject any official V15 *full-flash* handoff when the actual installed 16-KiB boothead is different from the requested stock package (`-5`). This prevents a blind bootloader rewrite. Normal app-only packages remain independent of the source boothead.
+- Show the numeric OTA failure code on the FM1 UPDATE screen, to distinguish staging refusal `-15`, boothead mismatch `-5`, stock validation `-20` and other errors instead of only `OTA PREP FAILED`.
+- Add native C regression tests for blank stage, recognizable residual stage, unknown residual data, damaged staging headers and protected boothead comparison.
+- **Limitation:** official stock V15 package is not bundled or replayed in these tests. Physical compatibility and older installed V1.42 instances still require a known-good OTA or ROM rescue path; software tests are not physical proof.
+
 # RUPTURE V1.42 — OCTAVE FUZZ Audio Stability
 
 - Fixed a reproducible audible-scale PCM discontinuity during rapid DRIVE/OCTAVE/TONE adjustments, without changing the existing controls or project data.

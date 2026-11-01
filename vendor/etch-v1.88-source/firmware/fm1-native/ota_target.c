@@ -12,6 +12,7 @@ static void ota_matrix_paint_band(uint8_t band){
  (void)band;
  RuState state={0};state.page=RU_PAGE_UPDATE;state.k[0]=ota_matrix_percent;state.selected=ota_matrix_step;
  state.show_battery=1;state.battery=-1;
+ state.ota_error=(uint16_t)(ota_matrix_error<0 ? -ota_matrix_error : ota_matrix_error);
  ru_render(&state);ru_commit();
 #else
  /* Scope's DMA canvas is safely reused: synthesis and audio DMA were
