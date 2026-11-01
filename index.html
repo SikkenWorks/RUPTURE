@@ -540,7 +540,7 @@ class Engine {
     finally{await back.link.close();}
     const unchangedIdentity=initial.id.text===pkg.product;
     if(unchangedIdentity && pkg.kind==='rupture'){
-      this.progress('done',100,'OTA acknowledged; confirm RUPTURE V1.32 on FM1 screen');
+      this.progress('done',100,'OTA acknowledged; confirm RUPTURE V1.36 on FM1 screen');
       this.log('OTA loader acknowledged WRITE and the FM1 reconnected as '+pkg.product+'. The identity is unchanged across RUPTURE versions and does not prove V1.1 is running. Confirm V1.1 on the FM1 screen.');
     }else{
       this.progress('done',100,'Verified firmware identity: '+pkg.product);
@@ -594,7 +594,7 @@ function showDevice(d){if(window.ETCHOta.modelOf(d.id.text)!=='FM-1'){void d.lin
 $('choose-pair').onclick=async()=>{try{const pair=engine.pairs(false)[Number($('pair').value)];if(!pair)throw Error('MIDI pair missing.');const d=await engine.find(null,pair);if(!d)throw Error('No FM1 identity reply.');showDevice(d)}catch(e){$('status').textContent=e.message}};
 $('connect').onclick=connect;
 $('install').onclick=async()=>{if(busy||!pkg||!connected)return;if(!$('confirm').checked){$('status').textContent='Confirm your backup and recovery preparation.';return;}
- if(!confirm('Install experimental RUPTURE V1.32 on the connected FM1?'))return;
+ if(!confirm('Install RUPTURE V1.36 on the connected FM1?'))return;
  lastDisplayedProgress=0;$('progress').value=0;busy=true;$('install').disabled=true;$('connect').disabled=true;
  try{await engine.install(connected,pkg);$('status').textContent='Install acknowledged; FM1 identity verified: '+pkg.product;stage('done',100,'Identity verified');}
  catch(e){$('status').textContent='Stopped: '+e.message;log('STOP: '+e.message)}
