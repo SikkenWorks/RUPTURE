@@ -1,5 +1,5 @@
 {
   "what": "A monophonic bass synth on Cycle Exchange Synthesis: two sub-oscillators, a ladder filter, Channel EQ, eight effects from MOSFET drive to octave fuzz, a step sequencer up to 128 steps and an arpeggiator.",
   "author": "Joppe Sikken (SikkenWorks)",
-  "kinds": ["synth"],
+  "kinds": ["synth"]
 }
