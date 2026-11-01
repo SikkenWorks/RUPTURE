@@ -1,26 +1,26 @@
 # RUPTURE
 
-**Cycle Exchange Synthesis (CXS)**  
+**Cycle Exchange Synthesis (CXS) + bandlimited SAW**  
 A monophonic bass synthesizer for the M-VAVE FM1.  
 **SIKKENWORKS | Born out of passion.**
 
-RUPTURE is a playable, programmable bass instrument created for a hands-on workflow on the FM1. Its custom CXS synthesis engine, two independent suboscillators, modulation, filter and effects are controlled directly from the hardware.
+RUPTURE is a playable, programmable bass instrument created for a hands-on workflow on the FM1. Its selectable CXS/SAW main oscillator, two independent suboscillators, modulation, filter and effects are controlled directly from the hardware.
 
 ## Synthesis and controls
 
-- **PLAY:** K1 PRESSURE, K2 BALANCE, K3 MEMORY, K4 DENSITY control the main CXS sound.
+- **PLAY:** ALGORITHM selects the main oscillator, **CXS** or **SAWTOOTH**. The oscillator name now appears in the header between PLAY and OCT, leaving a clean waveform and non-overlapping knobs. In **CXS** K1 PRESSURE · K2 BALANCE · K3 MEMORY · K4 DENSITY. In **SAW**, these same four knobs actually shape the sound: K1 **BRIGHT** (warm/bright blend), K2 **EDGE** (soft saturation), K3 **BODY** (low-frequency reinforcement), K4 **LEVEL** (output). The four parameter values are shared with the CXS macros and saved through the existing project record, so tweaking SAW changes the values that CXS displays when switched back. Both modes pass through SOUND SHAPE, FILTER and FX. SAW uses precomputed bandlimited waveform tables instead of an additional CXS carrier. At extreme BRIGHT/EDGE/BITE/PUNCH levels, an adaptive harmonic guard blends existing lower-harmonic SAW tables to reduce aliasing and the unwanted high-pitched tone. Normal settings keep the original V1.47 SAW samples unchanged.
 - **HOME:** a short press cycles through PLAY, SOUND SHAPE, SUB OSC 1 and SUB OSC 2. A long press returns to PLAY.
-- **SOUND SHAPE:** K1 WEIGHT, K2 EDGE, K3 BITE, K4 PUNCH.
-- **SUB OSC 1 / SUB OSC 2:** independent TYPE (OFF/CXS/CLASSIC), OCTAVE, DETUNE and DRIFT controls. ALGORITHM adjusts each SUB's BLEND. CXS and CLASSIC feed the existing audio engine; the CLASSIC route bypasses the main CXS filter while retaining envelope and effects.
+- **SOUND SHAPE:** K1 WEIGHT, K2 EDGE, K3 BITE, K4 PUNCH. In SAW mode all four now have dedicated, continuously audible sound shaping: WEIGHT adds low-end body, EDGE adds bounded colour, BITE adds harmonic saturation, PUNCH accents the repeating saw edge even after the note has been sustained for many cycles. On CXS the original algorithms are unchanged. There are no additional DSP buffers or oscillator voices, and the saved knob values retain their existing project format. ALGORITHM also selects the main oscillator here; it never changes SUB BLEND outside SUB pages.
+- **SUB OSC 1 / SUB OSC 2:** independent TYPE (OFF/CXS/CLASSIC/SQUARE/SAW), OCTAVE, DETUNE and DRIFT controls. ALGORITHM adjusts each SUB's BLEND. SQUARE and SAW are bandlimited, single-lookup oscillator types. All new types feed the existing audio engine; CLASSIC alone retains its historical post-filter routing. No additional synth voices or runtime allocations.
 - **FILTER:** resonant filtering and tone shaping. **ENVELOPE:** ADSR. **LFO:** modulation of the CXS synthesis engine. **EDIT:** Channel EQ 2.0 with LOW shelf (80 Hz), BODY bell (250 Hz), BITE bell (1.5 kHz), AIR shelf (5 kHz). Gains are ±9 dB in 0.5 dB steps. Each band has an adjustable frequency; BODY/BITE have Q 0.3–8.0 to change peak width.
 - **NOTE MEMORY:** six-note monophonic memory, LAST/HIGH/LOW priority, LEGATO, GLIDE, pitch bend and octave shifting using OCT−/OCT+.
 - **FX:** REVERB, DELAY, CHORUS, MOSFET, COMPRESSOR, TILT EQ, OCTAVE FUZZ and SANDPAPER. Use SELECT to choose an effect, SEL to enable or bypass it, and K1–K4 to change its parameters.
 
-**Channel EQ 2.0:** Press EDIT. The initial GAIN page maps K1 LOW, K2 BODY, K3 BITE and K4 AIR. Press EDIT again to cycle GAIN → FREQUENCY → PEAK WIDTH (Q) → GAIN. SEL does not switch EQ pages. On FREQUENCY, K1–K4 choose the center or shelf frequencies of the four bands. On PEAK WIDTH, K2 sets BODY Q and K3 sets BITE Q; higher Q gives a narrower peak and lower Q a wider one. The response graph is calculated from the actual filter coefficients. ALGORITHM explicitly switches between EQ2 and LEGACY EQ; older saved projects stay on LEGACY until changed. New projects use EQ2. SAVE stores selected EQ version, gains, frequencies and Q in PJT34 while preserving older project formats. Changes are smoothed, EQ2 uses global post-mix filtering, and a signal-dependent peak guard intervenes only near clipping; EQ boosts are not offset by a global volume cut.
+**Channel EQ 2.0:** Press EDIT. The initial GAIN page maps K1 LOW, K2 BODY, K3 BITE and K4 AIR. Press EDIT again to cycle GAIN → FREQUENCY → PEAK WIDTH (Q) → GAIN. SEL does not switch EQ pages. On FREQUENCY, K1–K4 choose the center or shelf frequencies of the four bands. On PEAK WIDTH, K2 sets BODY Q and K3 sets BITE Q; higher Q gives a narrower peak and lower Q a wider one. The response graph is calculated from the actual filter coefficients. ALGORITHM explicitly switches between EQ2 and LEGACY EQ; older saved projects stay on LEGACY until changed. New projects have Channel EQ completely OFF/bypassed by default; EQ2 remains available whenever enabled. SAVE stores selected EQ version, gains, frequencies and Q in PJT34 while preserving older project formats. Changes are smoothed, EQ2 uses global post-mix filtering, and a signal-dependent peak guard intervenes only near clipping; EQ boosts are not offset by a global volume cut.
 
 **Ladder performance and safety:** FILTER → LADDER selects the four-pole resonant low-pass with a nominal 24 dB/octave slope. The ladder has an optimized, bounded Q15 signal path to reduce audio-interrupt work. AUDIO DIAGNOSTICS exposes LATE and GUARD measurements for hardware diagnosis. When the FM1 detects repeated missed audio DMA deadlines it deliberately mutes audio and shows AUDIO STOP / DMA TIMING FAULT, while true boot/storage recovery remains SAFE MODE. Do not mistake either warning for a successful performance run. Confirm operation under maximum RESONANCE, CUTOFF, DRIVE and FX on actual hardware, and keep a working recovery route.
 
-**Navigation:** SELECT changes the selection or current step. SEL opens or confirms an action. K1–K4 edit the functions shown on screen. ALGORITHM works only where it has an explicit assignment, including editing names, extending sequencer sustain, scrolling HELP and changing SUB BLEND. Elsewhere ALGORITHM is inactive rather than duplicating a parameter knob.
+**Navigation:** SELECT changes the selection or current step. SEL opens or confirms an action. K1–K4 edit the functions shown on screen. ALGORITHM works only where it has an explicit assignment, including selecting CXS/SAW on PLAY and SOUND SHAPE, editing names, extending sequencer sustain, scrolling HELP and changing SUB BLEND on SUB screens. Elsewhere ALGORITHM is inactive rather than duplicating a parameter knob.
 
 ## Sequencer and arpeggiator
 
@@ -30,7 +30,7 @@ The arpeggiator offers several direction and riff modes, with rate, octave range
 
 ## Save, projects and sequences
 
-RUPTURE offers **12 named project slots** and **8 sequence slots per project**, subject to flash capacity. Use SAVE on a HOME page to open PROJECTS or SAVE in SEQ to open the sequence slots. Navigate with SELECT:
+RUPTURE offers **12 named project slots** and **8 sequence slots per project**, subject to flash capacity. Press SAVE from any normal screen (including FILTER, FX, EQ2, GLO and SETTINGS) to open PROJECTS; SEQ and SEQ SLOTS retain the independent sequence-saving menu. SAVE within the name editor commits the name. OTA, recovery and loading screens do not interrupt their own protected operations. Navigate with SELECT:
 
 - On an empty slot, **SEL or SAVE** opens the name editor with a blank field, including old factory placeholders `ETCH24`–`ETCH31`. Use SELECT for the cursor, ALGORITHM for characters, and SAVE to store the name **and actual note data**. Do not remove power before the save completes.
 - On an occupied slot, **SEL** requests confirmation to open. **SAVE** stores current content in that slot, with overwrite confirmation when it is a different slot from the one currently in use.
@@ -47,6 +47,8 @@ SETTINGS contains **MASTER VOLUME** (device-wide, 0–200%), **AUTO SAVE**, **AU
 **AUTO LOAD PROJECT** opens a list of **NEW** and only the actually stored projects. NEW is the default, even when saved projects exist. SELECT chooses a candidate and SEL stores the selection. If no projects exist, only NEW is offered. On startup, a selected saved project restores its sound and sequencer; if that project has been removed, the firmware starts NEW instead. This is independent of AUTO SAVE.
 
 **WIPE ALL** requires a clear YES/NO choice, defaults to NO and is irreversible. It erases all known RUPTURE and legacy firmware user-storage sectors (`0x97000` through `0xDFFFF`) and verifies they are blank through a dedicated bounded erase/readback path. The ordinary SAVE path cannot erase old firmware storage areas. It never erases the bootloader, application, update loader or OTA staging and cannot promise to erase unrecognized, undocumented data elsewhere in flash. Back up your work before confirming.
+
+**SCREENSAVER ANIMATION:** after reaching frame 63, the existing Utrecht/ravine animation holds its final frame for about 2.2 seconds, plays backward to frame 0 and loops forward again. Only the frame index changes; no framebuffer, DSP processing or additional image assets. Any input ends it.
 
 **OTHER** contains **SCREENSAVER**. Press SEL to open its dedicated settings screen. SELECT chooses ENABLED or START AFTER; SEL toggles ENABLED, while K1 changes the inactivity delay when START AFTER is selected. The default is **ON / 30 seconds**. Available delays are 15, 30, 45, 60, 90, 120, 180 and 300 seconds. Both settings persist across restarts through the device-global journal.
 

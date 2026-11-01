@@ -21,10 +21,10 @@ int main(void){
  assert(ru_save_destination(RU_PAGE_PROJECTS)==RU_SAVE_PROJECT_MENU);
  assert(ru_save_destination(RU_PAGE_SEQ)==RU_SAVE_SEQUENCE_MENU);
  assert(ru_save_destination(RU_PAGE_SEQ_SLOTS)==RU_SAVE_SEQUENCE_MENU);
- assert(ru_save_destination(RU_PAGE_FX)==RU_SAVE_NO_MENU);
+ assert(ru_save_destination(RU_PAGE_FX)==RU_SAVE_PROJECT_MENU);
  assert(ru_save_destination(RU_PAGE_NAME)==RU_SAVE_NO_MENU);
- assert(ru_save_destination(RU_PAGE_GLO)==RU_SAVE_NO_MENU);
+ assert(ru_save_destination(RU_PAGE_GLO)==RU_SAVE_PROJECT_MENU);
  assert(ru_save_destination(RU_PAGE_SAFE)==RU_SAVE_NO_MENU);
- puts("PASS: SAVE opens PROJECTS from all four HOME pages; SEQ remains separate; FX chord guarded");
+ puts("PASS: SAVE routes HOME and FX/GLO to PROJECTS; SEQ remains separate; FX chord guarded");
  return 0;
 }

@@ -7,9 +7,12 @@
 #define RUPTURE_SUBOSC_H
 #include <stdint.h>
 #include "native_cxs_q15.h"
+#include "rupture_bandwaves.h"
 #define RU_SUB_OFF 0u
 #define RU_SUB_CXS 1u
 #define RU_SUB_CLASSIC 2u
+#define RU_SUB_SQUARE RU_WAVE_SQUARE
+#define RU_SUB_SAW RU_WAVE_SAW
 #define RU_SUB_MIX_MAX 16384u /* each sub up to 50%; main always unity before peak guard */
 typedef struct {
  RuptureCXSQ15 cxs;
@@ -59,7 +62,7 @@ static inline int32_t ru_sub_classic_read(uint32_t phase,uint32_t increment){
 }
 static inline int32_t ru_sub_tick(RuSubState *s,uint8_t type,uint8_t oct,uint8_t detune,uint8_t drift,
  uint32_t base,uint8_t pressure,uint8_t balance,uint8_t memory,uint8_t density){
- if(type>2u)type=0u;
+ if(type>4u)type=0u;
  /* Before a TYPE switch fade down the old voice, avoiding hard swaps. */
  if(s->running_type!=type && s->mix==0u){
   s->running_type=type;s->drift_q16=s->drift_target_q16=s->drift_residue=0;
@@ -83,6 +86,8 @@ static inline int32_t ru_sub_tick(RuSubState *s,uint8_t type,uint8_t oct,uint8_t
  s->drift_residue-=drift_step*256;
  s->drift_q16+=drift_step;
  if(s->running_type==RU_SUB_CLASSIC)return ru_sub_classic_read(s->phase,increment);
+ if(s->running_type==RU_SUB_SQUARE||s->running_type==RU_SUB_SAW)
+  return ru_bandwave_read(s->running_type,s->phase,increment);
  s->cxs.increment=increment;
  rupture_q15_params(&s->cxs,pressure,balance,memory,density);
  s->cxs.edge=50u;

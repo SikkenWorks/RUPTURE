@@ -15,6 +15,12 @@ try:
   subprocess.run([str(exe),str(i),str(temp)],check=True)
   Image.open(temp).save(output,optimize=True)
   temp.unlink()
+ for pg,mode,label in [(0,'saw','play-saw'),(27,'saw','sound-shape-saw'),
+                       (29,'square','sub-osc-1-square'),(29,'saw','sub-osc-1-saw'),
+                       (30,'square','sub-osc-2-square'),(30,'saw','sub-osc-2-saw')]:
+  output=root/'ui/screens'/(label+'.png');temp=output.with_suffix('.pgm')
+  subprocess.run([str(exe),str(pg),str(temp),mode],check=True)
+  Image.open(temp).save(output,optimize=True);temp.unlink()
  for title in ('eq2-gain','eq2-freq','eq2-width'):
   output=root/'ui/screens'/(title+'.png');temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),title,str(temp)],check=True)

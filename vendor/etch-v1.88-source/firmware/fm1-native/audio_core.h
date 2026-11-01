@@ -39,7 +39,7 @@ struct etch_native_audio {
 #ifdef RUPTURE_BUILD
  RuptureCXSQ15 cxs; /* main CXS carrier */
  RuSubState sub[2]; /* two independent monophonic subs, not extra note voices */
- uint32_t cxs_lfo_phase;int32_t cxs_body_low;
+ uint32_t cxs_lfo_phase;int32_t cxs_body_low;int32_t saw_low;uint16_t main_saw_mix;
  uint32_t mono_current_inc,mono_target_inc,mono_glide_left;
  uint16_t mono_glide_ms;uint8_t mono_priority,mono_legato,mono_bend_range;
 #endif
@@ -65,7 +65,7 @@ struct etch_native_audio {
 };
 struct etch_native_controls {uint16_t morph,depth,gain;
 #ifdef RUPTURE_BUILD
- uint8_t cxs_pressure,cxs_balance,cxs_memory,cxs_density;
+ uint8_t cxs_pressure,cxs_balance,cxs_memory,cxs_density,main_wave;
  uint8_t cxs_weight,cxs_edge,cxs_bite,cxs_punch;
  uint8_t sub_type[2],sub_octave[2],sub_detune[2],sub_drift[2],sub_blend[2];
  uint8_t note_priority,note_legato,note_bend_range;uint16_t note_glide_ms;

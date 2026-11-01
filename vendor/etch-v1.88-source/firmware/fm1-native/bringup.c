@@ -15,6 +15,8 @@
 #include "rupture_patch_state.h"
 #include "rupture_shape_state.h"
 #include "rupture_sub_state.h"
+#include "rupture_main_state.h"
+#include "rupture_saver_loop.h"
 #include "rupture_performance_state.h"
 #endif
 #include "hal/fm1_timer.h"
@@ -662,7 +664,8 @@ static uint8_t ru_manager_confirmation=0u,ru_manager_status=0u,ru_manager_seq_ma
 static uint8_t ru_manager_name=0u,ru_about_scroll=0u;
 static char ru_manager_seq_names[8][13];
 static uint32_t ru_last_user_activity_ms=0u,ru_saver_last_frame_ms=0u;
-static uint8_t ru_saver_frame=0u,ru_saver_active=0u;
+static uint8_t ru_saver_frame=0u,ru_saver_active=0u,ru_saver_reverse=0u;
+static uint32_t ru_saver_hold_until_ms=0u;
 static uint32_t ru_global_gain_changed_ms=0u,ru_global_gain_attempt_ms=0u;
 static uint8_t rupture_glo_screen,rupture_glo_selected,rupture_help_page;
 static uint8_t ru_page=RU_PAGE_PLAY,ru_prev=RU_PAGE_PLAY,ru_menu=0,ru_focus=0,ru_seq_slot=1;
@@ -673,8 +676,9 @@ static uint8_t ru_use_staged_name=0u;
 static const char ru_name_alphabet[]=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
 
 static uint8_t ru_pressure=58,ru_balance=50,ru_memory=52,ru_density=68;
+static uint8_t ru_main_wave=0u; /* 0 CXS, 1 SAW; preserved per project/preset */
 static uint8_t ru_weight=0u,ru_edge=50u,ru_bite=0u,ru_punch=0u;
-/* SUB pages: TYPE OFF/CXS/CLASSIC, OCT -2/-1/0/+1, DETUNE +/-50 cents, DRIFT 0..100. */
+/* SUB pages: TYPE OFF/CXS/CLASSIC/SQUARE/SAW, OCT -2/-1/0/+1, DETUNE +/-50 cents, DRIFT 0..100. */
 static uint8_t ru_sub_type[2]={0u,0u};
 static uint8_t ru_sub_oct[2]={1u,1u};
 static uint8_t ru_sub_detune[2]={50u,54u};
@@ -1156,6 +1160,7 @@ static void native_new_riff(uint8_t slot,int32_t detents){
 
 static void native_parameter_publish(void){
 #ifdef RUPTURE_BUILD
+ native_controls.main_wave=ru_main_wave;
  native_controls.cxs_weight=ru_weight;native_controls.cxs_edge=ru_edge;
  native_controls.cxs_bite=ru_bite;native_controls.cxs_punch=ru_punch;
  for(uint8_t z=0u;z<2u;z++){
@@ -1339,6 +1344,9 @@ static void native_new_project(void){
  ru_eq2_apply();
 #endif
  native_mod_mode=0;native_mod_ratio=3;
+#ifdef RUPTURE_BUILD
+ ru_main_wave=0u; /* NEW always starts at CXS */
+#endif
  native_page=ETCH_UI_PLAY;native_draw=0;
 }
 
@@ -1440,6 +1448,7 @@ static void native_preset_dsp_capture(uint8_t slot){
  /* These four values are never encoded into legacy waveform/FX controls. */
  ru_shape_store(v,ru_weight,ru_edge,ru_bite,ru_punch);
  ru_sub_state_store(v,ru_sub_type,ru_sub_oct,ru_sub_detune,ru_sub_drift);
+ ru_main_state_store(v,ru_main_wave);
  ru_perf_store(v,rupture_master_pct,ru_note_priority,ru_note_legato,ru_note_glide_ms,ru_note_bend);
 #endif
 }
@@ -1456,6 +1465,7 @@ static void native_preset_dsp_restore(uint8_t slot){
  /* Legacy projects had no SUB tag. Restore both SUBs OFF rather than carrying
   * another project's active subs across a LOAD or cold boot. */
  (void)ru_sub_state_restore(v,ru_sub_type,ru_sub_oct,ru_sub_detune,ru_sub_drift);
+ ru_main_wave=ru_patch_is_cxs(&native_library.patches[slot])?ru_main_state_restore(v):0u;
  /* Tagged CXS preset performance only. Older projects get safe defaults.
   * This is project/preset-snapshot persistence, not a separate global flash write. */
  /* The historical per-preset volume byte remains readable but never
@@ -1615,7 +1625,8 @@ static void native_patch_load(uint8_t pattern_prepared){
  fm1_irq_off();native_controls.morph=p->morph>32767?32767:p->morph;native_controls.depth=p->depth>32767?32767:p->depth;fm1_irq_enable_all();
 #ifdef RUPTURE_BUILD
  if(ru_patch_cxs_load(p,&ru_pressure,&ru_balance,&ru_memory,&ru_density)){
-  native_controls.cxs_pressure=ru_pressure;native_controls.cxs_balance=ru_balance;
+  native_controls.main_wave=ru_main_wave;
+ native_controls.cxs_pressure=ru_pressure;native_controls.cxs_balance=ru_balance;
   native_controls.cxs_memory=ru_memory;native_controls.cxs_density=ru_density;
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
  native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
@@ -2682,7 +2693,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;
  v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
@@ -3850,7 +3861,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
  }
  else if(ru_page==RU_PAGE_SUB1 || ru_page==RU_PAGE_SUB2){
   uint8_t z=(uint8_t)(ru_page-RU_PAGE_SUB1);
-  if(control==0u)ru_sub_type[z]=(uint8_t)ui_bound((int32_t)ru_sub_type[z]+amount,0,2);
+  if(control==0u)ru_sub_type[z]=(uint8_t)ui_bound((int32_t)ru_sub_type[z]+amount,0,4);
   else if(control==1u)ru_sub_oct[z]=(uint8_t)ui_bound((int32_t)ru_sub_oct[z]+amount,0,3);
   else if(control==2u)ru_sub_detune[z]=(uint8_t)ui_bound((int32_t)ru_sub_detune[z]+amount,0,100);
   else if(control==3u)ru_sub_drift[z]=(uint8_t)ui_bound((int32_t)ru_sub_drift[z]+amount,0,100);
@@ -4203,14 +4214,14 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(native_seq_recording){native_seq_run=1u;for(uint16_t st=0;st<ETCH_SEQ_STEPS;st++)native_seq_rec_touched[st]=0u;}
   first_frame=1u;
  }
- /* SAVE on *every* HOME page (MAIN/SHAPE/SUB1/SUB2) opens the
-  * same named 12-project list, without writing until explicit SEL confirm.
-  * SAVE in SEQ keeps the independent 8-sequence library. */
- if(ru_page!=RU_PAGE_STORAGE&&ru_page!=RU_PAGE_STORAGE_PROJECTS&&
-    ru_page!=RU_PAGE_STORAGE_ACTIONS&&ru_page!=RU_PAGE_STORAGE_SEQUENCES&&
-    ru_page!=RU_PAGE_STORAGE_SEQ_ACTIONS&&ru_page!=RU_PAGE_OTHER&&
-    ru_page!=RU_PAGE_WIPE_ALL&&ru_page!=RU_PAGE_ABOUT&&ru_page!=RU_PAGE_BUG_REPORT&&
-    ru_save_pressed(pressed,buttons) && !((pressed&((1u<<3)|(1u<<9)))==((1u<<3)|(1u<<9)) && (ru_page==RU_PAGE_PROJECTS||ru_page==RU_PAGE_SEQ_SLOTS))){
+ /* Physical SAVE opens the PROJECTS browser from every ordinary screen.
+  * SEQ/SEQ SLOTS retain the separate sequence save flow. The NAME editor
+  * keeps SAVE-to-commit; OTA/recovery views cannot be interrupted.
+  * Only physical SELECT inside the browser commits a new project slot. */
+ if(ru_save_destination(ru_page)!=RU_SAVE_NO_MENU &&
+    ru_save_pressed(pressed,buttons) &&
+    !((pressed&((1u<<3)|(1u<<9)))==((1u<<3)|(1u<<9)) &&
+      (ru_page==RU_PAGE_PROJECTS||ru_page==RU_PAGE_SEQ_SLOTS))){
   uint8_t target=ru_save_destination(ru_page);
   if(ru_page==RU_PAGE_PROJECTS){
    /* Physical SAVE always stores, regardless of ALGORITHM's previous choice. */
@@ -4496,7 +4507,10 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
     uint8_t z=(uint8_t)(ru_page-RU_PAGE_SUB1);
     ru_sub_blend_amount[z]=(uint8_t)ui_bound((int32_t)ru_sub_blend_amount[z]+alg,0,100);
     ru_mark_dirty();first_frame=1u;
-   }/* ALGORITHM is inert on every page without a dedicated mapping. */
+   }else if(ru_page==RU_PAGE_PLAY||ru_page==RU_PAGE_SHAPE){
+    ru_main_wave=(uint8_t)(alg>0?1u:0u);
+    ru_mark_dirty();first_frame=1u;
+   }/* Other pages retain their own ALGORITHM mappings. */
   }
  }
  if(ru_page==RU_PAGE_SAVER_OPTIONS && dm)ru_adjust(0,dm);
@@ -4691,6 +4705,7 @@ void fm1_cstart(void){
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
 #endif
 #ifdef RUPTURE_BUILD
+ native_controls.main_wave=ru_main_wave;
  native_controls.cxs_pressure=58u;native_controls.cxs_balance=50u;
  native_controls.cxs_memory=52u;native_controls.cxs_density=68u;
 #endif
@@ -5050,12 +5065,12 @@ void fm1_cstart(void){
        native_updating||native_safe||native_tripped||native_storage_boot.phase);
     if(active||!ru_last_user_activity_ms){
      ru_last_user_activity_ms=etch_ms?etch_ms:1u;
-     if(ru_saver_active){ru_saver_active=0u;ru_saver_frame=0u;first_frame=1u;}
+     if(ru_saver_active){ru_saver_active=0u;ru_saver_frame=0u;ru_saver_reverse=0u;ru_saver_hold_until_ms=0u;first_frame=1u;}
     }else if(ru_screensaver_enabled&&(uint32_t)(etch_ms-ru_last_user_activity_ms)>=(uint32_t)ru_saver_delay_seconds[ru_saver_delay_index]*1000u){
-     if(!ru_saver_active){ru_saver_active=1u;ru_saver_frame=0u;ru_saver_last_frame_ms=etch_ms;first_frame=1u;}
+     if(!ru_saver_active){ru_saver_active=1u;ru_saver_frame=0u;ru_saver_reverse=0u;ru_saver_hold_until_ms=0u;ru_saver_last_frame_ms=etch_ms;first_frame=1u;}
      else if((uint32_t)(etch_ms-ru_saver_last_frame_ms)>=150u){
       ru_saver_last_frame_ms=etch_ms;
-      if(ru_saver_frame<63u){ru_saver_frame++;first_frame=1u;}
+      if(ru_saver_step(&ru_saver_frame,&ru_saver_reverse,&ru_saver_hold_until_ms,etch_ms))first_frame=1u;
      }
     }
    }

@@ -21,9 +21,9 @@ static inline uint8_t ru_sub_state_valid(const struct etch_preset_dsp *v){
  if(!v || !(v->spectral_wave&RU_SUB_STATE_TAG))return 0u;
  if(v->living.depth || v->evolution.depth || v->evolution.mode || v->evolution.sync)return 0u;
  for(uint8_t i=0;i<4u;i++)if(v->matrix.route[i].source || v->matrix.route[i].target)return 0u;
- return (uint8_t)(v->matrix.route[0].amount<=2u &&
+ return (uint8_t)(v->matrix.route[0].amount<=4u &&
   v->matrix.route[1].amount<=3u && v->matrix.route[2].amount<=100u &&
-  v->matrix.route[3].amount<=100u && v->living.rate<=2u &&
+  v->matrix.route[3].amount<=100u && v->living.rate<=4u &&
   v->living.color<=3u && v->living.vary<=100u && v->evolution.rate<=100u);
 }
 static inline void ru_sub_state_store(struct etch_preset_dsp *v,
@@ -33,12 +33,12 @@ static inline void ru_sub_state_store(struct etch_preset_dsp *v,
  for(uint8_t i=0;i<4u;i++){
   v->matrix.route[i].source=0u;v->matrix.route[i].target=0u;
  }
- v->matrix.route[0].amount=type[0]<=2u?type[0]:0u;
+ v->matrix.route[0].amount=type[0]<=4u?type[0]:0u;
  v->matrix.route[1].amount=oct[0]<=3u?oct[0]:1u;
  v->matrix.route[2].amount=detune[0]<=100u?detune[0]:50u;
  v->matrix.route[3].amount=drift[0]<=100u?drift[0]:0u;
  v->living.depth=0u;
- v->living.rate=type[1]<=2u?type[1]:0u;
+ v->living.rate=type[1]<=4u?type[1]:0u;
  v->living.color=oct[1]<=3u?oct[1]:1u;
  v->living.vary=detune[1]<=100u?detune[1]:54u;
  v->evolution.depth=0u;

@@ -62,7 +62,7 @@
 #define RU_PAGE_COUNT 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
- uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,saver_enabled,saver_delay_index,saver_options_selected;
+ uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -163,6 +163,10 @@ static void ru_wordmark(void){
  }
 }
 static void ru_header(const char *s,const RuState *v){ru_wordmark();if(v->show_battery)ru_battery(v->battery,v->usb_power);ru_rect(7,25,226,1);ru_text(s,7,32,1);
+ /* Oscillator belongs to the header, never to the waveform/knob area.
+  * 93..148 is clear after PLAY/SOUND SHAPE and before OCT at x=166. */
+ if(v->page==RU_PAGE_PLAY || v->page==RU_PAGE_SHAPE)
+  ru_text(v->main_wave?"SAWTOOTH":"CXS",93,32,1);
  {char oct[7]={'O','C','T',' ',0,0,0};
   if(v->octave==0){oct[4]='0';}
   else{oct[4]=v->octave<0?'-':'+';
@@ -306,7 +310,7 @@ static uint8_t ru_knob_normal(const RuState *v,int i){
  case RU_PAGE_SETTINGS: if(i==0)val=val/2u;break;
  case RU_PAGE_SHAPE:break;
  case RU_PAGE_SUB1:case RU_PAGE_SUB2:
-   if(i==0)val=val*50u;else if(i==1)val=val*100u/3u;break;
+   if(i==0)val=val*25u;else if(i==1)val=val*100u/3u;break;
  case RU_PAGE_FX:if(v->fx_selected==0u&&i==0)val=val*50u;else if((v->fx_selected==1u||v->fx_selected==2u)&&i==2)val=val*100u;else if(v->fx_selected==3u&&i==3)val=val*25u;break;
  case RU_PAGE_EQ:if(i<3)val=val*100u/200u;else val=val/2u;break;
  case RU_PAGE_ENV:if(i==0||i==1||i==3)val=val/100u;break;
@@ -356,7 +360,7 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  }txt=buf[i];}
  if(v->page==RU_PAGE_SETTINGS&&i==0){ru_uint(v->master,buf[i]);int q=ru_strlen(buf[i]);if(q<10){buf[i][q]='%';buf[i][q+1]=0;}txt=buf[i];}
  if((v->page==RU_PAGE_GUIDE||v->page==RU_PAGE_KEYLOCK)&&i==3){static const char *const chord[]={"OFF","TRIAD","SEVENTH"};txt=chord[v->k[3]%3];}
- if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==0){static const char *const kinds[]={"OFF","CXS","CLASSIC"};txt=kinds[v->k[0]%3u];}
+ if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==0){static const char *const kinds[]={"OFF","CXS","CLASSIC","SQUARE","SAW"};txt=kinds[v->k[0]%5u];}
  if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==1){static const char *const octs[]={"-2","-1","0","+1"};txt=octs[v->k[1]%4u];}
  if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==2){int n=(int)v->k[2]-50; char *t=buf[i];int off=0;if(n<0){t[off++]='-';n=-n;}else t[off++]='+';char digs[8];ru_uint((uint32_t)n,digs);for(int z=0;digs[z];z++)t[off++]=digs[z];t[off++]='C';t[off]=0;txt=t;}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==0){static const char *const pr[]={"LAST","HIGH","LOW"};txt=pr[v->k[0]%3];}
@@ -373,7 +377,9 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  if(v->page==RU_PAGE_SEQ_SLOTS&&i==0){ru_uint(v->seq_slot,buf[i]);txt=buf[i];}
  if(v->page==RU_PAGE_SEQ_SLOTS&&i==1)txt=v->k[1]?"SAVE":"LOAD";
  int x=v->page==RU_PAGE_SETTINGS?120:((i%2)?176:64),
- y=v->page==RU_PAGE_SETTINGS?123:((i/2)?181:105);ru_knob(x,y,v->animate?v->knob_visual[i]:ru_knob_normal(v,i));ru_center(ru_knob_labels[v->page==RU_PAGE_FX?(v->fx_selected<4u?(RU_PAGE_REVERB+v->fx_selected):v->fx_selected==4u?RU_PAGE_COMP:v->fx_selected==5u?RU_PAGE_TILT:v->fx_selected==6u?RU_PAGE_FUZZ:RU_PAGE_SANDPAPER):v->page][i],x,y+26,1);if(ru_strlen(txt)<=10)ru_center(txt,x,y+36,1);else {char truncated[11];int q=0;while(q<10&&txt[q]){truncated[q]=txt[q];q++;}truncated[q]=0;ru_center(truncated,x,y+36,1);} }
+ y=v->page==RU_PAGE_SETTINGS?123:((i/2)?181:105);ru_knob(x,y,v->animate?v->knob_visual[i]:ru_knob_normal(v,i));ru_center((v->page==RU_PAGE_PLAY && v->main_wave)?
+   (i==0?"BRIGHT":i==1?"EDGE":i==2?"BODY":"LEVEL"):
+   ru_knob_labels[v->page==RU_PAGE_FX?(v->fx_selected<4u?(RU_PAGE_REVERB+v->fx_selected):v->fx_selected==4u?RU_PAGE_COMP:v->fx_selected==5u?RU_PAGE_TILT:v->fx_selected==6u?RU_PAGE_FUZZ:RU_PAGE_SANDPAPER):v->page][i],x,y+26,1);if(ru_strlen(txt)<=10)ru_center(txt,x,y+36,1);else {char truncated[11];int q=0;while(q<10&&txt[q]){truncated[q]=txt[q];q++;}truncated[q]=0;ru_center(truncated,x,y+36,1);} }
 }
 /* Visual response approximates the actual fixed-cross-over 3-band + HIGH CUT DSP.
  * LOW 200 Hz, HIGH 6 kHz; peaks are not parametric until the DSP supports it. */
@@ -681,8 +687,28 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
   char blend[12];ru_uint(v->sub_blend,blend);ru_center(blend,120,171,1);
   ru_footer("ALGORITHM BLEND  HOME NEXT");return;
  }
- if(page==RU_PAGE_SHAPE){ru_frame(8,50,224,30);ru_center("CXS SOUND SHAPING",120,61,1);ru_draw_knobs(v);ru_footer("HOME SUB 1 / LONG HOLD MAIN");return;}
- if(page==RU_PAGE_PLAY){ru_frame(8,50,224,30);ru_dither(11,64,217,1,0);int py=66;for(int x=11;x<229;x++){int k=(x/12+v->macro[0]/15)%7;int y=66+((k&1)?-9:9)+(int)(v->macro[1]/22);ru_line(x==11?11:x-1,py,x,y);py=y;}ru_draw_knobs(v);ru_footer("HOME SOUND SHAPE / GLO MENU");return;}
+ if(page==RU_PAGE_SHAPE){ru_frame(8,50,224,30);ru_center("SOUND SHAPING",120,61,1);ru_draw_knobs(v);ru_footer("ALG OSC / HOME SUB 1");return;}
+ if(page==RU_PAGE_PLAY){
+  /* Keep the wave scope in 50..79: upper knobs begin at pixel y=83. */
+  ru_frame(8,50,224,30);
+  if(v->main_wave){
+   /* Actual SAW phase shape (one 1-bit ramp per period), not a CXS drawing. */
+   int prev=76;
+   for(int x=11;x<229;x++){
+    int phase=(x-11)%36,y=76-(phase*20)/35;
+    ru_line(x==11?x:x-1,prev,x,y);prev=y;
+   }
+  }else{
+   ru_dither(11,51,217,1,0);
+   int py=64;
+   for(int x=11;x<229;x++){
+    int k=(x/12+v->macro[0]/15)%7;
+    int y=64+((k&1)?-8:8)+(int)(v->macro[1]/40);
+    ru_line(x==11?11:x-1,py,x,y);py=y;
+   }
+  }
+  ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
+ }
  if(page==RU_PAGE_FOREIGN||page==RU_PAGE_FORMAT_CONFIRM){ru_center("FOREIGN DATA DETECTED",120,63,1);ru_center("FORMAT USER DATA?",120,91,1);ru_frame(18,133,98,42);ru_frame(124,133,98,42);ru_center("NO",66,150,2);ru_center("YES",173,150,2);ru_dither(v->format_yes?128:22,137,90,4,1);ru_footer("SEL CONFIRM   HOME BACK");return;}
  if(page==RU_PAGE_SAFE){
   /* A DMA deadline shutdown is not a boot/storage Safe Mode. Keep the

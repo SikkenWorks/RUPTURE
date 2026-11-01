@@ -2,11 +2,12 @@
 #include "native_project_codec.h"
 #ifdef RUPTURE_BUILD
 #include "rupture_sub_state.h"
+#include "rupture_main_state.h"
 #endif
 /* RUPTURE owns PJT32 spectral_wave bit 7 as an optional CXS sound-shape tag.
  * Original ETCH project validation is unchanged in other firmware builds. */
 #ifdef RUPTURE_BUILD
-#define ETCH_SPECTRAL_HI_INVALID(v) (((v)&0x30u)!=0u)
+#define ETCH_SPECTRAL_HI_INVALID(v) (((v)&0x20u)!=0u) /* bit4 = RUPTURE SAW; bit5 reserved */
 #define ETCH_RUPTURE_ORPHAN_SHAPE(v,lib,idx) ((((v)&0xc0u)!=0u)&&!((lib)->patches[(idx)].valid&0x80u))
 #define ETCH_RUPTURE_INVALID_SUB(v) (((v)->spectral_wave&RU_SUB_STATE_TAG) && !ru_sub_state_valid(v))
 #else

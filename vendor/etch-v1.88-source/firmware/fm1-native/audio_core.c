@@ -5,6 +5,7 @@
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
+#include "rupture_saw_tone.h"
 #include "rupture_ladder_fast.h"
 #include "rupture_filter_fast.h"
 #endif
@@ -284,6 +285,9 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
  on(s,m->pitch,m->id);
 #ifdef RUPTURE_BUILD
  rupture_q15_init(&s->cxs,target);
+ /* On a new note begin in the selected engine; no extra transition CPU. */
+ s->main_saw_mix=0u;
+ s->saw_low=0;
  ru_sub_init(&s->sub[0],target,0x3c102acd);
  ru_sub_init(&s->sub[1],target,0xd477629f);
  s->mono_current_inc=s->mono_target_inc=target;s->mono_glide_left=0u;
@@ -872,6 +876,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   group_envs[gi].release=gp?group_adsr_step(gp->release_ms):c->release_step;
   group_envs[gi].sustain=gp?gp->sustain:c->sustain_level;
  }
+#ifdef RUPTURE_BUILD
+ /* Scalar per-block control, NOT recalculated for each audio sample. */
+ const uint8_t saw_alias_guard=ru_saw_alias_strength(c->cxs_pressure,
+  c->cxs_balance,c->cxs_edge,c->cxs_bite,c->cxs_punch);
+#endif
  uint16_t living_from[8]={0},living_to[8]={0};
  native_rates(s,c,increments,modincrements);
  struct etch_native_controls locked=*c;
@@ -1158,15 +1167,44 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
     pitch_inc=(uint32_t)(shifted<1?1:shifted>0xffffffffll?0xffffffffll:shifted);
    }
    s->cxs.increment=pitch_inc;
-   rupture_q15_params(&s->cxs,c->cxs_pressure,c->cxs_balance,
-     c->cxs_memory,c->cxs_density);
-   /* EDGE is built into the CXS event smoothing, default 50 = old sound. */
-   s->cxs.edge=c->cxs_edge;
+   /* CXS parameter updates are unnecessary in steady SAW mode. */
    int32_t classic_post0=0,classic_post1=0;
    uint16_t classic_gain0=0,classic_gain1=0;
-   int32_t sample=rupture_q15_sample(&s->cxs);
-   sample=rupture_shape_sample(&s->cxs_body_low,sample,c->cxs_weight,c->cxs_bite,
-                  c->cxs_punch,s->cxs.cycles);
+   /* A single carrier: CXS or bandlimited SAW. During live mode switching,
+    * run both for a short 64-sample fade; in steady SAW only one constant-time
+    * lookup is used, while CXS phase continues without CXS computation. */
+   uint16_t target_mix=c->main_wave?32768u:0u;
+   if(s->main_saw_mix<target_mix){
+    uint32_t n=(uint32_t)s->main_saw_mix+512u;
+    s->main_saw_mix=(uint16_t)(n>target_mix?target_mix:n);
+   }else if(s->main_saw_mix>target_mix){
+    s->main_saw_mix=s->main_saw_mix>512u?(uint16_t)(s->main_saw_mix-512u):0u;
+   }
+   uint16_t blend=s->main_saw_mix;
+   int32_t sample=0;
+   if(blend!=32768u){
+    rupture_q15_params(&s->cxs,c->cxs_pressure,c->cxs_balance,
+       c->cxs_memory,c->cxs_density);
+    s->cxs.edge=c->cxs_edge;
+    sample=rupture_q15_sample(&s->cxs);
+    /* Original CXS shaping path is left bit-for-bit intact. */
+    sample=rupture_shape_sample(&s->cxs_body_low,sample,c->cxs_weight,c->cxs_bite,
+                         c->cxs_punch,s->cxs.cycles);
+   }else{
+    uint32_t old=s->cxs.phase;
+    s->cxs.phase+=pitch_inc;
+    if(s->cxs.phase<old)s->cxs.cycles++;
+   }
+   if(blend){
+    int32_t saw=ru_saw_guarded_read(s->cxs.phase,pitch_inc,saw_alias_guard);
+    saw=rupture_saw_tone(&s->saw_low,saw,c->cxs_pressure,
+                        c->cxs_balance,c->cxs_memory,c->cxs_density,c->cxs_edge,
+                        c->cxs_weight,c->cxs_bite,c->cxs_punch);
+    /* Crossfade the two independently shaped carriers. CXS remains exactly
+     * unchanged in steady CXS mode and SAW bypasses the expensive int64
+     * CXS shaper in steady SAW mode. */
+    sample=(int32_t)(((sample*(int32_t)(32768u-blend))+(saw*(int32_t)blend))>>15);
+   }
    /* Independent subs are added before filters/ADSR. With both OFF, sample
     * remains bit-identical to V1.8. No extra voices or wavetable path. */
    if(i==0u){

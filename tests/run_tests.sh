@@ -253,3 +253,19 @@ if [ -n "${RUPTURE_STOCK_V15_FWSC:-}" ] && [ -n "${RUPTURE_V143_FWSC:-}" ]; then
  vendor/etch-v1.88-source/firmware/fm1-native/native_digest.c -o /tmp/rupture_v144_stock_v15
  /tmp/rupture_v144_stock_v15 "$RUPTURE_STOCK_V15_FWSC" "$RUPTURE_V143_FWSC"
 fi
+
+# V1.45: banklimited integer oscillators, backwards-compatible PJT34 state,
+# and UI-only reverse/pause/loop screensaver from the same native code.
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD tests/test_v145_osc_saver.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c -o /tmp/rupture_v145_osc && /tmp/rupture_v145_osc
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v145_project_roundtrip.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v145_codec && /tmp/rupture_v145_codec
+
+# V1.48: ALL ordinary page SAVE routing and alias guard, including UBSan.
+"$cc" -std=c11 -O2 -Wno-unused-function tests/test_v148_save_global.c -o /tmp/rupture_v148_save && /tmp/rupture_v148_save
+"$cc" -std=c11 -O2 -fsanitize=undefined -fno-sanitize-recover=all tests/test_v148_saw_alias.c -o /tmp/rupture_v148_saw && /tmp/rupture_v148_saw

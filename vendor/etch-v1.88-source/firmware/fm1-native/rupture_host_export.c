@@ -22,6 +22,12 @@ int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.pa
   }
  }if(v.page==RU_PAGE_EQ){v.k[0]=125;v.k[1]=75;v.k[2]=110;v.k[3]=20;}if(v.page==RU_PAGE_FX){v.k[0]=1;v.k[1]=61;v.k[2]=80;v.k[3]=35;}if(v.page==RU_PAGE_GUIDE||v.page==RU_PAGE_KEYLOCK){v.k[0]=9;v.k[1]=1;v.k[2]=1;}if(v.page==RU_PAGE_SUB1){v.k[0]=0;v.k[1]=1;v.k[2]=50;v.k[3]=0;}
 if(v.page==RU_PAGE_SUB2){v.k[0]=0;v.k[1]=1;v.k[2]=54;v.k[3]=0;}
+/* Optional renderer-only native view variations, no UI code fork. */
+if(argc>=4 && (v.page==RU_PAGE_PLAY || v.page==RU_PAGE_SHAPE) && !strcmp(argv[3],"saw"))v.main_wave=1u;
+if(argc>=4 && (v.page==RU_PAGE_SUB1 || v.page==RU_PAGE_SUB2)){
+ if(!strcmp(argv[3],"square"))v.k[0]=3u;
+ else if(!strcmp(argv[3],"saw"))v.k[0]=4u;
+}
 if(v.page==RU_PAGE_SHAPE){v.k[0]=72;v.k[1]=64;v.k[2]=30;v.k[3]=42;}if(v.page==RU_PAGE_COMP){v.k[0]=74;v.k[1]=65;v.k[2]=30;v.k[3]=60;}
 if(v.page==RU_PAGE_FOLDER){v.k[0]=62;v.k[1]=50;v.k[2]=84;v.k[3]=72;}
 if(v.page==RU_PAGE_TRANSIENT){v.k[0]=72;v.k[1]=52;v.k[2]=63;v.k[3]=70;}
