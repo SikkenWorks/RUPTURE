@@ -11,7 +11,7 @@ root=Path(__file__).resolve().parents[1]
 base=root.parent
 meta=json.loads((root/'RELEASE-MANIFEST.json').read_text())
 ver=meta['version']
-assert ver=='1.31', 'This release script is validated for V1.30 only'
+assert ver=='1.36', 'Release version mismatch'
 fw=root/meta['firmware_file']
 assert hashlib.sha256(fw.read_bytes()).hexdigest()==meta['firmware_sha256']
 assert len(fw.read_bytes())==meta['firmware_bytes']
@@ -40,7 +40,7 @@ shutil.copy2(root/'index.html',base/'index.html')
 shutil.copy2(root/'index.html',base/f'RUPTURE-V{ver}-INDEX.html')
 shutil.copy2(root/'WebInstaller.html',base/f'RUPTURE-WebInstaller-V{ver}.html')
 shutil.copy2(root/'CHEAT-SHEET.html',base/f'RUPTURE-CHEAT-SHEET-V{ver}.html')
-shutil.copy2(root/'docs/TEST-V1.31.md',base/f'RUPTURE-TEST-RESULTS-V{ver}.md')
+shutil.copy2(root/'docs/TEST-V1.36.md',base/f'RUPTURE-TEST-RESULTS-V{ver}.md')
 files=[
  'index.html','README.md','CHANGELOG.md','CHEAT-SHEET.html','WebInstaller.html',
  fw.name,'RELEASE-MANIFEST.json','WEBSITE-DEPLOY.md','LICENSE',
@@ -54,7 +54,7 @@ with ZipFile(base/f'RUPTURE-V{ver}-WEBSITE-GITHUB-PAGES.zip','w',ZIP_DEFLATED,co
   z.write(p,name)
 # Export native C screenshots, and preserve the identical boot artwork of V1.20.
 for title, images in [
- (f'RUPTURE-V{ver}-53-NATIVE-1BIT-SCREENS.zip',sorted((root/'ui/screens').glob('*.png'))),
+ (f'RUPTURE-V{ver}-57-NATIVE-1BIT-SCREENS.zip',sorted((root/'ui/screens').glob('*.png'))),
  (f'RUPTURE-V{ver}-24-BOOT-FRAMES.zip',sorted((root/'ui/loading-frames').glob('frame-*.png'))+[root/'ui/assets/rupture-splash-final-240.png'])
 ]:
  assert len(images)>=24
@@ -68,6 +68,7 @@ with ZipFile(base/f'RUPTURE-FM1-V{ver}-FULL-SOURCE-FWSC.zip','w',ZIP_DEFLATED,co
   if any(x in p.parts for x in ('__pycache__','.git','.pytest_cache')):continue
   if rel.startswith('vendor/etch-v1.88-source/build/'):continue
   if any(rel.startswith('RUPTURE-V'+old+'.') or rel.startswith('RUPTURE-V'+old+'-') for old in ('1.20','1.21','1.22','1.23','1.24','1.25','1.26','1.27','1.28','1.29')):continue
+  if rel in ('RUPTURE-V1.35.fwsc','RUPTURE-V1.34.fwsc','RUPTURE-V1.33.fwsc','full_regression.log','full_regression.exit','build.log'):continue
   if p.suffix in ('.o','.elf','.pgm','.pyc'):continue
   z.write(p,rel)
 print('Validated firmware',fw.name,'sha',meta['firmware_sha256'])

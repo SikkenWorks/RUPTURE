@@ -4,6 +4,9 @@
  */
 #pragma once
 #include <stdint.h>
+#ifdef RUPTURE_BUILD
+#include "rupture_eq2.h"
+#endif
 #define ETCH_DELAY_SIZE 16384u
 #define ETCH_CHORUS_SIZE 2048u
 #define ETCH_REVERB_SIZE 4096u
@@ -52,6 +55,10 @@ struct etch_native_fx {
  int32_t ring_mix_smooth,eq_gain_smooth[3];
  int32_t eq_lp_low,eq_lp_high,eq_lp_hpf;
  uint16_t eq_hpf_alpha;
+#ifdef RUPTURE_BUILD
+ struct rupture_eq2_state eq2;
+ uint8_t eq2_enabled;
+#endif
  uint32_t trem_phase,phaser_phase,flanger_phase,trem_step,phaser_step,flanger_step;
  int32_t trem_mix_smooth,phaser_mix_smooth,flanger_mix_smooth,decim_mix_smooth,folder_mix_smooth;
  int32_t comp_env,comp_gain,comp_target;

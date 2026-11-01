@@ -18,7 +18,7 @@ assert 'ru_screensaver_enabled^=1u;' in b
 assert '"AUDIO DIAGNOSTICS","ABOUT"' in ui
 assert '"AUDIO DIAG","ABOUT"' not in ui
 assert '"SEL TOGGLE AUTO SAVE"' in ui
-assert '"K1 VOLUME  SEL OPEN"' in ui
+assert '"K1 VOLUME / SEL OPEN"' in ui
 readme=(r/'README.md').read_text()
 assert 'K1 immediately adjusts the percentage' in readme
 assert 'directly with SEL' in readme

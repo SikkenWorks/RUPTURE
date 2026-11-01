@@ -655,7 +655,7 @@ static uint16_t native_cutoff=8192,native_resonance,native_drive;
 static uint8_t rupture_master_pct=100u; /* device-global 0..200, physical MASTER retained */
 static uint8_t ru_global_gain_dirty=0u;
 static const uint16_t ru_saver_delay_seconds[8]={15u,30u,45u,60u,90u,120u,180u,300u};
-static uint8_t ru_autosave_enabled=0u,ru_screensaver_enabled=1u,ru_saver_delay_index=1u; /* device setting, OFF until explicitly enabled */
+static uint8_t ru_autosave_enabled=0u,ru_screensaver_enabled=1u,ru_saver_delay_index=1u,ru_autoload_project=0u,ru_autoload_browse=0u; /* device setting, OFF until explicitly enabled */
 static uint8_t ru_settings_selected=0u,ru_settings_open=0u,ru_saver_options_selected=0u;
 static uint8_t ru_manager_project=0u,ru_manager_seq=0u,ru_manager_action=0u;
 static uint8_t ru_manager_confirmation=0u,ru_manager_status=0u,ru_manager_seq_mask=0u;
@@ -719,6 +719,26 @@ static uint8_t ru_tilt_enabled=0u,ru_fuzz_enabled=0u;
 static uint8_t ru_sand[4]={60u,40u,45u,80u};
 static uint8_t ru_sand_enabled=0u;
 static void ru_fx_apply_extra(void);
+/* EQ 2.0 coefficient generation is strictly outside the audio interrupt.
+ * Recomputed only on parameter changes / after a native audio reset. */
+static uint8_t ru_eq_tab;
+static uint8_t ru_eq_curve_y[54];
+static void ru_eq2_apply(void){
+ struct rupture_eq2_params *e=&native_project_cfg.eq2;
+ if(!rupture_eq2_valid(e))rupture_eq2_defaults(e,0u);
+ struct rupture_eq2_bq coeff[4];
+ uint16_t gains[4]={native_fx_settings.eq_low,native_fx_settings.eq_mid,native_fx_settings.eq_high,16384u};
+ uint32_t air=native_fx_settings.eq_hpf;
+ int32_t signed_air=air==0u?0:air<=16384u?(int32_t)(air*100u/16384u):-(int32_t)((air-16384u)*100u/16383u);
+ int32_t ai=(signed_air+100)*36/200;
+ if(ai<0)ai=0;if(ai>36)ai=36;
+ gains[3]=(uint16_t)(ai==18?16384:(uint32_t)ai*32767u/36u);
+ rupture_eq2_compute(e,gains,coeff);
+ rupture_eq2_response_curve(coeff,ru_eq_curve_y);
+ rupture_eq2_publish(&native_audio.fx.eq2,coeff,gains);
+ native_audio.fx.eq2_enabled=e->enabled;
+}
+
 
 static void ru_fx_store_to_project(void){
  struct rupture_fx_memory *x=&native_project_cfg.rupture_fx;
@@ -730,7 +750,7 @@ static void ru_fx_store_to_project(void){
  x->knobs[0][2]=60u;x->knobs[0][3]=65u;
  x->enabled=(uint8_t)(0x30u|(ru_tilt_enabled<<1u)|(ru_fuzz_enabled<<2u)|(ru_sand_enabled<<3u));
  x->bypass=native_fx_bypass_mask;
- native_project_cfg.source_version=33u;
+ native_project_cfg.source_version=34u;
 }
 static void ru_fx_restore_from_project(void){
  const struct rupture_fx_memory *x=&native_project_cfg.rupture_fx;
@@ -752,6 +772,8 @@ static void ru_fx_restore_from_project(void){
  ru_fuzz_enabled=(uint8_t)!!(x->enabled&4u);
  ru_sand_enabled=(uint8_t)!!(x->enabled&8u);
  native_fx_bypass_mask=x->bypass;
+ ru_eq_tab=0u;
+ ru_eq2_apply();
  ru_fx_apply_extra();
 }
 static uint8_t ru_fx_page_for_selection(uint8_t selected){
@@ -873,6 +895,7 @@ static void native_morph_load_wave(uint8_t wave,int32_t steps){
  native_wave_load_armed=0;native_wave_load_error=0;
 }
 static void native_project_restore(void);
+static void native_new_project(void);
 static void native_restore_project_bpm(void);
 static void native_patch_load(uint8_t pattern_prepared);
 static void native_project_browser_refresh(void){
@@ -921,12 +944,14 @@ static void native_project_browser_delete(uint8_t muted){
  if(native_project_present & (1u<<native_project_browser)){
   /* Never erase the project still in RAM. Open another project first;
    * otherwise the next SAVE could silently recreate the deleted slot. */
-  if(native_project_browser==etch_store_project_selected()){
-   native_store_status=ETCH_STORE_INCOMPATIBLE;return;
-  }
   uint8_t tripped=native_tripped;native_pause();
   native_store_status=etch_store_delete_project_slot(&native_store_io,native_project_browser,ETCH_STORE_ERASE_CONFIRM);
   if(!muted&&!tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
+  if(native_store_status==ETCH_STORE_OK && native_project_browser==etch_store_project_selected())native_new_project();
+  if(native_store_status!=ETCH_STORE_OK){uint16_t occupied=0;char names[12][12];
+   if(etch_store_projects(&native_store_io,&occupied,names)==ETCH_STORE_OK)
+    native_store_status=ETCH_STORE_OK;
+  }
   native_project_browser_refresh();
  }
 #else
@@ -1266,17 +1291,16 @@ static void native_preset_save_start(void){
  native_draw=0;native_page=ETCH_UI_PROJECT_SAVE;
 }
 static void native_new_project(void){
- /* Do not clear or reseed any shared saved wave! Only project-local material.
-  * If all four slots are occupied, keep the currently loaded project intact. */
+ /* NEW is always available as an unsaved RAM project, including when all
+  * twelve slots are occupied. Never silently overwrite an occupied slot. */
  native_project_browser_refresh();
- if((native_project_present&15u)==15u){
-  native_store_status=ETCH_STORE_FULL;
-  native_project_browser=4u;
-  return;
- }
- for(uint8_t slot=0;slot<4u;slot++)if(!(native_project_present&(1u<<slot))){
-  etch_store_project_select(slot);break;
- }
+ uint8_t free_slot=0u,found=0u;
+ for(uint8_t i=0u;i<12u;i++)if(!(native_project_present&(1u<<i))){free_slot=i;found=1u;break;}
+ if(!found)free_slot=0u; /* SAVE then requires the normal overwrite prompt */
+ etch_store_project_select(free_slot);
+#ifdef RUPTURE_BUILD
+ ru_project_slot=(uint8_t)(free_slot+1u);ru_active_seq_slot=0u;
+#endif
  etch_pattern_clear(&native_pattern);
  native_seq_run=0;native_seq_recording=0;native_seq_step=0;native_seq_length=16;
  native_seq_rate=2;native_seq_gate=75;native_seq_swing=0;
@@ -2640,6 +2664,7 @@ static void rupture_native_screen(void){
   intro.boot_step=elapsed>=1350u?RU_SPLASH_STEPS:(uint8_t)(elapsed/56u+1u);
   ru_render(&intro);ru_commit();return;
  }
+ if(native_audio.fx.eq2_enabled!=native_project_cfg.eq2.enabled)ru_eq2_apply();
  ru_footer_status=((int32_t)(ru_save_feedback_until-etch_ms)>0)?ru_save_feedback:0u;
  RuState v={0};v.page=ru_page;v.selected=ru_selected;
  if(native_safe||native_tripped)v.page=RU_PAGE_SAFE;
@@ -2713,9 +2738,22 @@ static void rupture_native_screen(void){
  case RU_PAGE_SEQ_SLOTS:v.k[0]=ru_seq_slot;v.k[1]=ru_selected;v.k[2]=native_seq_rate;v.k[3]=native_seq_swing;break;
  case RU_PAGE_ARP:v.k[0]=native_arp_mode;v.k[1]=native_arp_rate;v.k[2]=native_arp_octaves;v.k[3]=native_seq_gate;break;
  case RU_PAGE_GUIDE:case RU_PAGE_KEYLOCK:v.k[0]=native_harmony.root;v.k[1]=native_harmony.mode;v.k[2]=native_harmony.keylock;v.k[3]=native_harmony.chord;break;
+ case RU_PAGE_AUTOLOAD:v.selected=ru_autoload_browse;v.boot_choice=ru_autoload_project;v.project_mask=native_project_present;for(uint8_t ii=0;ii<12;ii++)for(uint8_t jj=0;jj<12;jj++)v.project_names[ii][jj]=native_project_names[ii][jj];break;
  case RU_PAGE_SETTINGS:v.k[0]=rupture_master_pct;v.selected=ru_settings_selected;
-  v.settings_open=ru_settings_open;v.auto_save=ru_autosave_enabled;break;
+  v.settings_open=ru_settings_open;v.auto_save=ru_autosave_enabled;v.boot_choice=ru_autoload_project;break;
  case RU_PAGE_EQ:
+  v.eq_mode=native_project_cfg.eq2.enabled;
+  v.eq_tab=ru_eq_tab;
+  for(uint8_t i=0;i<54u;i++)v.eq_curve[i]=ru_eq_curve_y[i];
+  v.eq_gain_index[0]=(uint8_t)rupture_eq2_gain_index(native_fx_settings.eq_low);
+  v.eq_gain_index[1]=(uint8_t)rupture_eq2_gain_index(native_fx_settings.eq_mid);
+  v.eq_gain_index[2]=(uint8_t)rupture_eq2_gain_index(native_fx_settings.eq_high);
+  {uint32_t ar=native_fx_settings.eq_hpf;
+   int32_t aa=ar==0?0:ar<=16384u?(int32_t)(ar*100u/16384u):-(int32_t)((ar-16384u)*100u/16383u);
+   v.eq_gain_index[3]=(uint8_t)ui_bound(18+aa*18/100,0,36);
+  }
+  for(uint8_t i=0;i<4u;i++)v.eq_freq[i]=native_project_cfg.eq2.freq[i];
+  for(uint8_t i=0;i<2u;i++)v.eq_q[i]=native_project_cfg.eq2.q[i];
   v.k[0]=(uint16_t)((uint32_t)native_fx_settings.eq_low*200u/32767u);
   v.k[1]=(uint16_t)((uint32_t)native_fx_settings.eq_mid*200u/32767u);
   v.k[2]=(uint16_t)((uint32_t)native_fx_settings.eq_high*200u/32767u);
@@ -3813,16 +3851,40 @@ static void ru_adjust(uint8_t control,int32_t amount){
   ru_page=save_page;
  }
  else if(ru_page==RU_PAGE_EQ){
-  if(control<3u){
-   uint16_t *band=(control==0u?&native_fx_settings.eq_low:control==1u?&native_fx_settings.eq_mid:&native_fx_settings.eq_high);
-   int32_t pct=(int32_t)((uint32_t)*band*200u/32767u);pct=ui_bound(pct+amount,0,200);*band=(uint16_t)(pct==100?16384u:((uint32_t)pct*32767u/200u));
-  }else{ /* K4 signed high shelf: -100..+100, 0 is neutral. */
-   int32_t raw=native_fx_settings.eq_hpf;
-   int32_t air=raw==0?0:(raw<=16384?(int32_t)((uint32_t)raw*100u/16384u):-((int32_t)((uint32_t)(raw-16384u)*100u/16383u)));
-   air=ui_bound(air+amount,-100,100);
-   native_fx_settings.eq_hpf=(uint16_t)(air==0?0u:air>0?(uint32_t)air*16384u/100u:16384u+(uint32_t)(-air)*16383u/100u);
+  struct rupture_eq2_params *e=&native_project_cfg.eq2;
+  if(e->enabled && ru_eq_tab==1u){
+   e->freq[control]=(uint8_t)ui_bound((int32_t)e->freq[control]+amount,0,100);
+  }else if(e->enabled && ru_eq_tab==2u){
+   if(control==1u||control==2u)e->q[control-1u]=(uint8_t)ui_bound((int32_t)e->q[control-1u]+amount,0,100);
+   else return;
+  }else if(e->enabled && ru_eq_tab==0u){
+   uint16_t *raw=control==0u?&native_fx_settings.eq_low:control==1u?&native_fx_settings.eq_mid:control==2u?&native_fx_settings.eq_high:&native_fx_settings.eq_hpf;
+   if(control<3u){
+    int32_t index=rupture_eq2_gain_index(*raw);
+    index=ui_bound(index+amount,0,36);
+    *raw=(uint16_t)(index==18?16384u:(uint32_t)index*32767u/36u);
+   }else{
+    int32_t old=*raw;
+    int32_t air=old==0?0:old<=16384?(old*100/16384):-((old-16384)*100/16383);
+    int32_t index=ui_bound(18+(air*18/100)+amount,0,36);
+    int32_t n=(index-18)*100/18;
+    *raw=(uint16_t)(n==0?0u:n>0?(uint32_t)n*16384u/100u:16384u+(uint32_t)(-n)*16383u/100u);
+   }
+  }else{
+   /* Legacy project retains its old 3-band/AIR tone until the user opts in. */
+   if(control<3u){
+    uint16_t *band=(control==0u?&native_fx_settings.eq_low:control==1u?&native_fx_settings.eq_mid:&native_fx_settings.eq_high);
+    int32_t pct=(int32_t)((uint32_t)*band*200u/32767u);pct=ui_bound(pct+amount,0,200);*band=(uint16_t)(pct==100?16384u:((uint32_t)pct*32767u/200u));
+   }else{
+    int32_t raw=native_fx_settings.eq_hpf;
+    int32_t air=raw==0?0:(raw<=16384?(int32_t)((uint32_t)raw*100u/16384u):-((int32_t)((uint32_t)(raw-16384u)*100u/16383u)));
+    air=ui_bound(air+amount,-100,100);
+    native_fx_settings.eq_hpf=(uint16_t)(air==0?0u:air>0?(uint32_t)air*16384u/100u:16384u+(uint32_t)(-air)*16383u/100u);
+   }
   }
   native_fx_bypass_mask &= ~ETCH_FXB_BIT(ETCH_FXB_EQ);
+  if(e->enabled)ru_eq2_apply();
+  ru_mark_dirty();first_frame=1u;
  }
  else if(ru_page==RU_PAGE_FILTER){
   if(control==0u)native_filter_type=(uint8_t)ui_bound((int32_t)native_filter_type+amount,0,4);
@@ -3941,7 +4003,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
   if(control==2u)native_resonance=etch_encoder_pct(native_resonance,amount);
   if(control==3u)native_filter_type=(uint8_t)ui_bound((int32_t)native_filter_type+amount,0,4);
  }
- if(ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS)ru_mark_dirty();
+ if(ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD)ru_mark_dirty();
 }
 
 /* Manage catalogs without replacing a stored project with live RAM. All
@@ -3994,7 +4056,6 @@ static void ru_manager_project_edit(uint8_t op){
   for(uint8_t i=0u;i<12u;i++)if(!(native_project_present&(1u<<i))){target=i;break;}
   if(target==255u){ru_manager_status=2u;return;}
  }
- if(op==3u && source==etch_store_project_selected()){ru_manager_status=3u;return;}
  uint8_t was_tripped=native_tripped;
  native_pause();ru_storage_begin(1u);
  native_store_status=etch_store_catalog_edit(&native_store_io,op,source,target,
@@ -4002,9 +4063,28 @@ static void ru_manager_project_edit(uint8_t op){
  ru_storage_finish((uint8_t)(native_store_status==ETCH_STORE_OK));
  if(!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
  if(native_store_status==ETCH_STORE_OK){
+  native_project_present=0u;
+  for(uint8_t i=0u;i<12u;i++)for(uint8_t j=0u;j<12u;j++)native_project_names[i][j]=0;
+  if(op==3u && source==(uint8_t)etch_store_project_selected()){
+   /* Deleted active project cannot stay silently writable under its old
+    * identity. Start a new unsaved RAM project after successful commit. */
+   native_new_project();ru_active_seq_slot=0u;ru_project_slot=(uint8_t)(etch_store_project_selected()+1u);
+  }
+  if(op==3u && ru_autoload_project==(uint8_t)(source+1u)){
+   ru_autoload_project=0u;ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
+  }
   native_project_browser_refresh();ru_manager_status=1u;
   if(op==1u)ru_manager_project=target;
- }else ru_manager_status=native_store_status==ETCH_STORE_FULL?2u:3u;
+ }else{
+  int failed=native_store_status;
+  ru_manager_status=failed==ETCH_STORE_FULL?2u:failed==ETCH_STORE_SHARED_OWNER?5u:3u;
+  /* A rejected edit must not permanently poison healthy storage status.
+   * Restore WRITABLE only after checking a valid committed catalog. */
+  uint16_t catalog=0;char names[12][12];
+  if(etch_store_projects(&native_store_io,&catalog,names)==ETCH_STORE_OK){
+   native_store_status=ETCH_STORE_OK;native_project_browser_refresh();
+  }
+ }
  first_frame=1u;
 }
 static void ru_manager_sequence_edit(uint8_t op){
@@ -4095,7 +4175,15 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  if(pressed&(1u<<4))ru_nav_to(RU_PAGE_ENV);
  if(pressed&(1u<<5))ru_nav_to(RU_PAGE_LFO);
  if(pressed&(1u<<2))ru_nav_to(RU_PAGE_FX);
- if(pressed&(1u<<6))ru_nav_to(RU_PAGE_EQ); /* EDIT = CHANNEL EQ */
+ if(pressed&(1u<<6)){
+  /* EDIT owns Channel EQ navigation, just as other hardware pages own theirs.
+   * First press enters EQ. Subsequent presses cycle GAIN / FREQ / Q.
+   * Legacy EQ has only one view; EDIT there remains on that view. */
+  if(ru_page==RU_PAGE_EQ){
+   if(native_project_cfg.eq2.enabled)ru_eq_tab=(uint8_t)((ru_eq_tab+1u)%3u);
+   first_frame=1u;
+  }else{ru_nav_to(RU_PAGE_EQ);ru_eq_tab=0u;}
+ } /* EDIT = CHANNEL EQ */
  if(pressed&(1u<<10))ru_nav_to(RU_PAGE_ARP);
  if(pressed&(1u<<12)){native_seq_run=!native_seq_run;if(!native_seq_run)native_seq_recording=0u;first_frame=1;}
  if((pressed&(1u<<13)) && ru_page==RU_PAGE_SEQ){
@@ -4146,7 +4234,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){
-   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,3);first_frame=1u;}
+   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,4);first_frame=1u;}
    if(pressed&(1u<<3)){
     if(ru_settings_selected==0u){
      /* MASTER VOLUME retains its detail page; K1 also works while its
@@ -4158,9 +4246,14 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
      ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
      if(ru_autosave_enabled)ru_last_edit_ms=etch_ms?etch_ms:1u;
     }else{
-     if(ru_settings_selected==2u && native_store_status==ETCH_STORE_OK)
-      native_project_browser_refresh();
-     ru_nav_to(ru_settings_selected==2u?RU_PAGE_STORAGE:RU_PAGE_OTHER);
+     if(ru_settings_selected==2u){
+      native_project_browser_refresh();ru_autoload_browse=ru_autoload_project;
+      if(ru_autoload_browse && !(native_project_present&(1u<<(ru_autoload_browse-1u))))ru_autoload_browse=0u;
+      ru_nav_to(RU_PAGE_AUTOLOAD);
+     }else{
+      if(ru_settings_selected==3u && native_store_status==ETCH_STORE_OK)native_project_browser_refresh();
+      ru_nav_to(ru_settings_selected==3u?RU_PAGE_STORAGE:RU_PAGE_OTHER);
+     }
      ru_selected=0u;
     }
     first_frame=1u;
@@ -4168,6 +4261,20 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   }else if(ru_settings_open==1u){
    if(select)ru_adjust(0,select); /* SELECT or K1 edits detail volume */
    if(pressed&(1u<<3)){ru_settings_open=0u;first_frame=1u;}
+  }
+ }
+ else if(ru_page==RU_PAGE_AUTOLOAD){
+  if(select){
+   int val=(int)ru_autoload_browse+(select>0?1:-1);
+   while(val>=0 && val<=12 && val!=0 && !(native_project_present&(1u<<(val-1))))val+=select>0?1:-1;
+   if(val>=0&&val<=12){ru_autoload_browse=(uint8_t)val;first_frame=1u;}
+  }
+  if(pressed&(1u<<3)){
+   if(ru_autoload_browse==0u || (native_project_present&(1u<<(ru_autoload_browse-1u)))){
+    ru_autoload_project=ru_autoload_browse;
+    ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
+    ru_nav_to(RU_PAGE_SETTINGS);first_frame=1u;
+   }
   }
  }
  else if(ru_page==RU_PAGE_ABOUT){
@@ -4274,13 +4381,14 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
     if(ru_manager_can_wipe()){
      uint8_t was_tripped=native_tripped;native_pause();
      ru_storage_begin(1u);
-     native_store_status=etch_store_wipe_all_user_data(&native_store_io,ETCH_STORE_ERASE_CONFIRM,0x52555054u);
+     native_store_status=etch_store_wipe_all_user_data(&native_wipe_io,ETCH_STORE_ERASE_CONFIRM,0x52555054u);
      ru_storage_finish((uint8_t)(native_store_status==ETCH_STORE_OK));
      if(native_store_status==ETCH_STORE_OK){
       native_store_status=ETCH_STORE_EMPTY;native_project_present=0u;
       for(uint8_t i=0u;i<12u;i++)for(uint8_t j=0u;j<12u;j++)native_project_names[i][j]=0;
       etch_store_project_select(0u);ru_project_slot=1u;ru_seq_slot=1u;ru_active_seq_slot=0u;
-      ru_autosave_enabled=0u;ru_screensaver_enabled=1u;ru_saver_delay_index=1u;rupture_master_pct=100u;
+      ru_autosave_enabled=0u;ru_screensaver_enabled=1u;ru_saver_delay_index=1u;ru_autoload_project=0u;rupture_master_pct=100u;
+      native_new_project();native_project_present=0u;
       ru_autosave_dirty=0u;ru_autosave_armed=0u;ru_global_gain_dirty=0u;
       native_seq_run=0u;native_seq_recording=0u;
       ru_manager_status=1u;ru_nav_to(RU_PAGE_STORAGE);
@@ -4310,6 +4418,17 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    else if(ru_fx_selected==6u){ru_fuzz_enabled^=1u;ru_fx_apply_extra();}
    else{ru_sand_enabled^=1u;ru_fx_apply_extra();}
    native_parameter_publish();first_frame=1u;ru_mark_dirty();
+  }
+ }
+ else if(ru_page==RU_PAGE_EQ){
+  /* SEL is intentionally NOT a page switch. The dedicated EDIT button
+   * cycles the EQ pages, keeping global navigation consistent. */
+  if(alg){
+   /* Deliberate ALGORITHM mapping: switch Legacy / Parametric. The old
+    * project EQ cannot silently change sound on a firmware update. */
+   native_project_cfg.eq2.enabled^=1u;
+   ru_eq_tab=0u;ru_eq2_apply();ru_mark_dirty();first_frame=1u;
+   alg=0;
   }
  }
  else if(ru_page==RU_PAGE_SEQ){
@@ -4504,6 +4623,9 @@ void fm1_cstart(void){
  etch_perf_init(&native_preset_dsp.performance);
 #ifdef RUPTURE_BUILD
  ru_fxm_defaults(&native_project_cfg.rupture_fx);
+ /* Newly-created projects use Channel EQ 2.0; legacy decoded projects
+  * explicitly override this with enabled=0 for unchanged historical audio. */
+ rupture_eq2_defaults(&native_project_cfg.eq2,1u);
 #endif
  etch_project_bind_preset_dsp(&native_project_cfg,&native_preset_dsp);
  etch_native_groups_configure(&native_preset_dsp.groups);
@@ -4547,9 +4669,9 @@ void fm1_cstart(void){
  /* A completed global-volume log overrides per-preset legacy settings.
   * Read-only on boot. Default 100 on an older record without the log. */
  if(native_store_status==ETCH_STORE_OK){
-  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u;
-  if(etch_store_user_settings_ex_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index)==ETCH_STORE_OK){
-   rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;
+  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u;
+  if(etch_store_user_settings_full_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice)==ETCH_STORE_OK){
+   rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;
   }
  }
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
@@ -4558,6 +4680,20 @@ void fm1_cstart(void){
  native_controls.cxs_pressure=58u;native_controls.cxs_balance=50u;
  native_controls.cxs_memory=52u;native_controls.cxs_density=68u;
 #endif
+ /* Startup policy: only an explicitly selected, still-existing project is
+  * opened at boot. New is the default even if older firmware remembered a
+  * previously active project. Missing targets fall back safely to New. */
+ if(!safe && native_store_status==ETCH_STORE_OK){
+  native_project_browser_refresh();
+  if(ru_autoload_project>=1u && ru_autoload_project<=12u &&
+     (native_project_present&(1u<<(ru_autoload_project-1u)))){
+   if(etch_store_load_project_slot(&native_store_io,ru_autoload_project-1u,
+       &native_library,&native_pattern,&native_project_cfg)==ETCH_STORE_OK){
+    native_project_restore();ru_project_slot=ru_autoload_project;
+    for(uint32_t w=0;w<3u;w++)for(uint32_t i=0;i<128u;i++)native_editor.points[w][i]=native_library.active[w][i];
+   }else{ru_autoload_project=0u;native_new_project();}
+  }else{ru_autoload_project=0u;native_new_project();}
+ }
  if(!safe&&native_store_status==ETCH_STORE_OK&&native_library.reserved>=1&&native_library.reserved<=ETCH_PATCH_SLOTS){native_patch_slot=native_library.reserved-1;native_project_restore();native_patch_load(0);if(native_project_cfg.source_version==3)native_project_restore();native_restore_project_bpm();}
  native_editor.dirty=1;native_compile_edit();
  native_parameter_publish();
@@ -4921,7 +5057,7 @@ void fm1_cstart(void){
       !native_blend_audio_busy()){
      uint8_t was_tripped=native_tripped;uint8_t was_muted=muted;
      ru_global_gain_attempt_ms=etch_ms;native_pause();
-     int gr=etch_store_user_settings_ex_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index);
+     int gr=etch_store_user_settings_full_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project);
      if(gr==ETCH_STORE_OK)ru_global_gain_dirty=0u;
      if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
    }

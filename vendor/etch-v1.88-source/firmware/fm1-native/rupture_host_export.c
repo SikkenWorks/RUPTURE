@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rupture_ui.c"
+#include "rupture_eq2.c"
 #include "rupture_octave.h"
 int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.page=(uint8_t)atoi(argv[1]);v.octave=rupture_octave_display(RUPTURE_BASS_OCTAVE);v.show_battery=1;v.battery=75;v.usb_power=1;v.fx_selected=0;v.fx_on=1;v.sub_blend=75;v.eq_on=1;v.project=1;v.seq_slot=1;v.seq_present=1;v.seq_status=0;v.root=9;v.mode=1;v.keylock=1;v.filter=4;v.master=100;v.macro[0]=57;v.macro[1]=40;v.k[0]=57;v.k[1]=50;v.k[2]=68;v.k[3]=75;if(v.page==RU_PAGE_SEQ){v.seq_length=16;v.seq_bpm=120;v.seq_current_step=3;v.seq_grid_mask=0x25a9;v.seq_note_count=1;v.seq_first_note=36;v.k[0]=16;v.k[1]=120;v.k[2]=110;v.k[3]=75;}if(v.page==RU_PAGE_ARP){v.k[0]=0;v.k[1]=2;v.k[2]=1;v.k[3]=75;}if(v.page==RU_PAGE_SETTINGS)v.k[0]=100;
  if(v.page==RU_PAGE_OTHER||v.page==RU_PAGE_SAVER_OPTIONS){v.saver_enabled=1u;v.saver_delay_index=1u;}
@@ -35,5 +36,19 @@ if(v.page==RU_PAGE_NAME){const char *n="MIDNIGHT BASS";for(int j=0;j<12;j++)v.ed
 if(v.page==RU_PAGE_DIAG){v.diag_wall=62;v.diag_dsp=58;v.diag_render=52;v.diag_copy=9;v.diag_slack=38;v.diag_late=0;v.diag_guard=0;v.diag_scope=137;}
 if(v.page==RU_PAGE_LOADING){v.show_battery=0;v.boot_step=argc>=4?(uint8_t)atoi(argv[3]):10;}if(strcmp(argv[1],"storage-save")==0)ru_storage_popup(1u,2u,65u,0u);
 else if(strcmp(argv[1],"storage-load")==0)ru_storage_popup(2u,4u,65u,0u);
+else if(strncmp(argv[1],"eq2",3)==0){
+ v.page=RU_PAGE_EQ;v.eq_mode=1u;
+ v.eq_tab=strstr(argv[1],"freq")?1u:strstr(argv[1],"width")?2u:0u;
+ struct rupture_eq2_params p;rupture_eq2_defaults(&p,1);
+ v.eq_freq[0]=30u;v.eq_freq[1]=50u;v.eq_freq[2]=50u;v.eq_freq[3]=50u;
+ v.eq_q[0]=9u;v.eq_q[1]=47u;
+ for(int i=0;i<4;i++)p.freq[i]=v.eq_freq[i];
+ for(int i=0;i<2;i++)p.q[i]=v.eq_q[i];
+ uint16_t gains[4]={25486u,11000u,29900u,20000u};
+ for(int i=0;i<4;i++)v.eq_gain_index[i]=(uint8_t)rupture_eq2_gain_index(gains[i]);
+ struct rupture_eq2_bq coeff[4];rupture_eq2_compute(&p,gains,coeff);
+ rupture_eq2_response_curve(coeff,v.eq_curve);
+ ru_render(&v);
+}
 else if(strcmp(argv[1],"saver")==0){v.saver_active=1u;v.saver_frame=argc>=4?(uint8_t)atoi(argv[3]):32u;ru_render(&v);}
 else ru_render(&v);FILE *f=fopen(argv[2],"wb");if(!f)return 3;fprintf(f,"P5\n240 240\n255\n");for(int y=0;y<240;y++)for(int x=0;x<240;x++)fputc(ru_get(x,y)?255:0,f);fclose(f);return 0;}

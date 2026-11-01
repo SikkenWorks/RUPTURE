@@ -1,3 +1,21 @@
+# RUPTURE V1.36 — Storage recovery and Auto Load Project
+
+- WIPE ALL uses a dedicated confirmed and address-restricted native NOR erase/readback path over known user flash 0x97000..0xDFFFF. Standard project writes remain confined to the existing RUPTURE A/B banks. Boot, application and OTA sectors remain protected.
+- Fixed deletion of the last saved project in the dedicated project bank pair; an unsaved NEW project can be created afterwards. Shared-waveform-owner deletion while surviving projects depend on it remains safely blocked and now explains why.
+- Rejected project edits no longer permanently poison the storage state. Writable state is restored only when a committed valid project catalog is readable.
+- Added GLO → SETTINGS → AUTO LOAD PROJECT. It defaults to NEW; SELECT browses only existing projects plus NEW; SEL chooses the power-on target. Missing/deleted targets fall back to NEW. The choice is CRC-protected in the existing 8-byte device-global flash journal and survives regular save and bank compaction.
+- Preserves Channel EQ 2.0, PJT34 compatibility, project and sequence data format, audio DSP, protected 16-KiB bootheader and original trusted OTA loader.
+- Native FM1 crossbuild and directed host NOR storage tests passed. Flash behavior and cold-boot AUTO LOAD still need physical FM1 verification.
+
+- **V1.35:** EDIT cycles EQ GAIN / FREQUENCY / Q, SEL no longer cycles.
+# RUPTURE V1.34 — Channel EQ 2.0 and parametric peak width
+
+- New fixed-point post-mix four-biquad EQ: LOW 80 Hz shelf, BODY 250 Hz bell, BITE 1.5 kHz bell and AIR 5 kHz shelf, all with ±9 dB gain in 0.5 dB steps.
+- EDIT opens GAIN / FREQUENCY / PEAK WIDTH (Q); repeated EDIT presses cycle the pages, never SEL. K1–K4 adjust the four gains or center frequencies; K2/K3 adjust BODY/BITE Q from 0.3 to 8.0. Lower Q is wider; higher Q is narrower. EQ2 response plot uses the actual coefficients.
+- Gain is bit-identical at 0 dB; coefficient smoothing and post-boost headroom management minimize clicks and clipping. Biquads are implemented in fixed point without per-sample transcendental calculations.
+- New projects use EQ2. Older projects load LEGACY by default, with optional ALGORITHM switch to EQ2. PJT34 stores EQ mode, four frequency selectors and both Q values without enlarging the known flash erase layout. Previous PJT33 records remain decodable.
+- Original OTA loader, protected flash header, other effects, sequencer and MIDI remain unchanged. Native build and host regressions pass; physical FM1 CPU, sound and flash tests still required.
+
 # RUPTURE V1.33 — Sequence save/load and UI alignment
 
 - Fixed the first-save sequence bug: newly named empty slots no longer trigger a false overwrite confirmation before note data is committed to flash.

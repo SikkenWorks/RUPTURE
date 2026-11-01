@@ -1,14 +1,14 @@
 {
-  "version": "1.33",
+  "version": "1.36",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS)",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.33.fwsc",
+  "firmware_file": "RUPTURE-V1.36.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "bf2d897af2fac889a89444e4093fc85defa6ee3cd5ea00a25569f2786d2e5a2c",
-  "app_bytes": 215464,
-  "app_sha256": "947e35dc86d47331a7b192b6bb6780c7d1a4bade7c9e1b8a68711f7c20d55009",
-  "native_screens": 54,
+  "firmware_sha256": "bc138deeaffe89e48f36dac97fa664a38827b721e5a3962f53ff84192fa463e2",
+  "app_bytes": 228388,
+  "app_sha256": "4ff27df9adbcc7620b92769a9dc338299a393498ac523f3556b0a2f8ceed112f",
+  "native_screens": 57,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
   "auto_save_min_interval_ms": 60000,
@@ -22,11 +22,14 @@
     "DMA deadline, flash timing and UI timing require physical FM1 validation.",
     "V1.29 settings navigation plus V1.28 storage, USB disconnect and screensaver need physical FM1 verification by the author.",
     "WIPE ALL irreversibly erases known user storage 0x97000..0xDFFFF, including legacy stored data; it does NOT erase application/boot/OTA sectors or unknown flash areas.",
-    "Deleting currently active project or shared wave-library owner is protected; select another project before deletion.",
+    "Deleting the active project and the final remaining project is supported. A shared wave-library owner cannot be deleted while other projects depend on it; delete dependent projects first or back up and use WIPE ALL.",
     "Managing sequences in a different project requires explicitly opening that project first (confirmation on FM1).",
     "Scan the source white-on-black QR on a physical FM1 after updating; software verifies exact source parity, not every phone camera inversion capability.",
     "Utrecht screensaver, configurable timeout, REC LED hardware mapping and physical refresh must be verified on an actual FM1.",
-    "Per-sequence BPM and length are reliably retained only for sequences saved with V1.33 or later. Older sequences lack a trustworthy per-sequence metadata marker; loading uses the last project values. If a previous failed save never committed note data to flash, the new firmware cannot recover that unsaved data."
+    "Per-sequence BPM and length are reliably retained only for sequences saved with V1.33 or later. Older sequences lack a trustworthy per-sequence metadata marker; loading uses the last project values. If a previous failed save never committed note data to flash, the new firmware cannot recover that unsaved data.",
+    "V1.36 WIPE ALL and final-project DELETE are host NOR-tested only; verify on real hardware before relying on them.",
+    "Shared-waveform-owner projects cannot be deleted while other projects depend on them. Delete dependent projects first, or back up and perform confirmed WIPE ALL.",
+    "AUTO LOAD defaults to NEW and is journaled with master volume/autosave/screensaver; actual cold boot must be physically verified."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -138,7 +141,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "Removed WAVEFOLDER + TRANSIENT; 8 FX; fuzz auto loudness; TILT/SAND repair; EQ K4 HIGH AIR; ALGORITHM SUB BLEND",
+  "release_feature": "Storage recovery: restricted verified legacy WIPE ALL, last-project delete, recoverable catalog errors; persistent AUTO LOAD PROJECT default NEW, backward-compatible device journal",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -183,7 +186,7 @@
   "screensaver_default": true,
   "storage_management": "12 projects; eight sequences per project; copy/rename/delete; YES/NO bounded legacy-user wipe; CRC-checked A/B commit",
   "about_ui": "full exact biography; SELECT scroll; 240x240 word wrapping",
-  "settings_behavior": "SELECT selects row; SEL toggles AUTO SAVE directly; K1 adjusts MASTER VOLUME in list; SEL opens detail; OTHER/SCREENSAVER direct toggle",
+  "settings_behavior": "SELECT picks five settings rows: MASTER VOLUME (K1 inline, SEL detail), AUTO SAVE (SEL toggle), AUTO LOAD PROJECT (SEL choose NEW/existing project), STORAGE, OTHER (screensaver settings)",
   "global_menu_diagnostics_label": "AUDIO DIAGNOSTICS",
   "qr_issues_url": "https://github.com/SikkenWorks/RUPTURE/issues",
   "qr_modules": 29,
@@ -209,5 +212,28 @@
     300
   ],
   "screensaver_timer_storage": "existing device-global 8-byte CRC-protected NOR journal with backwards compatible legacy records, no new flash region",
-  "rec_led": "OFF unless sequence live recording is toggled ON"
+  "rec_led": "OFF unless sequence live recording is toggled ON",
+  "release_warnings": [],
+  "eq2": {
+    "project_format": "PJT34",
+    "frequency_controls": 4,
+    "q_controls": 2,
+    "q_range": [
+      0.3,
+      8
+    ],
+    "gain_range_db": [
+      -9,
+      9
+    ],
+    "gain_step_db": 0.5,
+    "new_projects_enabled": true,
+    "legacy_project_default": "LEGACY EQ",
+    "physical_validated": false
+  },
+  "auto_load_project_default": "NEW",
+  "auto_load_project_options": "NEW or saved existing project slots",
+  "wipe_all_native_erase_path": "confirmed bounded 0x97000..0xDFFFF erase and verify",
+  "auto_load_project_storage": "existing CRC-protected 8-byte global journal; only existing saved projects selectable; fallback to NEW after delete",
+  "wipe_all_native_bounds": "erase and verify user-storage flash 0x97000..0xDFFFF using dedicated bounded callback; never erase boot/app/OTA"
 }

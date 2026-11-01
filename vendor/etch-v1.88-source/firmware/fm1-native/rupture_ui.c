@@ -6,6 +6,8 @@
 #include "rupture_help_cards.h"
 #include "rupture_bug_qr.h"
 #include "rupture_utrecht_art.h"
+#include "rupture_eq2.h"
+#include "rupture_eq2_tables.h"
 #define RU_W 240
 #define RU_H 240
 #define RU_PAGE_PLAY 0
@@ -56,10 +58,11 @@
 #define RU_PAGE_ABOUT 45
 #define RU_PAGE_BUG_REPORT 46
 #define RU_PAGE_SAVER_OPTIONS 47
-#define RU_PAGE_COUNT 48
-static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on;uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
- uint8_t settings_open,auto_save,auto_choice,saver_active,saver_frame,saver_enabled,saver_delay_index,saver_options_selected;
+#define RU_PAGE_AUTOLOAD 48
+#define RU_PAGE_COUNT 49
+static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+ uint8_t settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -375,7 +378,43 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
 /* Visual response approximates the actual fixed-cross-over 3-band + HIGH CUT DSP.
  * LOW 200 Hz, HIGH 6 kHz; peaks are not parametric until the DSP supports it. */
 static void ru_eq_curve(const RuState *v){
- ru_center("CHANNEL EQ",120,51,1);
+ if(v->eq_mode){
+  static const char *names[]={"LOW","BODY","BITE","AIR"};
+  static const char *tabs[]={"GAIN +/- 9DB","FREQUENCY","PEAK WIDTH (Q)"};
+  ru_center("CHANNEL EQ 2.0",120,50,1);
+  ru_center(tabs[v->eq_tab%3u],120,64,1);
+  ru_frame(12,76,216,83);
+  for(int y=88;y<158;y+=14)ru_dither(13,y,214,1,0);
+  /* Display the actual RBJ biquad magnitude response computed from the
+   * coefficients published to the post-mix DSP. 54 logarithmic points. */
+  int previous=119;
+  for(int x=14;x<226;x++){
+   int i=(x-14)*53/211;
+   int y=v->eq_curve[i];if(y<80||y>157)y=119;
+   if(x>14)ru_line(x-1,previous,x,y);
+   previous=y;
+  }
+  for(int i=0;i<4;i++){
+   int x=(i%2)?130:13,y=i<2?168:192;
+   char n[12];const char *val=n;
+   if(v->eq_tab==0){
+    int halfdb=(int)v->eq_gain_index[i]-18;
+    int mag=halfdb<0?-halfdb:halfdb;
+    n[0]=halfdb<0?'-':'+';
+    char z[8];ru_uint((uint32_t)mag/2u,z);
+    int off=1;for(int k=0;z[k]&&off<7;k++)n[off++]=z[k];
+    n[off++]='.';n[off++]=(mag&1)?'5':'0';n[off]=0;
+   }else if(v->eq_tab==1){
+    ru_uint(ru_eq2_freq[i][v->eq_freq[i]<=100u?v->eq_freq[i]:100u],n);
+   }else if(i==1||i==2){
+    uint32_t q10=3u+((uint32_t)v->eq_q[i-1]*77u+50u)/100u;
+    char z[8];ru_uint(q10/10u,z);n[0]=z[0];n[1]='.';n[2]=(char)('0'+q10%10u);n[3]=0;
+   }else val="FIXED";
+   ru_text(names[i],x,y,1);ru_text(val,x+55,y,1);
+  }
+  ru_footer("EDIT NEXT / ALG LEGACY");return;
+ }
+ ru_center("LEGACY CHANNEL EQ",120,51,1);
  ru_frame(11,65,218,80);
  for(int y=78;y<145;y+=14)ru_dither(12,y,216,1,0);
  for(int x=39;x<228;x+=36)ru_dither(x,67,1,76,0);
@@ -406,7 +445,7 @@ static void ru_eq_curve(const RuState *v){
   ru_text(lab[i],x,y,1);
   char val[12];ru_uint(v->k[i],val);ru_text(val,x+76,y,1);
  }
- ru_footer("EDIT EQ  HOME BACK");
+ ru_footer("ALGORITHM EQ2 / HOME BACK");
 }
 /* Sequencer pixels and firmware share this exact 1-bit renderer. Pages of 16
    steps keep a 128-step song legible on the 240x240 panel. */
@@ -744,7 +783,7 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
    if(selected==slot){ru_frame(9,y-3,221,20);ru_dither(12,y,214,2,1);}
    ru_text(num,16,y+3,1);ru_text(occupied?(name[0]?name:"UNTITLED"):"EMPTY",48,y+3,1);
   }
-  if(v->manager_status)ru_center(v->manager_status==1?"SAVED":v->manager_status==2?"NO EMPTY SLOT":v->manager_status==3?"ACTION FAILED":"CONFIRM ACTION",120,214,1);
+  if(v->manager_status)ru_center(v->manager_status==1?"SAVED":v->manager_status==2?"NO EMPTY SLOT":v->manager_status==3?"ACTION FAILED":v->manager_status==5?"SHARED WAVES / LOCK":"CONFIRM ACTION",120,214,1);
   ru_footer("SELECT SLOT  SEL ACTIONS");return;
  }
  if(page==RU_PAGE_STORAGE_ACTIONS || page==RU_PAGE_STORAGE_SEQ_ACTIONS){
@@ -760,7 +799,7 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
   }
   if(v->manager_status){
     ru_center(v->manager_status==1u?"SAVED":v->manager_status==2u?"NO EMPTY SLOT":
-     v->manager_status==4u?"SEL AGAIN TO CONFIRM":"ACTION FAILED",120,215,1);
+     v->manager_status==4u?"SEL AGAIN TO CONFIRM":v->manager_status==5u?"SHARED WAVES / LOCK":"ACTION FAILED",120,215,1);
   }
   ru_footer("SELECT ACTION  SEL RUN");return;
  }
@@ -837,19 +876,43 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
  }
  if(page==RU_PAGE_GUIDE||page==RU_PAGE_KEYLOCK){ru_center("ROOT / SCALE / LOCK",120,57,1);ru_draw_knobs(v);ru_footer("K1 KEY  K2 SCALE  K3 LOCK");return;}
  if(page==RU_PAGE_NOTE_MEMORY){ru_center("6 NOTE MEMORY / MONO",120,57,1);ru_draw_knobs(v);ru_footer("6 NOTES / PRIORITY / GLIDE");return;}
+ if(page==RU_PAGE_AUTOLOAD){
+  ru_center("AUTO LOAD PROJECT",120,46,1);
+  ru_center("SELECT PROJECT AT BOOT",120,61,1);
+  int first=0;
+  if(v->selected>3u)first=(int)v->selected-3;
+  if(first>7)first=7;
+  for(int i=0;i<5;i++){
+   int choice=first+i;
+   if(choice>12)break;
+   uint8_t present=(uint8_t)(choice==0||(v->project_mask&(1u<<(choice-1))));
+   if(!present)continue;
+   int y=77+i*29;
+   ru_frame(13,y,214,27);
+   if(choice==(int)v->selected)ru_rect(17,y+7,3,13);
+   if(choice==0)ru_text("NEW",28,y+9,1);
+   else{
+    char name[14];for(int k=0;k<12;k++)name[k]=v->project_names[choice-1][k];name[12]=0;
+    if(name[0])ru_text(name,28,y+9,1);
+    else{char label[12]="PROJECT 00";label[8]=(char)('0'+choice/10);label[9]=(char)('0'+choice%10);ru_text(label,28,y+9,1);}
+   }
+   if(choice==(int)v->boot_choice)ru_text("*",204,y+9,1);
+  }
+  ru_footer("SELECT CHOOSE / SEL SAVE");return;
+ }
  if(page==RU_PAGE_SETTINGS){
   if(v->settings_open==0u){
-   static const char *const names[]={"MASTER VOLUME","AUTO SAVE","STORAGE","OTHER"};
-   for(int i=0;i<4;i++){
-    int y=57+i*42;ru_frame(12,y,216,37);
-    if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,4,1);ru_rect(17,y+10,3,17);}
-    ru_text(names[i],29,y+15,1);
-    if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}ru_center(num,188,y+15,1);}
-    if(i==1){ru_frame(165,y+12,13,13);if(v->auto_save){ru_line(167,y+18,170,y+21);ru_line(170,y+21,176,y+14);}ru_center(v->auto_save?"ON":"OFF",199,y+15,1);}
-    if(v->selected==(uint8_t)i)ru_text(">",215,y+15,1);
+   static const char *const names[]={"MASTER VOLUME","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER"};
+   for(int i=0;i<5;i++){
+    int y=53+i*34;ru_frame(12,y,216,31);
+    if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+10,3,13);}
+    ru_text(names[i],27,y+12,1);
+    if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}ru_center(num,195,y+12,1);}
+    if(i==1){ru_center(v->auto_save?"ON":"OFF",195,y+12,1);}
+    if(i==2){if(v->boot_choice==0)ru_center("NEW",199,y+12,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+12,1);}}
+    if(v->selected==(uint8_t)i)ru_text(">",217,y+12,1);
    }
-   ru_footer(v->selected==0u?"K1 VOLUME  SEL OPEN":
-      v->selected==1u?"SEL TOGGLE AUTO SAVE":"SELECT OPTION  SEL OPEN");return;
+   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL TOGGLE AUTO SAVE":"SELECT / SEL OPEN");return;
   }
   ru_frame(12,72,216,111);ru_dither(15,75,210,4,1);
   char num[12];ru_uint(v->master,num);ru_center("MASTER VOLUME",120,89,1);

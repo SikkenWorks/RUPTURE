@@ -69,6 +69,16 @@ void etch_fx_reset(struct etch_native_fx *s){
  for(uint32_t i=0;i<512;i++)tape_line[i]=0;
  for(uint32_t i=0;i<64;i++)space_diffuser[i]=0;
  s->eq_gain_smooth[0]=s->eq_gain_smooth[1]=s->eq_gain_smooth[2]=16384;
+#ifdef RUPTURE_BUILD
+ s->eq2_enabled=0u;
+ s->eq2.current_headroom=32767u;
+ s->eq2.headroom_q15[0]=s->eq2.headroom_q15[1]=32767u;
+ s->eq2.initialized=1u;
+ for(int b=0;b<4;b++){
+  s->eq2.current[b].b0=RU_EQ2_ONE;
+  for(int k=0;k<2;k++)s->eq2.target[k][b].b0=RU_EQ2_ONE;
+ }
+#endif
  s->comp_gain=32767;s->comp_target=32767;s->rupture_fuzz_makeup=32767;
 }
 /* Ring Mod and channel EQ run once after the voice sum, never per voice.
@@ -110,6 +120,12 @@ static int16_t etch_fx_ring_eq(struct etch_native_fx *s,int16_t sample,const str
  }
  s->ring_phase+=s->ring_increment;
  if(!(bypass_mask&ETCH_FXB_BIT(ETCH_FXB_EQ))){
+#ifdef RUPTURE_BUILD
+ if(s->eq2_enabled){
+  x=rupture_eq2_process(&s->eq2,x);
+ }else
+#endif
+ {
  /* One-pole crossovers: low <~200Hz, mid ~200Hz..~6kHz, high >~6kHz.
   * The three bands recombine exactly to dry when each gain is at unity. */
  s->eq_lp_low+=(int32_t)(etch_fx_bounded_lp_step(x-s->eq_lp_low,900));
@@ -135,6 +151,7 @@ static int16_t etch_fx_ring_eq(struct etch_native_fx *s,int16_t sample,const str
  }
  s->eq_lp_hpf=x;
 #endif
+ }
  }else{
   /* Skip EQ filters and band recombination entirely while bypassed.
    * Reset small one-pole state to avoid resurrecting an old tone. */
@@ -522,6 +539,9 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   * Never cut an ongoing wet->dry slew short: all smooth controls must
   * have naturally reached zero, and previous EQ/compression must be unity. */
  if(etch_fx_controls_dry(cfg,chorus,delay,reverb) &&
+#ifdef RUPTURE_BUILD
+    !s->eq2_enabled && /* EQ2 parameters live outside legacy FX settings */
+#endif
     !s->reverb_mix_smooth && !s->chorus_mix_smooth && !s->delay_mix_smooth &&
     !s->ring_mix_smooth && !s->trem_mix_smooth && !s->phaser_mix_smooth &&
     !s->flanger_mix_smooth && !s->decim_mix_smooth &&
@@ -770,6 +790,9 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
        cfg->decim_mix||cfg->tape_mix||cfg->reverse_mix||
        cfg->vibrato_mix||cfg->rotary_mix||cfg->wah_mix||
        cfg->eq_hpf||
+#ifdef RUPTURE_BUILD
+       (s->eq2_enabled && s->eq2.current_headroom!=32767u)||
+#endif
        s->rupture_transient_mix||s->rupture_tilt_mix||
        s->rupture_fuzz_mix||s->rupture_sand_mix||
        cfg->eq_low!=16384u||cfg->eq_mid!=16384u||cfg->eq_high!=16384u);

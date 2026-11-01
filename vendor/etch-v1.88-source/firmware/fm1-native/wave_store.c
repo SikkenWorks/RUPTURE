@@ -183,24 +183,26 @@ static int select_project_read_region(const struct etch_store_io *io);
 #define RU_SETTINGS_MAGIC 0x5653u /* legacy AUTO SAVE on; screensaver defaults ON */
 #define RU_SAVER_OFF_MAGIC 0x5654u /* autosave OFF, screensaver OFF */
 #define RU_BOTH_OFF_MAGIC 0x5655u /* autosave ON, screensaver OFF */
-#define RU_SAVER_TIMED_MAGIC 0x5700u /* idx 0..7, low bits ON + AUTO SAVE */
+#define RU_SAVER_TIMED_MAGIC 0x5700u
+#define RU_BOOT_MAGIC 0x5800u /* boot project 0=NEW, 1..12 stored project; CRC protected */ /* idx 0..7, low bits ON + AUTO SAVE */
 static uint8_t ru_is_timed(uint16_t magic){return magic>=RU_SAVER_TIMED_MAGIC&&magic<RU_SAVER_TIMED_MAGIC+32u;}
+static uint8_t ru_is_boot_magic(uint16_t m){return m>=RU_BOOT_MAGIC && m<RU_BOOT_MAGIC+13u*32u;}
 #define RU_VOL_FIRST 32u
 #define RU_VOL_REC_BYTES 8u
 #define RU_VOL_SLOTS ((PAYLOAD_OFF-RU_VOL_FIRST)/RU_VOL_REC_BYTES)
 struct ru_vol_record {uint16_t magic;uint8_t volume,opposite;uint32_t crc;};
 _Static_assert(sizeof(struct ru_vol_record)==8u,"volume record must be exactly 8 bytes");
-static struct ru_vol_record ru_vol_make(uint8_t vol,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index){
- struct ru_vol_record r={(uint16_t)(RU_SAVER_TIMED_MAGIC+((seconds_index&7u)<<2)+(autosave?2u:0u)+(screensaver?1u:0u)),vol,(uint8_t)(vol^255u),0u};
+static struct ru_vol_record ru_vol_make(uint8_t vol,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index,uint8_t boot_project){
+ struct ru_vol_record r={(uint16_t)(RU_BOOT_MAGIC+((uint16_t)boot_project*32u)+((seconds_index&7u)<<2)+(autosave?2u:0u)+(screensaver?1u:0u)),vol,(uint8_t)(vol^255u),0u};
  r.crc=etch_store_crc(&r,4u);return r;
 }
 static uint8_t ru_vol_valid(const struct ru_vol_record *r){
- return (r->magic==RU_VOL_MAGIC||r->magic==RU_SETTINGS_MAGIC||r->magic==RU_SAVER_OFF_MAGIC||r->magic==RU_BOTH_OFF_MAGIC||ru_is_timed(r->magic))&&r->volume<=200u&&
+ return (r->magic==RU_VOL_MAGIC||r->magic==RU_SETTINGS_MAGIC||r->magic==RU_SAVER_OFF_MAGIC||r->magic==RU_BOTH_OFF_MAGIC||(ru_is_timed(r->magic)||ru_is_boot_magic(r->magic)))&&r->volume<=200u&&
    r->opposite==(uint8_t)(r->volume^255u)&&r->crc==etch_store_crc(r,4u);
 }
 static int ru_vol_scan(const struct etch_store_io *io,uint32_t bank,
- uint8_t *value,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint32_t *free_offset){
- uint32_t last_free=0xffffffffu;*value=100u;if(autosave)*autosave=0u;if(screensaver)*screensaver=1u;if(seconds_index)*seconds_index=1u;
+ uint8_t *value,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint32_t *free_offset){
+ uint32_t last_free=0xffffffffu;*value=100u;if(autosave)*autosave=0u;if(screensaver)*screensaver=1u;if(seconds_index)*seconds_index=1u;if(boot_project)*boot_project=0u;
  for(uint32_t i=0;i<RU_VOL_SLOTS;i++){
   struct ru_vol_record rec;uint32_t off=base(bank)+RU_VOL_FIRST+i*RU_VOL_REC_BYTES;
   if(io->read(off,&rec,sizeof(rec)))return ETCH_STORE_IO;
@@ -209,22 +211,26 @@ static int ru_vol_scan(const struct etch_store_io *io,uint32_t bank,
   if(blank && last_free==0xffffffffu)last_free=off;
   if(ru_vol_valid(&rec)){
    *value=rec.volume;
-   if(autosave)*autosave=ru_is_timed(rec.magic)?!!(rec.magic&2u):(uint8_t)(rec.magic==RU_SETTINGS_MAGIC||rec.magic==RU_BOTH_OFF_MAGIC);
-   if(screensaver)*screensaver=ru_is_timed(rec.magic)?!!(rec.magic&1u):(uint8_t)(rec.magic==RU_VOL_MAGIC||rec.magic==RU_SETTINGS_MAGIC);
-   if(seconds_index)*seconds_index=ru_is_timed(rec.magic)?(uint8_t)((rec.magic-RU_SAVER_TIMED_MAGIC)>>2):1u;
+   if(autosave)*autosave=(ru_is_timed(rec.magic)||ru_is_boot_magic(rec.magic))?!!(rec.magic&2u):(uint8_t)(rec.magic==RU_SETTINGS_MAGIC||rec.magic==RU_BOTH_OFF_MAGIC);
+   if(screensaver)*screensaver=(ru_is_timed(rec.magic)||ru_is_boot_magic(rec.magic))?!!(rec.magic&1u):(uint8_t)(rec.magic==RU_VOL_MAGIC||rec.magic==RU_SETTINGS_MAGIC);
+   if(seconds_index)*seconds_index=ru_is_boot_magic(rec.magic)?(uint8_t)(((rec.magic-RU_BOOT_MAGIC)%32u)>>2):ru_is_timed(rec.magic)?(uint8_t)((rec.magic-RU_SAVER_TIMED_MAGIC)>>2):1u;
+   if(boot_project)*boot_project=ru_is_boot_magic(rec.magic)?(uint8_t)((rec.magic-RU_BOOT_MAGIC)/32u):0u;
   }
  }
  if(free_offset)*free_offset=last_free;
  return ETCH_STORE_OK;
 }
-int etch_store_user_settings_ex_load(const struct etch_store_io *io,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index){
- if(!io||!io->read||!volume||!autosave||!screensaver||!seconds_index)return ETCH_STORE_IO;
- *volume=100u;*autosave=0u;*screensaver=1u;*seconds_index=1u;
+int etch_store_user_settings_full_load(const struct etch_store_io *io,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project){
+ if(!io||!io->read||!volume||!autosave||!screensaver||!seconds_index||!boot_project)return ETCH_STORE_IO;
+ *volume=100u;*autosave=0u;*screensaver=1u;*seconds_index=1u;*boot_project=0u;
  int selected=select_project_read_region(io);if(selected<0)return selected;
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
- return ru_vol_scan(io,(uint32_t)bank,volume,autosave,screensaver,seconds_index,0);
+ return ru_vol_scan(io,(uint32_t)bank,volume,autosave,screensaver,seconds_index,boot_project,0);
+}
+int etch_store_user_settings_ex_load(const struct etch_store_io *io,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index){
+ uint8_t boot=0;return etch_store_user_settings_full_load(io,volume,autosave,screensaver,seconds_index,&boot);
 }
 int etch_store_user_settings_load(const struct etch_store_io *io,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver){
  uint8_t delay=1u;return etch_store_user_settings_ex_load(io,volume,autosave,screensaver,&delay);
@@ -235,15 +241,15 @@ int etch_store_global_settings_load(const struct etch_store_io *io,uint8_t *volu
 int etch_store_global_volume_load(const struct etch_store_io *io,uint8_t *volume){
  uint8_t autosave=0u;return etch_store_global_settings_load(io,volume,&autosave);
 }
-int etch_store_user_settings_ex_save(const struct etch_store_io *io,uint8_t volume,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index){
- if(!io||!io->read||!io->program||volume>200u||autosave>1u||screensaver>1u||seconds_index>7u)return ETCH_STORE_IO;
+int etch_store_user_settings_full_save(const struct etch_store_io *io,uint8_t volume,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index,uint8_t boot_project){
+ if(!io||!io->read||!io->program||volume>200u||autosave>1u||screensaver>1u||seconds_index>7u||boot_project>12u)return ETCH_STORE_IO;
  int selected=select_project_read_region(io);if(selected<0)return selected;
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
- uint8_t previous,old_autosave,old_saver,old_seconds;uint32_t free_offset;
- int rc=ru_vol_scan(io,(uint32_t)bank,&previous,&old_autosave,&old_saver,&old_seconds,&free_offset);if(rc)return rc;
- if(previous==volume&&old_autosave==autosave&&old_saver==screensaver&&old_seconds==seconds_index)return ETCH_STORE_OK;
+ uint8_t previous,old_autosave,old_saver,old_seconds,old_boot;uint32_t free_offset;
+ int rc=ru_vol_scan(io,(uint32_t)bank,&previous,&old_autosave,&old_saver,&old_seconds,&old_boot,&free_offset);if(rc)return rc;
+ if(previous==volume&&old_autosave==autosave&&old_saver==screensaver&&old_seconds==seconds_index&&old_boot==boot_project)return ETCH_STORE_OK;
  if(free_offset==0xffffffffu){
   /* The 28-entry NOR journal is full. Compact by copying the complete,
    * previously verified project payload to the INACTIVE A/B bank. The
@@ -266,14 +272,15 @@ int etch_store_user_settings_ex_save(const struct etch_store_io *io,uint8_t volu
    }
   }
   if(~crc!=h.crc)return ETCH_STORE_VERIFY;
-  struct ru_vol_record compact=ru_vol_make(volume,autosave,screensaver,seconds_index);
+  struct ru_vol_record compact=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project);
   if(io->program(offset+RU_VOL_FIRST,&compact,sizeof(compact)))return ETCH_STORE_IO;
   struct ru_vol_record verify;
   if(io->read(offset+RU_VOL_FIRST,&verify,sizeof(verify))||
     !ru_vol_valid(&verify)||verify.volume!=volume||
     (uint8_t)!!(verify.magic&2u)!=autosave ||
     (uint8_t)!!(verify.magic&1u)!=screensaver ||
-    (uint8_t)((verify.magic-RU_SAVER_TIMED_MAGIC)>>2)!=seconds_index)return ETCH_STORE_VERIFY;
+    (uint8_t)(((verify.magic-RU_BOOT_MAGIC)%32u)>>2)!=seconds_index ||
+    (uint8_t)((verify.magic-RU_BOOT_MAGIC)/32u)!=boot_project)return ETCH_STORE_VERIFY;
   h.bank=target;h.generation++;h.hcrc=etch_store_crc(&h,28u);
   if(io->program(offset,&h,sizeof(h)))return ETCH_STORE_IO;
   struct header committed;
@@ -281,13 +288,19 @@ int etch_store_user_settings_ex_save(const struct etch_store_io *io,uint8_t volu
     committed.generation!=h.generation)return ETCH_STORE_VERIFY;
   return ETCH_STORE_OK;
  }
- struct ru_vol_record record=ru_vol_make(volume,autosave,screensaver,seconds_index),check;
+ struct ru_vol_record record=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project),check;
  if(io->program(free_offset,&record,sizeof(record)))return ETCH_STORE_IO;
  if(io->read(free_offset,&check,sizeof(check)))return ETCH_STORE_IO;
  return ru_vol_valid(&check)&&check.volume==volume&&
   (uint8_t)!!(check.magic&2u)==autosave &&
   (uint8_t)!!(check.magic&1u)==screensaver &&
-  (uint8_t)((check.magic-RU_SAVER_TIMED_MAGIC)>>2)==seconds_index?ETCH_STORE_OK:ETCH_STORE_VERIFY;
+  (uint8_t)(((check.magic-RU_BOOT_MAGIC)%32u)>>2)==seconds_index &&
+  (uint8_t)((check.magic-RU_BOOT_MAGIC)/32u)==boot_project?ETCH_STORE_OK:ETCH_STORE_VERIFY;
+}
+int etch_store_user_settings_ex_save(const struct etch_store_io *io,uint8_t volume,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index){
+ uint8_t a=0,b=0,c=0,d=0,boot=0;
+ int rc=etch_store_user_settings_full_load(io,&a,&b,&c,&d,&boot);
+ return rc==ETCH_STORE_OK?etch_store_user_settings_full_save(io,volume,autosave,screensaver,seconds_index,boot):rc;
 }
 int etch_store_user_settings_save(const struct etch_store_io *io,uint8_t volume,uint8_t autosave,uint8_t screensaver){
  uint8_t oldvol=100u,oldauto=0u,oldscreen=1u,oldseconds=1u;
@@ -625,10 +638,10 @@ static int p05_rewrite(const struct etch_store_io *io,const struct etch_wave_lib
  /* Carry the device-global volume into the new bank atomically with a
   * normal project save. Never copy torn/corrupted log entries. */
  if(cur>=0&&store_region==3u){
-  uint8_t last_volume=100u,last_autosave=0u,last_saver=1u,last_seconds=1u;
-  int vr=ru_vol_scan(io,(uint32_t)cur,&last_volume,&last_autosave,&last_saver,&last_seconds,0);if(vr)return vr;
-  if(last_volume!=100u||last_autosave||!last_saver||last_seconds!=1u){
-   struct ru_vol_record rec=ru_vol_make(last_volume,last_autosave,last_saver,last_seconds);
+  uint8_t last_volume=100u,last_autosave=0u,last_saver=1u,last_seconds=1u,last_boot=0u;
+  int vr=ru_vol_scan(io,(uint32_t)cur,&last_volume,&last_autosave,&last_saver,&last_seconds,&last_boot,0);if(vr)return vr;
+  if(last_volume!=100u||last_autosave||!last_saver||last_seconds!=1u||last_boot){
+   struct ru_vol_record rec=ru_vol_make(last_volume,last_autosave,last_saver,last_seconds,last_boot);
    if(io->program(offset+RU_VOL_FIRST,&rec,sizeof(rec)))return ETCH_STORE_IO;
   }
  }
@@ -800,15 +813,29 @@ int etch_store_catalog_edit(const struct etch_store_io *io,uint8_t op,uint8_t so
  struct p05_manifest old={0},next={0};
  if(p05_read_catalog(io,(uint32_t)cur,&oldhead,&old)!=ETCH_STORE_OK)return ETCH_STORE_VERIFY;
  if(!old.item[source].bytes)return ETCH_STORE_EMPTY;
+ if(op==3u){
+  uint8_t survivors=0;
+  for(uint8_t i=0;i<12u;i++)if(i!=source&&old.item[i].bytes)survivors++;
+  if(!survivors){
+   /* Last project: erase the dedicated OWNED bank pair only, retaining other
+    * firmware, OTA, boot and legacy records. This is an explicit delete. */
+   if(store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
+   for(uint32_t bank=0;bank<2u;bank++)for(uint32_t at=0;at<region_bank_bytes();at+=4096u){
+    if(io->erase(base(bank)+at))return ETCH_STORE_IO;
+    ru_store_progress(1u,bank*region_bank_bytes()+at+4096u,2u*region_bank_bytes());
+   }
+   project_slot=0u;requested_slot=255u;global_wave_pending=0u;
+   return ETCH_STORE_OK;
+  }
+ }
  if(op==1u && (old.item[target].bytes||source==target))return ETCH_STORE_INCOMPATIBLE;
  if(op==2u && (!rename||!rename[0]))return ETCH_STORE_VERIFY;
  if(op==3u){
   /* Global wave-library ownership cannot simply disappear and corrupt
    * surviving project references. Reject this special case, not data-loss. */
-  if(source==project_global_slot(oldhead.reserved))return ETCH_STORE_INCOMPATIBLE;
-  uint8_t survivors=0u;
-  for(uint8_t i=0;i<12u;i++)if(i!=source&&old.item[i].bytes)survivors++;
-  if(!survivors)return ETCH_STORE_INCOMPATIBLE;
+  /* Shared waveform owner cannot be deleted while other projects depend
+   * on it. Deleting the sole project uses the dedicated final-slot path above. */
+  if(source==project_global_slot(oldhead.reserved))return ETCH_STORE_SHARED_OWNER;
  }
  next.magic=ETCH_P05_V13_MAGIC;next.slots=ETCH_P05_SLOTS;
  uint32_t total=sizeof(next);
@@ -865,10 +892,10 @@ int etch_store_catalog_edit(const struct etch_store_io *io,uint8_t op,uint8_t so
   if(~check!=item->crc)return ETCH_STORE_VERIFY;
  }
  if(store_region==3u){
-  uint8_t vol=100u,autosave=0u,saver=1u,seconds=1u;
-  int gr=ru_vol_scan(io,(uint32_t)cur,&vol,&autosave,&saver,&seconds,0);if(gr)return gr;
-  if(vol!=100u||autosave||!saver||seconds!=1u){
-   struct ru_vol_record rec=ru_vol_make(vol,autosave,saver,seconds);
+  uint8_t vol=100u,autosave=0u,saver=1u,seconds=1u,boot=0u;
+  int gr=ru_vol_scan(io,(uint32_t)cur,&vol,&autosave,&saver,&seconds,&boot,0);if(gr)return gr;
+  if(vol!=100u||autosave||!saver||seconds!=1u||boot){
+   struct ru_vol_record rec=ru_vol_make(vol,autosave,saver,seconds,boot);
    if(io->program(offset+RU_VOL_FIRST,&rec,sizeof(rec)))return ETCH_STORE_IO;
   }
  }

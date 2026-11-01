@@ -56,6 +56,9 @@ static inline void *fl_far(void *p) { void *volatile q = p; return q; }
 #define FL_RANGE_OK(off, n) (FL_STORE_OK(off, n) || FL_IN(off, n, FL_OTA_LO, FL_OTA_HI))
 #endif
 
+#ifndef FL_ERASE_RANGE_OK
+#define FL_ERASE_RANGE_OK(off, n) FL_RANGE_OK(off,n)
+#endif
 typedef struct { uint32_t sfc_con, spi_con; } fl_saved_t;
 
 RAMINL void fl_csync(void) { __asm__ volatile("csync" ::: "memory"); }
@@ -176,7 +179,7 @@ static RAMFN uint32_t fl_status_ram(void)                /* SR1 | SR2 << 8 */
 static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
 {
     fl_saved_t s; int rc;
-    if (!FL_RANGE_OK(off, 0x1000u) || (off & 0xFFFu))
+    if (!FL_ERASE_RANGE_OK(off, 0x1000u) || (off & 0xFFFu))
         return -1;
     if (fl_enter(&s)) return -2;
     fl_wren();

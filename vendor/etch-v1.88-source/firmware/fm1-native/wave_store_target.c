@@ -14,6 +14,9 @@
 #else
 #define FL_RANGE_OK(off,n) ((ETCH_NATIVE_STORAGE&&(FL_IN(off,n,ETCH_STORE_BASE,ETCH_STORE_END)||(ETCH_STORE_SPARE_ENABLED&&FL_IN(off,n,ETCH_STORE_SPARE_BASE,ETCH_STORE_SPARE_END))))||(ETCH_NATIVE_OTA&&FL_IN(off,n,0xE0000u,0xE5000u)))
 #endif
+/* Full legacy-data erasure is available ONLY through a separately checked WIPE
+ * callback. Page programming keeps the original narrow FL_RANGE_OK policy. */
+#define FL_ERASE_RANGE_OK(off,n) (FL_RANGE_OK(off,n) || (ETCH_NATIVE_STORAGE && FL_IN(off,n,ETCH_STORE_BASE,0xE0000u)))
 #include "hal/fm1_flash.h"
 static struct etch_wave_library native_library;
 static uint8_t native_slot,native_save_confirm;
@@ -35,6 +38,21 @@ static int native_store_program(uint32_t off,const void *src,uint32_t n){
  if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason))return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_prog_ram)(off,(const uint8_t*)src,n,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
+static int native_store_wipe_read(uint32_t off,void *dst,uint32_t n){
+ if(!FL_IN(off,n,ETCH_STORE_BASE,0xE0000u))return -1;
+ uint8_t *p=(uint8_t*)dst;
+ while(n){uint32_t k=n>256u?256u:n;fm1_irq_off();
+  int rc=FL_FAR(fl_read_ram)(off,p,k);fm1_irq_enable_all();
+  if(rc)return rc;off+=k;p+=k;n-=k;fm1_wdt_feed();}
+ return 0;
+}
+static int native_store_wipe_erase(uint32_t off){
+ if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||
+    (off&4095u)||!FL_IN(off,4096u,ETCH_STORE_BASE,0xE0000u))return -1;
+ uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);
+ fm1_irq_enable_all();fm1_wdt_feed();return rc;
+}
+static const struct etch_store_io native_wipe_io={native_store_wipe_read,native_store_wipe_erase,0};
 static const struct etch_store_io native_store_io={native_store_read,native_store_erase,native_store_program};
 static void native_library_boot(void){
  if(!ETCH_NATIVE_STORAGE)return;
@@ -52,9 +70,9 @@ static void native_library_load(void){
 }
 static void native_project_capture(void){
 #ifdef RUPTURE_BUILD
- /* PJT33 carries RUPTURE project FX snapshot and preserves PJT32
-  * DSP sound/sub fields. Every flash-writing entry point must use PJT33. */
- native_project_cfg.source_version=33;
+ /* PJT34 carries RUPTURE project FX and EQ 2.0; preserves PJT32
+  * DSP sound/sub fields. Every flash-writing entry point must use PJT34. */
+ native_project_cfg.source_version=34;
 #else
  native_project_cfg.source_version=30;
 #endif

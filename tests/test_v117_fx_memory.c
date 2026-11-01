@@ -13,7 +13,7 @@ static uint8_t archive[ETCH_PROJECT_MAX_BYTES];
 static void assert_capture_version(void){
  FILE *f=fopen("vendor/etch-v1.88-source/firmware/fm1-native/wave_store_target.c","rb");
  assert(f);char buf[12000];size_t n=fread(buf,1,sizeof(buf)-1,f);fclose(f);buf[n]=0;
- assert(strstr(buf,"native_project_cfg.source_version=33;")!=NULL);
+ assert(strstr(buf,"native_project_cfg.source_version=34;")!=NULL);
 }
 static void setup(void){
  memset(&a,0,sizeof(a));memset(&b,0,sizeof(b));

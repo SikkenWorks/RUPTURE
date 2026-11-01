@@ -17,12 +17,12 @@ python3 tests/export_native_screens.py
 /tmp/rupture_test_native_sequence_slots
 
 # V0.9: Four active post-mix effects, channel EQ and battery ADC threshold guards.
-"$cc" -std=c11 -O2 -Wno-unused-function -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v09_fx.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -o /tmp/rupture_test_v09_fx
+"$cc" -std=c11 -O2 -Wno-unused-function -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v09_fx.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -o /tmp/rupture_test_v09_fx
 /tmp/rupture_test_v09_fx
 "$cc" -std=c11 -O2 tests/test_v09_battery.c -o /tmp/rupture_test_v09_battery
 /tmp/rupture_test_v09_battery
 # RUPTURE-specific K4 HIGH AIR boost and real post-EQ DSP behavior.
-"$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wno-unused-function -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v11_highcut.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_test_highcut
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wno-unused-function -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v11_highcut.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_test_highcut
 /tmp/rupture_test_highcut
 
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_trs_midi.c -o /tmp/rupture_test_trs && /tmp/rupture_test_trs
@@ -35,7 +35,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_cxs_codec && /tmp/rupture_cxs_codec
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_cxs_codec && /tmp/rupture_cxs_codec
 # V1.3 full CXS native LFO+shaping sample renders; no graphics-only settings.
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v13_lfo_shape.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c -o /tmp/rupture_v13_lfo_shape
 /tmp/rupture_v13_lfo_shape
@@ -45,7 +45,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v14_shape_storage
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v14_shape_storage
 /tmp/rupture_v14_shape_storage
 
 # V1.5: native-owned flash A/B test with twelve catalog slots and old four-slot migration.
@@ -55,7 +55,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v15_flash
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v15_flash
 /tmp/rupture_v15_flash
 # V1.6: Shared actual native mono policy and per-sample glide mathematics.
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v16_mono_policy.c -o /tmp/rupture_v16_mono && /tmp/rupture_v16_mono
@@ -67,7 +67,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v18_names && /tmp/rupture_v18_names
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v18_names && /tmp/rupture_v18_names
 
 # V1.9: dual suboscillator Q15 engine, independent pitch and gain headroom.
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v19_dual_sub.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c -o /tmp/rupture_v19_sub && /tmp/rupture_v19_sub
@@ -81,7 +81,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v111_sub_storage
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v111_sub_storage
 /tmp/rupture_v111_sub_storage
 # V1.12: native PJT32 project snapshot persistence for Note Memory + Master.
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
@@ -89,7 +89,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v112_performance
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v112_performance
 /tmp/rupture_v112_performance
 # V1.13: separate device-global master volume NOR journal, across projects.
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
@@ -98,18 +98,18 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v113_global
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v113_global
 /tmp/rupture_v113_global
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -DRUPTURE_BUILD \
- tests/test_v114_fx_bypass.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -o /tmp/rupture_v114_fx_bypass
+ tests/test_v114_fx_bypass.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -o /tmp/rupture_v114_fx_bypass
 /tmp/rupture_v114_fx_bypass
 # V1.15: compressor and folder exposed; three additional state-only DSP effects.
 "$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wall -Wextra -Wno-unused-function \
- tests/test_v115_five_fx.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v115_five_fx
+ tests/test_v115_five_fx.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v115_five_fx
 /tmp/rupture_v115_five_fx
 # V1.16: Sandpaper native DSP spectral/softness/bypass regression.
 "$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wall -Wextra -Wno-unused-function \
- tests/test_v116_sandpaper.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v116_sandpaper
+ tests/test_v116_sandpaper.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v116_sandpaper
 /tmp/rupture_v116_sandpaper
 # V1.17: project-scoped effect parameters + all FX bypass bits in PJT33.
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
@@ -117,7 +117,7 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v117_fx_memory
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v117_fx_memory
 /tmp/rupture_v117_fx_memory
 
 # V1.17: full 12-slot NOR flash journal + PJT33 FX memory + torn writes.
@@ -127,11 +127,11 @@ python3 tests/export_native_screens.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v117_flash_fx
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v117_flash_fx
 /tmp/rupture_v117_flash_fx
 # V1.18: actual all-ten-FX maximum-parameter PCM headroom stress.
 "$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wall -Wextra -Wno-unused-function \
- tests/test_v118_full_fx_stress.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v118_stress
+ tests/test_v118_full_fx_stress.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v118_stress
 /tmp/rupture_v118_stress
 
 # V1.19: per-phase on-device read-only DMA diagnostics and safe scope deferral.
@@ -147,7 +147,7 @@ python3 tests/test_v120_boot_art.py
 
 # V1.22: individual FX response, fuzz loudness and Sandpaper click regression.
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -DRUPTURE_BUILD \
- tests/test_v122_fx_quality.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v122_quality
+ tests/test_v122_fx_quality.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v122_quality
 /tmp/rupture_v122_quality
 
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function tests/test_v122_subblend.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c -o /tmp/rupture_v122_subblend
@@ -161,9 +161,9 @@ python3 tests/test_v120_boot_art.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v123_storage && /tmp/rupture_v123_storage
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v123_storage && /tmp/rupture_v123_storage
 # V1.24: genuine classic post-filter path, dual-sub gain slews, all active FX stress.
-"$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wall -Wextra -Wno-unused-function tests/test_v124_sub_fx_headroom.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v124_audio && /tmp/rupture_v124_audio
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -Wall -Wextra -Wno-unused-function tests/test_v124_sub_fx_headroom.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v124_audio && /tmp/rupture_v124_audio
 "$cc" -std=c11 -O2 -Wno-unused-function tests/test_v124_ui_spacing.c -o /tmp/rupture_v124_ui && /tmp/rupture_v124_ui
 # V1.25: every user-facing fix wired in the native source, plus real I/O phases
 # exercised by the twelve-slot NOR emulator above.
@@ -181,14 +181,14 @@ python3 tests/test_v126_workflow.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v127_settings
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v127_settings
 /tmp/rupture_v127_settings
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function tests/test_v127_native_ui.c -o /tmp/rupture_v127_ui && /tmp/rupture_v127_ui
 python3 tests/test_v127_source_contract.py
 
 # V1.28: persistent global preferences, bounded legacy storage wipe,
 # native project catalogs, packed sequence edits and pixel-accurate UI.
-"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v128_storage.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_test_v128_storage
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v128_storage.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_test_v128_storage
 /tmp/rupture_test_v128_storage
 "$cc" -std=c11 -O2 -w tests/test_v128_ui.c -o /tmp/rupture_test_v128_ui
 /tmp/rupture_test_v128_ui
@@ -200,7 +200,7 @@ python3 tests/test_v127_source_contract.py
 python3 tests/test_v129_settings_contract.py
 "$cc" -std=c11 -O2 -Wno-unused-function tests/test_v130_ui.c -o /tmp/rupture_v130_ui && /tmp/rupture_v130_ui
 python3 tests/test_v130_source_contract.py
-"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v130_legacy_sequences.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v130_legacy && /tmp/rupture_v130_legacy
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v130_legacy_sequences.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v130_legacy && /tmp/rupture_v130_legacy
 
 # V1.32 / V1.33: screensaver controls; full per-sequence archive persistence
 # and UI active-slot markers in the native sources.
@@ -210,6 +210,16 @@ python3 tests/test_v130_source_contract.py
  vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
- vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c -lm -o /tmp/rupture_v133_roundtrip
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v133_roundtrip
 /tmp/rupture_v133_roundtrip
 python3 tests/test_v133_source_contract.py
+
+# V1.34 true RBJ EQ2 audio, Q bandwidth, fixed headroom and PJT34 storage.
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -D_DEFAULT_SOURCE -Wno-unused-function -Wall -Wextra -Werror \
+ tests/test_v134_eq2.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v134_eq2 && /tmp/rupture_v134_eq2
+"$cc" -std=c11 -O2 -DRUPTURE_BUILD -D_DEFAULT_SOURCE -Wno-unused-function -Wall -Wextra -Werror \
+ tests/test_v134_eq2_engine.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v134_eq2_engine && /tmp/rupture_v134_eq2_engine
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v134_eq2_storage.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v134_storage && /tmp/rupture_v134_storage

@@ -63,7 +63,7 @@ struct etch_wave_library {
 #define ETCH_STORE_V1_BYTES offsetof(struct etch_wave_library,wave_names)
 _Static_assert(ETCH_STORE_V1_BYTES==17164,"v1 layout must never change");
 struct etch_store_io {int (*read)(uint32_t,void*,uint32_t);int (*erase)(uint32_t);int (*program)(uint32_t,const void*,uint32_t);};
-enum {ETCH_STORE_OK=0,ETCH_STORE_EMPTY=1,ETCH_STORE_FOREIGN=-2,ETCH_STORE_IO=-3,ETCH_STORE_VERIFY=-4,ETCH_STORE_FULL=-5,ETCH_STORE_INCOMPATIBLE=-6};
+enum {ETCH_STORE_OK=0,ETCH_STORE_EMPTY=1,ETCH_STORE_FOREIGN=-2,ETCH_STORE_IO=-3,ETCH_STORE_VERIFY=-4,ETCH_STORE_FULL=-5,ETCH_STORE_INCOMPATIBLE=-6,ETCH_STORE_SHARED_OWNER=-7};
 int etch_store_load(const struct etch_store_io*,struct etch_wave_library*);
 int etch_store_save(const struct etch_store_io*,const struct etch_wave_library*);
 uint32_t etch_store_crc(const void*,uint32_t);
@@ -107,6 +107,8 @@ int etch_store_delete_project_slot(const struct etch_store_io*,uint8_t slot,uint
  * It never changes per-project data, app/OTA or protected boot sectors.
  * Returns 100 when no valid record exists; no write during load. */
 int etch_store_user_settings_load(const struct etch_store_io*,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver);
+int etch_store_user_settings_full_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
+int etch_store_user_settings_full_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_user_settings_ex_load(const struct etch_store_io*,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index);
 int etch_store_user_settings_save(const struct etch_store_io*,uint8_t volume,uint8_t autosave,uint8_t screensaver);
 int etch_store_user_settings_ex_save(const struct etch_store_io*,uint8_t volume,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index);

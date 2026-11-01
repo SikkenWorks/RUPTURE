@@ -65,6 +65,7 @@ struct etch_project_settings {
 
 #ifdef RUPTURE_BUILD
  struct rupture_fx_memory rupture_fx; /* PJT33: project-scoped, zero additional flash sectors */
+ struct rupture_eq2_params eq2; /* PJT34: 7-byte EQ 2.0 frequency/Q and mode */
 #endif
  uint8_t mono_mode; /* 0=POLY, 1=MONO; saved per project, V12+ */
  uint8_t source_version; /* read-only runtime metadata; not encoded */
