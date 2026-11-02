@@ -1,10 +1,10 @@
 {
-  "app_sha256": "8a66a826ef340f0303c2539d9f94181921d61c572f23f49da971ebdec69e3478",
+  "app_sha256": "63ad8a0ca0581b4703f5a791f789da48e15ccdf1db5128bc85cc549489b779ee",
   "storage_writes": true,
   "ota_writes": true,
   "readonly_hardware_test": false,
   "flash_read_only": false,
-  "version": "RUPTURE V1.53",
+  "version": "RUPTURE V1.54",
   "hardware_verified": false,
   "usb_audio_44100": true,
   "usb_audio_48000_experimental": true,

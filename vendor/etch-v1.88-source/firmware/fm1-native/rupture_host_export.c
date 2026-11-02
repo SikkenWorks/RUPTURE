@@ -22,11 +22,11 @@ int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.cr
   }
  }if(v.page==RU_PAGE_EQ){v.k[0]=125;v.k[1]=75;v.k[2]=110;v.k[3]=20;}if(v.page==RU_PAGE_FX){v.k[0]=1;v.k[1]=61;v.k[2]=80;v.k[3]=35;}if(v.page==RU_PAGE_GUIDE||v.page==RU_PAGE_KEYLOCK){v.k[0]=9;v.k[1]=1;v.k[2]=1;}if(v.page==RU_PAGE_SUB1){v.k[0]=0;v.k[1]=1;v.k[2]=50;v.k[3]=0;}
 if(v.page==RU_PAGE_SUB2){v.k[0]=0;v.k[1]=1;v.k[2]=54;v.k[3]=0;}
-/* View a source sprite with the actual native renderer: dam0..dam11. */
+/* View a source sprite with the actual native renderer: dam0..dam19. */
 if(argc>=4 && !strcmp(argv[3],"crt-off"))v.crt_enabled=0u;
 if(argc>=4 && !strcmp(argv[3],"crt-on"))v.crt_enabled=1u;
 if(argc>=4 && v.page==RU_PAGE_PLAY && strncmp(argv[3],"dam",3)==0){
- int frame=atoi(argv[3]+3);if(frame>=0 && frame<12)v.dam_frame=(uint8_t)frame;
+ int frame=atoi(argv[3]+3);if(frame>=0 && frame<20)v.dam_frame=(uint8_t)frame;
 }
 /* Optional renderer-only native view variations, no UI code fork. */
 if(argc>=4 && (v.page==RU_PAGE_PLAY || v.page==RU_PAGE_SHAPE) && !strcmp(argv[3],"saw"))v.main_wave=1u;

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Pixel parity for all twelve original 1-bit sources vs native renderer."""
+"""Pixel parity for all twenty original 1-bit sources vs native renderer."""
 import pathlib,subprocess,tempfile
 from PIL import Image,ImageChops
 r=pathlib.Path(__file__).resolve().parents[1]
 n=r/'vendor/etch-v1.88-source/firmware/fm1-native'
-files=sorted((r/'assets/dam-frames').glob('*.png'))
-assert len(files)==12
+files=sorted((r/'assets/dam-v3-frames/frames').glob('*.png'))
+assert len(files)==20
 with tempfile.TemporaryDirectory() as d:
  exe=pathlib.Path(d)/'export'
  subprocess.run(['gcc','-O2','-Wno-unused-function','-I',str(n),str(n/'rupture_host_export.c'),'-o',str(exe)],check=True)
@@ -24,4 +24,4 @@ with tempfile.TemporaryDirectory() as d:
    for x in range(8,232):p[x,y]=0
   if bg is None:bg=screen.copy()
   else:assert ImageChops.difference(bg,screen).getbbox() is None,i
- print('12/12 pixel-exact original PNGs, native UI x=8..231 y=50..79; all out-of-bar pixels identical')
+ print('20/20 pixel-exact original PNGs, native UI x=8..231 y=50..79; all out-of-bar pixels identical')

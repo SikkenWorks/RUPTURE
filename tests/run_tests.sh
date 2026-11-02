@@ -269,3 +269,7 @@ fi
 # V1.48: ALL ordinary page SAVE routing and alias guard, including UBSan.
 "$cc" -std=c11 -O2 -Wno-unused-function tests/test_v148_save_global.c -o /tmp/rupture_v148_save && /tmp/rupture_v148_save
 "$cc" -std=c11 -O2 -fsanitize=undefined -fno-sanitize-recover=all tests/test_v148_saw_alias.c -o /tmp/rupture_v148_saw && /tmp/rupture_v148_saw
+
+# V1.54: Exact original PNG pixel parity + dedicated 20-frame UI animator.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_dam_anim.c -o /tmp/rupture_v154_dam_anim && /tmp/rupture_v154_dam_anim
+python3 tests/test_dam_sprites.py

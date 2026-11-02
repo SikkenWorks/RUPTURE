@@ -1,0 +1,56 @@
+{
+  "name": "RUPTURE Dam V3 - Water Over Road",
+  "canvas": {
+    "width": 224,
+    "height": 30,
+    "bitDepth": 1,
+    "colors": [
+      "#000000",
+      "#FFFFFF"
+    ]
+  },
+  "frameCount": 20,
+  "states": {
+    "open": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "leakLoop": [
+      11,
+      12,
+      13
+    ],
+    "close": [
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "idle": 1
+  },
+  "behaviour": "On first note: open. Held notes: loop frames 11-13, octave-controlled interval. Final note-off: close. After closing, display idle frame 01.",
+  "road": "Flood and foam overlap the dashed roadway. Markings remain outside submerged areas; visible markings are partially obscured inside the water.",
+  "sources": "Corrected illustrated reference. Frames 15-16 are deterministic intermediate transitions (not present as numbered cells in the reference).",
+  "note": "Assets only. RUPTURE firmware and WebInstaller are not modified.",
+  "sampleLeakFrameIntervalsMs": {
+    "OCT-2": 250,
+    "OCT-1": 200,
+    "OCT0": 140,
+    "OCT+1": 110,
+    "OCT+2": 85,
+    "OCT+3": 65,
+    "OCT+4": 50,
+    "OCT+5": 40
+  }
+}
