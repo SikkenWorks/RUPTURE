@@ -207,31 +207,39 @@ static void etch_panel_commit(void){
 #define RU_BITS_EXTERNAL 1
 #include "rupture_ui.c"
 #include "rupture_save_route.h"
+static uint8_t ru_crt_enabled=0u;
+static uint8_t ru_crt_active=0u; /* set per rendered page; QR has no optics */
 /* Reuse the existing 173-line Felucca-safe DMA canvas; avoid per-pixel LCD
    bus writes and do not write outside its verified transfer bounds. */
 static uint32_t ru_band_crc[15];
 static uint8_t ru_band_valid;
-static uint32_t ru_band_hash(uint32_t start){
+/* CRT inverse sampling can use pixels in neighboring rows (up to 8px).
+ * Include that guard region in changed-band hashes to avoid stale LCD stripes. */
+static uint32_t ru_band_hash(uint32_t band){
  uint32_t h=2166136261u;
- for(uint32_t i=start*480u;i<(start+1u)*480u;i++){h^=ru_bits[i];h*=16777619u;}
+ uint32_t first=band*16u;
+ uint32_t last=first+16u;
+ if(ru_crt_active){first=first>=8u?first-8u:0u;last=last+8u<240u?last+8u:240u;}
+ for(uint32_t i=first*30u;i<last*30u;i++){h^=ru_bits[i];h*=16777619u;}
+ h^=ru_crt_active;h*=16777619u;
  return h;
 }
 static void ru_commit(void){
- /* 15 bands x 16 px. No LCD writes for unchanged screen areas. RGB
-    staging fits after the bitmap in the already-allocated canvas. */
+ /* Preserve the existing 15 x 16px changed-band staging and LCD protocol.
+  * Transform pixels directly into existing DMA stripe memory, no new buffer. */
  uint16_t *output=(uint16_t*)((uint8_t*)etch_scope_canvas+7200u);
  for(uint32_t band=0;band<15u;){
   uint32_t crc=ru_band_hash(band);
-  if(ru_band_valid && ru_band_crc[band]==crc){band++;continue;}
-  uint32_t start=band, count=0u;
-  do {
+  if(ru_band_valid&&ru_band_crc[band]==crc){band++;continue;}
+  uint32_t start=band,count=0u;
+  do{
    ru_band_crc[band]=crc;band++;count++;
    if(band>=15u||count>=3u)break;
    crc=ru_band_hash(band);
   }while(!ru_band_valid||ru_band_crc[band]!=crc);
   for(uint32_t y=0;y<count*16u;y++)for(uint32_t x=0;x<240u;x++){
-   uint32_t id=(start*16u+y)*240u+x;
-   uint16_t pixel=(ru_bits[id>>3]&(0x80u>>(id&7)))?0xffffu:0x0000u;
+   uint32_t lcd_y=start*16u+y;
+   uint16_t pixel=ru_crt_pixel(ru_bits,x,lcd_y,ru_crt_active);
    output[y*240u+x]=(uint16_t)((pixel>>8)|(pixel<<8));
   }
   lcd_blit(0,start*16u,240u,count*16u,output);lcd_sync();
@@ -242,7 +250,7 @@ static void ru_commit(void){
 static void ru_boot_splash(void){
  RuState v={0};v.page=RU_PAGE_LOADING;
  for(uint32_t f=0;f<RU_SPLASH_STEPS;f++){
-  v.boot_step=(uint8_t)(f+1u);ru_render(&v);ru_commit();
+  v.boot_step=(uint8_t)(f+1u);v.crt_enabled=ru_crt_enabled;ru_crt_active=ru_crt_enabled;ru_render(&v);ru_commit();
   fm1_wdt_feed();fm1_delay_ms(56u);
  }
  /* Hold exact logo + slogan while remaining hardware starts. */
@@ -853,18 +861,18 @@ static void ru_storage_notify(uint8_t stage,uint32_t done,uint32_t total){
  if(ru_storage_last_phase==stage && ru_storage_last_pct!=255u &&
     pct<ru_storage_last_pct+5u && pct!=100u)return;
  ru_storage_last_pct=pct;ru_storage_last_phase=stage;
- ru_storage_popup(ru_storage_kind,stage,pct,0u);ru_commit();fm1_wdt_feed();
+ ru_storage_popup(ru_storage_kind,stage,pct,0u);ru_crt_active=ru_crt_enabled;ru_commit();fm1_wdt_feed();
 }
 static void ru_storage_begin(uint8_t kind){
  ru_storage_kind=kind;ru_storage_last_pct=255u;ru_storage_last_phase=255u;
  etch_store_set_progress(ru_storage_notify);
- ru_storage_popup(kind,0u,0u,0u);ru_commit();
+ ru_storage_popup(kind,0u,0u,0u);ru_crt_active=ru_crt_enabled;ru_commit();
 }
 static void ru_storage_finish(uint8_t ok){
  if(!ru_storage_kind)return;
  etch_store_set_progress(0);
  ru_storage_popup(ru_storage_kind,ru_storage_last_phase,ok?100u:ru_storage_last_pct==255u?0u:ru_storage_last_pct,ok?1u:2u);
- ru_commit();ru_storage_kind=0u;
+ ru_crt_active=ru_crt_enabled;ru_commit();ru_storage_kind=0u;
 }
 #endif
 #include "native_seq_cursor.h"
@@ -2683,10 +2691,10 @@ static void rupture_native_screen(void){
     On a healthy boot the first visible page is the pixel-assembly logo. */
  if(!native_screen_gate.ready && !native_safe && !native_tripped && !native_updating)return;
  if(ru_splash_active()){
-  RuState intro={0};intro.page=RU_PAGE_LOADING;
+  RuState intro={0};intro.page=RU_PAGE_LOADING;intro.crt_enabled=ru_crt_enabled;
   uint32_t elapsed=(uint32_t)(etch_ms-ru_splash_start_ms);
   intro.boot_step=elapsed>=1350u?RU_SPLASH_STEPS:(uint8_t)(elapsed/56u+1u);
-  ru_render(&intro);ru_commit();return;
+  ru_crt_active=(uint8_t)(intro.crt_enabled&&intro.page!=RU_PAGE_BUG_REPORT);ru_render(&intro);ru_commit();return;
  }
  if(native_audio.fx.eq2_enabled!=native_project_cfg.eq2.enabled)ru_eq2_apply();
  ru_footer_status=((int32_t)(ru_save_feedback_until-etch_ms)>0)?ru_save_feedback:0u;
@@ -2697,7 +2705,7 @@ static void rupture_native_screen(void){
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
  v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;
- v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
+ v.crt_enabled=ru_crt_enabled;v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
  for(uint8_t i=0u;i<8u;i++)for(uint8_t j=0u;j<13u;j++)v.manager_seq_names[i][j]=ru_manager_seq_names[i][j];
@@ -2854,7 +2862,7 @@ static void rupture_native_screen(void){
   ru_visual_q8[i]=(int16_t)cur;
   v.knob_visual[i]=(uint8_t)((cur+128)/256);
  }
- ru_render(&v);ru_commit();first_frame=0;
+ ru_crt_active=(uint8_t)(v.crt_enabled&&v.page!=RU_PAGE_BUG_REPORT);ru_render(&v);ru_commit();first_frame=0;
 }
 #endif
 static void screen_render(void){
@@ -4259,12 +4267,16 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){
-   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,4);first_frame=1u;}
+   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,5);first_frame=1u;}
    if(pressed&(1u<<3)){
     if(ru_settings_selected==0u){
      /* MASTER VOLUME retains its detail page; K1 also works while its
       * row is selected without requiring entry. */
      ru_settings_open=1u;
+    }else if(ru_settings_selected==5u){
+     /* Fast display-only setting. Save through existing deferred NOR journal. */
+     ru_crt_enabled^=1u;ru_band_valid=0u;
+     ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
     }else if(ru_settings_selected==1u){
      /* AUTO SAVE is a direct SEL checkbox, not a separate modal page. */
      ru_autosave_enabled^=1u;
@@ -4700,9 +4712,9 @@ void fm1_cstart(void){
  /* A completed global-volume log overrides per-preset legacy settings.
   * Read-only on boot. Default 100 on an older record without the log. */
  if(native_store_status==ETCH_STORE_OK){
-  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u;
-  if(etch_store_user_settings_full_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice)==ETCH_STORE_OK){
-   rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;
+  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u,crt=0u;
+  if(etch_store_user_settings_crt_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice,&crt)==ETCH_STORE_OK){
+   rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;ru_crt_enabled=crt;
   }
  }
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
@@ -5106,7 +5118,7 @@ void fm1_cstart(void){
       !native_blend_audio_busy()){
      uint8_t was_tripped=native_tripped;uint8_t was_muted=muted;
      ru_global_gain_attempt_ms=etch_ms;native_pause();
-     int gr=etch_store_user_settings_full_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project);
+     int gr=etch_store_user_settings_crt_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project,ru_crt_enabled);
      if(gr==ETCH_STORE_OK)ru_global_gain_dirty=0u;
      if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
    }

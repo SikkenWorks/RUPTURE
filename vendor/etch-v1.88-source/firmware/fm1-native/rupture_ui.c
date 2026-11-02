@@ -10,6 +10,7 @@
 #include "rupture_eq2_tables.h"
 #include "rupture_dam_sprites.h"
 #include "rupture_dam_anim.h"
+#include "rupture_crt_vcr.h"
 #define RU_W 240
 #define RU_H 240
 #define RU_PAGE_PLAY 0
@@ -65,6 +66,7 @@
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
+ uint8_t crt_enabled;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -720,7 +722,7 @@ static void ru_bug_qr(void){
  }
  ru_center("SCAN TO REPORT A BUG",120,211,1);
 }
-static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
+static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
  static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","PROJECTS","MIDI"};
@@ -1003,17 +1005,18 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
  }
  if(page==RU_PAGE_SETTINGS){
   if(v->settings_open==0u){
-   static const char *const names[]={"MASTER VOLUME","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER"};
-   for(int i=0;i<5;i++){
-    int y=53+i*34;ru_frame(12,y,216,31);
-    if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+10,3,13);}
-    ru_text(names[i],27,y+12,1);
-    if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}ru_center(num,195,y+12,1);}
-    if(i==1){ru_center(v->auto_save?"ON":"OFF",195,y+12,1);}
-    if(i==2){if(v->boot_choice==0)ru_center("NEW",199,y+12,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+12,1);}}
-    if(v->selected==(uint8_t)i)ru_text(">",217,y+12,1);
+   static const char *const names[]={"MASTER VOLUME","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK"};
+   for(int i=0;i<6;i++){
+    int y=52+i*28;ru_frame(12,y,216,26);
+    if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+8,3,12);}
+    ru_text(names[i],27,y+9,1);
+    if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}ru_center(num,195,y+9,1);}
+    if(i==1){ru_center(v->auto_save?"ON":"OFF",195,y+9,1);}
+    if(i==2){if(v->boot_choice==0)ru_center("NEW",199,y+9,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+9,1);}}
+    if(i==5)ru_center(v->crt_enabled?"ON":"OFF",195,y+9,1);
+    if(v->selected==(uint8_t)i)ru_text(">",217,y+9,1);
    }
-   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL TOGGLE AUTO SAVE":"SELECT / SEL OPEN");return;
+   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL TOGGLE AUTO SAVE":v->selected==5u?"SEL TOGGLE CRT / VCR":"SELECT / SEL OPEN");return;
   }
   ru_frame(12,72,216,111);ru_dither(15,75,210,4,1);
   char num[12];ru_uint(v->master,num);ru_center("MASTER VOLUME",120,89,1);
@@ -1023,4 +1026,11 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
  if(page==RU_PAGE_FILTER){ru_center("24DB LADDER + BANDPASS",120,57,1);ru_draw_knobs(v);ru_footer("K1 FILTER TYPE");return;}
  if(page==RU_PAGE_MIDI){ru_center("USB + TRS MIDI IN",120,57,1);ru_draw_knobs(v);ru_footer("USB/TRS MIDI INPUT");return;}
  ru_draw_knobs(v);ru_footer("HOME BACK / HOLD MAIN");
+}
+
+/* V1.52: keep the original 1-bit source pixel-identical. CRT optics are
+ * applied only during RGB565 LCD transfer, preserving every text stroke.
+ * Report-a-bug QR bypasses both lens warp and scanline dimming. */
+static void ru_render(const RuState *v){
+ ru_render_raw(v);
 }

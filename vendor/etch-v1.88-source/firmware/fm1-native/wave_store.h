@@ -107,6 +107,8 @@ int etch_store_delete_project_slot(const struct etch_store_io*,uint8_t slot,uint
  * It never changes per-project data, app/OTA or protected boot sectors.
  * Returns 100 when no valid record exists; no write during load. */
 int etch_store_user_settings_load(const struct etch_store_io*,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver);
+int etch_store_user_settings_crt_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
+int etch_store_user_settings_crt_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_user_settings_full_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
 int etch_store_user_settings_full_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_user_settings_ex_load(const struct etch_store_io*,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index);

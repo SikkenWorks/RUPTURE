@@ -1,13 +1,13 @@
 {
-  "version": "1.50",
+  "version": "1.53",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.50.fwsc",
+  "firmware_file": "RUPTURE-V1.53.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "21bfe57cce5f873eca7daacb6b73d3f92795e2d895019e49387a31f2351ef17d",
-  "app_bytes": 253380,
-  "app_sha256": "06b087caea7185724761fb0cb0fa2403855077db2c8b2591dd60630f8ac0156f",
+  "firmware_sha256": "4b5ad4b77f2f6c9e387da05859c18c9dde15614b1b7fcc3be321e7fe50a97920",
+  "app_bytes": 254128,
+  "app_sha256": "8a66a826ef340f0303c2539d9f94181921d61c572f23f49da971ebdec69e3478",
   "native_screens": 64,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -51,7 +51,10 @@
     "V1.48 restores SAVE project-browser access from all ordinary UI screens except sequencer and protected name/OTA/recovery actions; source routing audit covers all 49 page IDs. Physical button events remain unverified.",
     "V1.48 strong-SA W harmonic guard reduces spectral aliases in host tests at fully raised parameters, but intentionally softens upper harmonics during strong nonlinear shaping. No physical FM1 noise/speaker/DMA tests have been performed.",
     "V1.49 DAM animation uses exact user PNG pixels (10080 static sprite bytes), LCD blits are UI-only and FM1 physical frame timing, SPI/USB/audio under stress must be validated. No audio or flash storage schema changes.",
-    "V1.50 Utrecht Domtoren screensaver effects are UI-only and have been rendered and cross-built but require physical FM1 framebuffer timing validation. The protective OTA header and loader are verified unchanged against V1.49."
+    "V1.50 Utrecht Domtoren screensaver effects are UI-only and have been rendered and cross-built but require physical FM1 framebuffer timing validation. The protective OTA header and loader are verified unchanged against V1.49.",
+    "V1.51 CRT barrel/scanline visual output is host-tested; CPU headroom, LCD refresh and scanline legibility on the physical FM1 must still be validated. The QR page is deliberately unfiltered.",
+    "V1.52 changes CRT/VCR to a true two-axis mild barrel warp using the existing RGB565 LCD stripe and light monochrome phosphor scanlines; physical FM1 UI timing and text legibility remain unverified.",
+    "V1.53 CRT defaults OFF if no saved CRT value exists; explicitly saved ON from older firmware remains ON until toggled OFF. The unfiltered 1-bit display path is used at default."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -210,7 +213,7 @@
   "screensaver_default": true,
   "storage_management": "12 projects; eight sequences per project; copy/rename/delete; YES/NO bounded legacy-user wipe; CRC-checked A/B commit",
   "about_ui": "full exact biography; SELECT scroll; 240x240 word wrapping",
-  "settings_behavior": "SELECT picks five settings rows: MASTER VOLUME (K1 inline, SEL detail), AUTO SAVE (SEL toggle), AUTO LOAD PROJECT (SEL choose NEW/existing project), STORAGE, OTHER (screensaver settings)",
+  "settings_behavior": "SELECT picks six settings rows; CRT / VCR LOOK sixth row toggles ON/OFF with SEL, enabled by default, persistent in device global log",
   "global_menu_diagnostics_label": "AUDIO DIAGNOSTICS",
   "qr_issues_url": "https://github.com/SikkenWorks/RUPTURE/issues",
   "qr_modules": 29,
@@ -283,6 +286,16 @@
     "hold_ms": 2200,
     "reverse": true,
     "new_fullscreen_sprites": 0,
+    "hardware_verified": false
+  },
+  "crt_vcr_v151": {
+    "default_on": true,
+    "black_white_only": true,
+    "extra_full_framebuffers": 0,
+    "temporary_stack_bytes": 30,
+    "readonly_map_bytes": 1200,
+    "qr_unmodified": true,
+    "audio_interrupt_unchanged": true,
     "hardware_verified": false
   }
 }

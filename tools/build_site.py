@@ -98,8 +98,10 @@ def main() -> None:
     app = original[2]
     needle = "$('status').textContent='Package verified.';$('connect').disabled=false;"
     insert = "$('status').textContent='Package verified.';const d=$('firmware-download');if(d){d.href=URL.createObjectURL(new Blob([raw],{type:'application/octet-stream'}));d.hidden=false;}$('connect').disabled=false;"
-    assert app.count(needle) == 1
-    app = app.replace(needle, insert)
+    if app.count(needle) == 1:
+        app = app.replace(needle, insert)
+    else:
+        assert app.count("$('firmware-download')") == 1, 'Corrected installer must expose firmware download link' 
     # Prior installer had an outdated V1.1 reminder despite the V1.20 package.
     app = app.replace('does not prove V1.1 is running. Confirm V1.1', f'does not prove V{version} is running. Confirm V{version}')
     readme = (root / 'README.md').read_bytes()

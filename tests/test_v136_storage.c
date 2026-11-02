@@ -45,11 +45,16 @@ static void check_project(uint8_t id){
  assert(ocfg.tempo==(uint8_t)(110+id));
 }
 static void volume(uint8_t target){
- assert(etch_store_global_volume_save(&io,target)==ETCH_STORE_OK);
+ int rc=etch_store_global_volume_save(&io,target);if(rc!=ETCH_STORE_OK)fprintf(stderr,"VOLUME target %u rc %d writes %d\n",target,rc,writes);assert(rc==ETCH_STORE_OK);
  uint8_t check=255u;assert(etch_store_global_volume_load(&io,&check)==ETCH_STORE_OK);assert(check==target);
 }
 int main(void){
  memset(flashbuf,255,sizeof(flashbuf));save_project(0);save_project(1);
+ /* V1.53 factory preference is OFF when no settings records have been saved. */
+ {uint8_t vol=99u,automatic=9u,saver=9u,seconds=9u,boot=9u,crt=9u;
+  assert(etch_store_user_settings_crt_load(&io,&vol,&automatic,&saver,&seconds,&boot,&crt)==ETCH_STORE_OK);
+  assert(crt==0u&&vol==100u&&automatic==0u&&saver==1u&&seconds==1u&&boot==0u);
+ }
  uint8_t value=0;assert(etch_store_global_volume_load(&io,&value)==ETCH_STORE_OK&&value==100);
  volume(173);check_project(0);check_project(1);
  uint8_t enabled=9u;
@@ -145,6 +150,22 @@ int main(void){
  assert(etch_store_user_settings_full_save(&io,161u,1u,0u,7u,0u)==ETCH_STORE_OK);
  assert(etch_store_user_settings_full_load(&io,&value,&enabled,&saver,&seconds,&boot_choice)==ETCH_STORE_OK);
  assert(boot_choice==0u);
+ /* V1.53: VCR look defaults OFF with no explicit CRT preference, stores OFF in the
+  * existing eight-byte global journal, and survives old setting writers,
+  * project rewrites, journal compaction, and restoring ON. */
+ uint8_t crt=9u;
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK);
+ assert(crt==0u); /* V1.53-generated legacy-compatible records now default to OFF. */
+ assert(etch_store_user_settings_crt_save(&io,value,enabled,saver,seconds,boot_choice,0u)==ETCH_STORE_OK);
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK&&crt==0u);
+ assert(etch_store_global_volume_save(&io,160u)==ETCH_STORE_OK);
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK&&crt==0u&&value==160u);
+ save_project(4);
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK&&crt==0u);
+ for(int i=0;i<33;i++)volume((uint8_t)(70+i));
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK&&crt==0u);
+ assert(etch_store_user_settings_crt_save(&io,value,enabled,saver,seconds,boot_choice,1u)==ETCH_STORE_OK);
+ assert(etch_store_user_settings_crt_load(&io,&value,&enabled,&saver,&seconds,&boot_choice,&crt)==ETCH_STORE_OK&&crt==1u);
  /* Strict full-storage wipe: requires both confirmation tokens. */
  flashbuf[0x96000u]=0x5au;flashbuf[0xe0000u]=0xa5u;
  assert(etch_store_wipe_all_user_data(&io,0u,0u)==ETCH_STORE_VERIFY);

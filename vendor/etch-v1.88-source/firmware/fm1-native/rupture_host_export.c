@@ -5,7 +5,7 @@
 #include "rupture_ui.c"
 #include "rupture_eq2.c"
 #include "rupture_octave.h"
-int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.page=(uint8_t)atoi(argv[1]);v.octave=rupture_octave_display(RUPTURE_BASS_OCTAVE);v.show_battery=1;v.battery=75;v.usb_power=1;v.fx_selected=0;v.fx_on=1;v.sub_blend=75;v.eq_on=1;v.project=1;v.seq_slot=1;v.seq_present=1;v.seq_status=0;v.root=9;v.mode=1;v.keylock=1;v.filter=4;v.master=100;v.macro[0]=57;v.macro[1]=40;v.k[0]=57;v.k[1]=50;v.k[2]=68;v.k[3]=75;if(v.page==RU_PAGE_SEQ){v.seq_length=16;v.seq_bpm=120;v.seq_current_step=3;v.seq_grid_mask=0x25a9;v.seq_note_count=1;v.seq_first_note=36;v.k[0]=16;v.k[1]=120;v.k[2]=110;v.k[3]=75;}if(v.page==RU_PAGE_ARP){v.k[0]=0;v.k[1]=2;v.k[2]=1;v.k[3]=75;}if(v.page==RU_PAGE_SETTINGS)v.k[0]=100;
+int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.crt_enabled=0u;v.page=(uint8_t)atoi(argv[1]);v.octave=rupture_octave_display(RUPTURE_BASS_OCTAVE);v.show_battery=1;v.battery=75;v.usb_power=1;v.fx_selected=0;v.fx_on=1;v.sub_blend=75;v.eq_on=1;v.project=1;v.seq_slot=1;v.seq_present=1;v.seq_status=0;v.root=9;v.mode=1;v.keylock=1;v.filter=4;v.master=100;v.macro[0]=57;v.macro[1]=40;v.k[0]=57;v.k[1]=50;v.k[2]=68;v.k[3]=75;if(v.page==RU_PAGE_SEQ){v.seq_length=16;v.seq_bpm=120;v.seq_current_step=3;v.seq_grid_mask=0x25a9;v.seq_note_count=1;v.seq_first_note=36;v.k[0]=16;v.k[1]=120;v.k[2]=110;v.k[3]=75;}if(v.page==RU_PAGE_ARP){v.k[0]=0;v.k[1]=2;v.k[2]=1;v.k[3]=75;}if(v.page==RU_PAGE_SETTINGS)v.k[0]=100;
  if(v.page==RU_PAGE_OTHER||v.page==RU_PAGE_SAVER_OPTIONS){v.saver_enabled=1u;v.saver_delay_index=1u;}
  if(v.page==RU_PAGE_STORAGE_PROJECTS||v.page==RU_PAGE_STORAGE_ACTIONS){
   v.project_mask=7u;v.manager_project=1u;v.manager_action=1u;
@@ -23,6 +23,8 @@ int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.pa
  }if(v.page==RU_PAGE_EQ){v.k[0]=125;v.k[1]=75;v.k[2]=110;v.k[3]=20;}if(v.page==RU_PAGE_FX){v.k[0]=1;v.k[1]=61;v.k[2]=80;v.k[3]=35;}if(v.page==RU_PAGE_GUIDE||v.page==RU_PAGE_KEYLOCK){v.k[0]=9;v.k[1]=1;v.k[2]=1;}if(v.page==RU_PAGE_SUB1){v.k[0]=0;v.k[1]=1;v.k[2]=50;v.k[3]=0;}
 if(v.page==RU_PAGE_SUB2){v.k[0]=0;v.k[1]=1;v.k[2]=54;v.k[3]=0;}
 /* View a source sprite with the actual native renderer: dam0..dam11. */
+if(argc>=4 && !strcmp(argv[3],"crt-off"))v.crt_enabled=0u;
+if(argc>=4 && !strcmp(argv[3],"crt-on"))v.crt_enabled=1u;
 if(argc>=4 && v.page==RU_PAGE_PLAY && strncmp(argv[3],"dam",3)==0){
  int frame=atoi(argv[3]+3);if(frame>=0 && frame<12)v.dam_frame=(uint8_t)frame;
 }
@@ -62,4 +64,17 @@ else if(strncmp(argv[1],"eq2",3)==0){
 }
 else if(strcmp(argv[1],"audio-fault")==0){v.page=RU_PAGE_SAFE;v.audio_fault=1u;ru_render(&v);}
 else if(strcmp(argv[1],"saver")==0){v.saver_active=1u;v.saver_frame=argc>=4?(uint8_t)atoi(argv[3]):32u;ru_render(&v);}
-else ru_render(&v);FILE *f=fopen(argv[2],"wb");if(!f)return 3;fprintf(f,"P5\n240 240\n255\n");for(int y=0;y<240;y++)for(int x=0;x<240;x++)fputc(ru_get(x,y)?255:0,f);fclose(f);return 0;}
+else ru_render(&v);
+ FILE *f=fopen(argv[2],"wb");if(!f)return 3;
+ /* Save the exact grayscale LCD output, not the pre-CRT raw 1-bit canvas.
+  * This makes web previews represent the firmware's real RGB565 scanlines. */
+ fprintf(f,"P6\n240 240\n255\n");
+ for(uint32_t y=0;y<240u;y++)for(uint32_t x=0;x<240u;x++){
+  uint16_t c=ru_crt_pixel(ru_bits,x,y,(uint8_t)(v.crt_enabled&&v.page!=RU_PAGE_BUG_REPORT));
+  unsigned char rgb[3]={
+   (unsigned char)(((c>>11)&31u)*255u/31u),
+   (unsigned char)(((c>>5)&63u)*255u/63u),
+   (unsigned char)((c&31u)*255u/31u)};
+  fwrite(rgb,1u,3u,f);
+ }
+ fclose(f);return 0;}

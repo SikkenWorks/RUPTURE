@@ -1,3 +1,27 @@
+# RUPTURE V1.53 — CRT/VCR OFF by Default
+
+- Changed the CRT / VCR LOOK factory/default setting to **OFF** on first boot and in the legacy settings fallback. The SETTINGS switch still enables the exact same optional V1.52 two-axis CRT effect and persists its value in the existing CRC-checked 8-byte global settings journal.
+- Existing explicitly stored CRT ON/OFF choices are respected; they are not silently overwritten by a firmware upgrade. For any unit with CRT previously saved ON, change it once under SETTINGS to select OFF.
+- With CRT disabled, the original binary 1-bit RGB565 LCD output is used; no per-pixel CRT transformation is run. No audio DSP, waveforms, stored projects, OTA loader, protected boot header or firmware identity changed.
+- Kept the improved V1.52 web installer success, reconnect and manual verification flow; updated its embedded verified .fwsc to V1.53.
+- Native, storage and OTA tests are host-only; physical FM1 UI and OTA verification remain outstanding.
+
+# RUPTURE V1.52 — CRT Optics / Scanline Fix
+
+- Fixed the V1.51 CRT effect: white 1-bit text is no longer damaged by a checkerboard row-cutting filter.
+- Visible 2D barrel/fisheye distortion with gentle bilinear phosphor sampling, rounded black corners and subtle monochrome dimmed scanlines in RGB565 output.
+- The original 1-bit UI buffer remains pristine; the effect is applied only when writing existing LCD DMA stripes. No new full framebuffers, audio DSP or storage-format changes. QR report stays unfiltered.
+- SETTINGS → CRT / VCR LOOK remains saved and default ON. OFF restores the original unmodified 1-bit UI.
+- Same OTA loader, protected bootheader and identity FM-1_968. Native build and targeted host validation pass; actual FM1 performance and appearance need physical testing.
+
+# RUPTURE V1.51 — Monochrome CRT / VCR Display Look
+
+- Subtle horizontal barrel warp and alternating monochrome scanline pixels added after the existing native 1-bit renderer, covering PLAY, SETTINGS, editors, screensaver, boot logo, and storage progress overlays. White remains white, black remains black; there are no colour or grayscale pixels. The scan-safe REPORT A BUG QR screen is intentionally unaffected.
+- SETTINGS → CRT / VCR LOOK is a direct SEL ON/OFF switch, enabled by default on existing devices. OFF bypasses the filter entirely and is pixel-identical with V1.50 rendering.
+- Reuses the already-allocated 240×240 1-bit display canvas; only 30 bytes of temporary row space and a small read-only 1200-byte barrel table. No new full-screen framebuffer or audio-DSP code. Filtering runs exclusively in the UI task, not the audio interrupt. CPU/display overhead requires measurement on physical FM1 hardware.
+- The CRT flag is saved in the existing eight-byte CRC-protected device-global NOR journal using a new non-conflicting magic range for OFF. Boot volume, autosave, screensaver timeout and startup project remain backward-compatible. Compaction and project bank moves retain CRT state.
+- Keeps the V1.50 Domtoren screensaver and V1.49 DAM sprites, all audio effects, MIDI, project storage, OTA recovery path and existing FM-1_968 identity.
+
 # V1.50 — Extended Utrecht Screensaver Rupture
 
 - Extends the procedural Utrecht screensaver so the crack no longer stops at the foreground ground split. Once the ground has ruptured, the fracture now climbs upward through the streets, disappears briefly behind the front houses, and continues visibly through the Dom Tower.

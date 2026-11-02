@@ -11,7 +11,7 @@ root=Path(__file__).resolve().parents[1]
 base=root.parent
 meta=json.loads((root/'RELEASE-MANIFEST.json').read_text())
 ver=meta['version']
-assert ver=='1.49', 'Release version mismatch'
+assert ver=='1.52', 'Release version mismatch'
 fw=root/meta['firmware_file']
 assert hashlib.sha256(fw.read_bytes()).hexdigest()==meta['firmware_sha256']
 assert len(fw.read_bytes())==meta['firmware_bytes']
