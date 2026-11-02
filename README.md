@@ -6,15 +6,6 @@ A monophonic bass synthesizer for the M-VAVE FM1.
 
 RUPTURE is a playable, programmable bass instrument created for a hands-on workflow on the FM1. Its selectable CXS/SAW main oscillator, two independent suboscillators, modulation, filter and effects are controlled directly from the hardware.
 
-## Utrecht screensaver expansion (V1.50)
-
-The original 240 × 240 monochrome Utrecht scene remains intact. After the road opens, the fracture spreads up through the street, disappears behind foreground houses, and splits the Dom Tower. Its right-hand upper half lowers by up to five pixels near the end, then rises back into alignment as the original 64-frame screensaver runs in reverse. It holds the end frame for 2.2 seconds and repeats. All rendering is in the existing UI thread, no extra full-screen frame cache or DSP is added. Hardware display timing still requires validation.
-
-## PLAY waveform dam animation (V1.49)
-
-The PLAY waveform bar (both CXS and SAW) now uses twelve pixel-exact 224×30 1-bit sprites, directly packed into the firmware. While a note is gated, a crack opens across the bar and water leaks in a 3-sprite loop. Low keyboard octaves leak slowly; high octaves leak quickly. Once all keys (including MIDI or sequencer notes) release, the leak stops and the crack closes. This is a **visual effect only**, not an audio effect. The images are stored as static bitmap data, copied into the already-present 1-bit display buffer. There is no realtime pixel drawing algorithm or extra DSP workload. For playback timings and exact source hashes, see `docs/DAM-SPRITES.md`.
-
-
 ## Synthesis and controls
 
 - **PLAY:** ALGORITHM selects the main oscillator, **CXS** or **SAWTOOTH**. The oscillator name now appears in the header between PLAY and OCT, leaving the new DAM sprite bar and non-overlapping knobs. In **CXS** K1 PRESSURE · K2 BALANCE · K3 MEMORY · K4 DENSITY. In **SAW**, these same four knobs actually shape the sound: K1 **BRIGHT** (warm/bright blend), K2 **EDGE** (soft saturation), K3 **BODY** (low-frequency reinforcement), K4 **LEVEL** (output). The four parameter values are shared with the CXS macros and saved through the existing project record, so tweaking SAW changes the values that CXS displays when switched back. Both modes pass through SOUND SHAPE, FILTER and FX. SAW uses precomputed bandlimited waveform tables instead of an additional CXS carrier. At extreme BRIGHT/EDGE/BITE/PUNCH levels, an adaptive harmonic guard blends existing lower-harmonic SAW tables to reduce aliasing and the unwanted high-pitched tone. Normal settings keep the original V1.47 SAW samples unchanged.
