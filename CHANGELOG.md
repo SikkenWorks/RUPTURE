@@ -1,3 +1,11 @@
+# V1.54 — DAM V3: Water Across the Road
+
+- Replaced the original 12 PLAY waveform sprites with **20 exact 1-bit 224×30 PNGs** from the user-approved DAM V3 set, including water and foam flowing visibly over the dashed road. The PNGs are copied as immutable ROM pixels, not procedurally redrawn.
+- First note triggers frames 1–10, sustained notes cycle only frames 11–13; last note-off begins the appropriate closing frame from 14–20. Octave -2..+5 sets loop rate from 250 down to 40 ms. Very short notes never trigger a full flood.
+- The existing UI canvas copies 840 bytes per frame, exactly as V1.53. Static ROM asset size grows from 10080 to 16800 bytes. No new RAM framebuffer, no audio callback or DSP changes, and no extra audio samples are calculated. Longer animation sequences may result in more UI redraw events per note.
+- Retains V1.53 CRT default OFF, screensaver, storage format, FM-1_968 identity, trusted OTA loader, and V1.53 WebInstaller success/reconnect improvements and FM1 Recovery Windows nav link.
+- Native JieLi crossbuild and 20/20 pixel-parity host test pass; actual FM1 CPU/DMA timing and LCD impact remain unverified.
+
 # RUPTURE V1.53 — CRT/VCR OFF by Default
 
 - Changed the CRT / VCR LOOK factory/default setting to **OFF** on first boot and in the legacy settings fallback. The SETTINGS switch still enables the exact same optional V1.52 two-axis CRT effect and persists its value in the existing CRC-checked 8-byte global settings journal.
