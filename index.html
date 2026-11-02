@@ -24,8 +24,24 @@
 @media(max-width:750px){.container{width:min(100% - 28px,1200px)}.site-header-inner{min-height:65px}.primary-nav a:not(.nav-install){display:none}.brand-name{font-size:13px}.hero{grid-template-columns:1fr;margin-top:16px;gap:10px}.hero-main{min-height:310px}.hero-visual{min-height:290px;max-height:340px}.hero-visual img{max-width:280px}.metric-strip{grid-template-columns:1fr 1fr;margin-bottom:55px}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid var(--line)}.docs-grid{grid-template-columns:1fr}.doc-scroll{height:400px}.section{margin-bottom:60px}.section-heading{align-items:start}.section-heading p{max-width:190px}.cheat-grid{grid-template-columns:1fr}.footer-inner{align-items:start;flex-direction:column}.footer-right{text-align:left}}
 @media(max-width:460px){.hero-main{padding:23px}.metric{padding:13px}.metric strong{font-size:20px}.section-heading{flex-direction:column;gap:8px}.section-heading p{max-width:none}.install-data{grid-template-columns:1fr 1fr}.filter{padding:9px 10px}.panel-head{padding:16px}.file-source{padding:10px 16px}.doc-scroll{padding:8px 16px 20px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}#boot-anim{display:none}#boot-static{display:block!important}}
-.progress-heading{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.progress-heading strong{font-size:13px;font-weight:800;color:#fff}.install-result{margin-top:17px;border:1px solid #686868;border-left:4px solid #fff;padding:16px 18px;background:#121212}.install-result-heading{display:flex;align-items:center;gap:11px;font-family:ui-monospace,monospace;letter-spacing:.05em;font-size:13px;color:#fff}.result-icon{display:grid;place-items:center;flex:none;width:27px;height:27px;border:1px solid #fff;font-size:17px;line-height:1}.install-result p{color:#c5c5c5;font-size:12px;line-height:1.6;margin:9px 0 0}.install-result.pending{border-left-style:dashed}.install-result.pending .result-icon{border-style:dashed}.install-result #verify-retry{margin-top:13px;border:1px solid #999;background:#111;color:#fff;font:700 11px ui-monospace,monospace;padding:10px 12px;cursor:pointer}.install-result #verify-retry:hover:not(:disabled){background:#fff;color:#000}.install-result #verify-retry:disabled{opacity:.5;cursor:default}
+.progress-heading{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.progress-heading strong{font-size:13px;font-weight:800;color:#fff}.install-result{margin-top:17px;border:1px solid #686868;border-left:4px solid #fff;padding:16px 18px;background:#121212}.install-result-heading{display:flex;align-items:center;gap:11px;font-family:ui-monospace,monospace;letter-spacing:.05em;font-size:13px;color:#fff}.result-icon{display:grid;place-items:center;flex:none;width:27px;height:27px;border:1px solid #fff;font-size:17px;line-height:1}.install-result p{color:#c5c5c5;font-size:12px;line-height:1.6;margin:9px 0 0}.install-result.pending{border-left-style:dashed}.install-result.pending .result-icon{border-style:dashed}.install-result #verify-retry,.install-result #manual-confirm{margin-top:13px;border:1px solid #999;background:#111;color:#fff;font:700 11px ui-monospace,monospace;padding:10px 12px;cursor:pointer}.install-result #verify-retry:hover:not(:disabled){background:#fff;color:#000}.install-result #verify-retry:disabled{opacity:.5;cursor:default}
+.install-result-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 </style>
+<script id="rupture-page-interaction-guard">
+/* RUPTURE: protect page content using one JavaScript handler setup (no CSS dependency). */
+(()=>{
+  'use strict';
+  const block=e=>e.preventDefault();
+  document.addEventListener('contextmenu',block,true);
+  document.addEventListener('selectstart',block,true);
+  document.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='a'){
+      const t=e.target;
+      if(!(t instanceof HTMLElement&&(t.isContentEditable||/^(INPUT|TEXTAREA)$/.test(t.tagName))))e.preventDefault();
+    }
+  },true);
+})();
+</script>
 </head>
 <body>
 <header class="site-header"><div class="container site-header-inner"><a class="brand" href="#top" aria-label="RUPTURE home"><span><span class="brand-name">SIKKENWORKS</span><span class="brand-sub">BORN OUT OF PASSION.</span></span></a><nav class="primary-nav" aria-label="Main navigation"><a href="#readme">README/CHANGELOG</a><a href="https://fm1.sikkenworks.com/FM1-Recovery-by-SikkenWorks.exe">FM1 RECOVERY WINDOWS</a><a href="#cheatsheet">CHEAT SHEET</a><a class="nav-install" href="#installer">INSTALL FIRMWARE ↗</a></nav></div></header>
@@ -57,7 +73,7 @@
   <label class="confirm-line"><input type="checkbox" id="confirm"><span>I have backed up my projects and verified that I can recover my FM1 before updating.</span></label>
   <p class="caution">Requires desktop Chrome or Edge, Web MIDI SysEx and HTTPS or localhost. Updating only starts when the connected FM1 approves the OTA CHECK stage. RUPTURE is regularly tested on physical FM1 units. Back up projects before updating and keep a recovery method available.</p>
   <div class="progress-wrap"><div class="progress-heading"><label for="progress">UPDATE PROGRESS</label><strong id="progress-percent" class="mono" aria-live="off">0%</strong></div><progress id="progress" value="0" max="100">0%</progress><p id="phase" class="progress-note" aria-live="polite">Waiting for firmware check…</p></div>
-  <div id="install-result" class="install-result" hidden role="status" aria-live="polite"><div class="install-result-heading"><span id="result-icon" class="result-icon" aria-hidden="true">✓</span><strong id="result-title">INSTALLATION COMPLETE</strong></div><p id="result-detail"></p><button id="verify-retry" type="button" hidden>CHECK FM1 CONNECTION AGAIN</button></div>
+  <div id="install-result" class="install-result" hidden role="status" aria-live="polite"><div class="install-result-heading"><span id="result-icon" class="result-icon" aria-hidden="true">✓</span><strong id="result-title">INSTALLATION COMPLETE</strong></div><p id="result-detail"></p><div class="install-result-actions"><button id="verify-retry" type="button" hidden>CHECK FM1 CONNECTION AGAIN</button><button id="manual-confirm" type="button" hidden>I SEE V1.54 RUNNING ON MY FM1</button></div></div>
   <details style="margin-top:18px" open><summary class="mono" style="cursor:pointer;font-size:11px;letter-spacing:.1em">TECHNICAL LOG</summary><div id="log" class="install-log" aria-live="off" role="log"></div></details>
  </div>
  <aside class="install-side"><div><div class="eyebrow">BEFORE YOU START</div><h3>Installation guide</h3></div><ol><li><strong>Back up your work.</strong> Existing PJT33 projects are not backward-readable by RUPTURE V1.16 or older.</li><li><strong>Use Chrome or Edge.</strong> Open this page on GitHub Pages (HTTPS), or on localhost.</li><li><strong>Connect the FM1.</strong> Use a reliable USB cable and click CONNECT FM1.</li><li><strong>Approve the update.</strong> Select the FM1 MIDI ports if necessary, tick the backup confirmation, and start the installer.</li><li><strong>Watch the device.</strong> Keep USB connected until the loader completes. Verify the new V1.54 version on the FM1 screen.</li></ol>
@@ -629,7 +645,7 @@ function unverifiedPostBoot(reason){
  $('status').textContent='TRANSFER COMPLETE · FM1 REBOOT NOT DETECTED';
  outcome('pending','The OTA loader acknowledged the complete transfer, but the browser could not verify the FM1 after reboot. '+reason+' Check that RUPTURE V1.54 starts on the device. Do not flash again merely because the MIDI port disappeared.');
 }
-async function load(){try{const ota=window.ETCHOta,raw=ota.fromBase64($('firmware').textContent),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',raw)),x=>x.toString(16).padStart(2,'0')).join('');
+async function load(){try{if(!window.crypto?.subtle)throw Error('Firmware verification requires HTTPS or localhost in Chrome or Edge.');const ota=window.ETCHOta,raw=ota.fromBase64($('firmware').textContent),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',raw)),x=>x.toString(16).padStart(2,'0')).join('');
  if(raw.length!==PKG_LEN||hash!==PKG_HASH)throw Error('Firmware integrity verification failed.');
  const product=ota.productOf(raw);if(product!=='FM-1_968')throw Error('Firmware identity mismatch.');
  pkg={raw,hash,product,kind:'rupture',image:ota.logicalImage(raw)};
@@ -690,7 +706,6 @@ $('manual-confirm').onclick=()=>{
  outcome('manual','You confirmed that RUPTURE V1.54 is running on the FM1 itself. The OTA loader confirmed the firmware transfer, but the browser could not independently read the post-reboot MIDI identity.');
  log('User confirmed running RUPTURE V1.54 on the physical FM1 after OTA WRITE acknowledgement.');
 };
-window.addEventListener('contextmenu',e=>e.preventDefault());window.addEventListener('selectstart',e=>e.preventDefault());
 load();
 </script>
 <script>
