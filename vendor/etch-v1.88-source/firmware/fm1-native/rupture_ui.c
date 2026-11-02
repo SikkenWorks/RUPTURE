@@ -8,6 +8,8 @@
 #include "rupture_utrecht_art.h"
 #include "rupture_eq2.h"
 #include "rupture_eq2_tables.h"
+#include "rupture_dam_sprites.h"
+#include "rupture_dam_anim.h"
 #define RU_W 240
 #define RU_H 240
 #define RU_PAGE_PLAY 0
@@ -61,7 +63,7 @@
 #define RU_PAGE_AUTOLOAD 48
 #define RU_PAGE_COUNT 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
@@ -544,32 +546,66 @@ static void ru_brand(const RuState *v){
 /* V1.30: pixel meadow fracturing into a canyon. Visual work is exclusively
  * in the UI loop. No DSP, additional framebuffer, floats, heap or random IO.
  * A single deterministic frame reaches the final hold state at frame 63. */
+static void ru_clr(int x,int y){if((unsigned)x>=240u||(unsigned)y>=240u)return;uint32_t i=(uint32_t)y*240u+(uint32_t)x;ru_bits[i>>3]&=(uint8_t)~(0x80u>>(i&7));}
+/* V1.50: Utrecht screensaver rupture extended through the street, behind the
+ * front houses and up through the Dom Tower. One cracked tower half sinks a
+ * few pixels at the peak of the animation. The saver still uses no extra full
+ * screen framebuffers or sprite sheets: everything is drawn procedurally in the
+ * existing UI loop and then reversed by the established saver state machine. */
 static uint32_t ru_land_hash(uint32_t x,uint32_t y){
  uint32_t n=x*0x45d9f3bu+y*0x9e3779b9u+0x1f123bb5u;
  n^=n>>15;n*=0x2c1b3c6du;return n^(n>>12);
 }
-static int ru_land_horizon(int x){
- int ridge=94+((x/17)%4)*2;
- return ridge+((x/7)%3)-((x/29)%3)*3;
+static int ru_city_pixel(int x,int y){
+ if((unsigned)x>=240u||(unsigned)y>=RU_UTRECHT_HEIGHT)return 0;
+ return !!(ru_utrecht_city[(uint32_t)y*30u+((uint32_t)x>>3)]&(uint8_t)(128u>>(x&7)));
 }
-static int ru_fault_center(int y){
- /* Pixel stair-steps, never a smooth vector curve. */
- return 119+((y/11)%3-1)*5+((y/29)%3-1)*7+(y>180?5:0);
+static int ru_tower_center(int y){
+ return y<80?121:(y<130?120:119);
+}
+static int ru_tower_sink_region(int x,int y){
+ if(y<3||y>118||x<110||x>138||!ru_city_pixel(x,y))return 0;
+ return x>=ru_tower_center(y);
+}
+static int ru_city_fault_x(int y){
+ if(y>=171){
+  int ry=y-171;
+  return 119+((ry/11)%4-1)*3;
+ }
+ if(y>=145)return 118+((170-y)/8)%2-((170-y)/13)%2;
+ if(y>=115)return 118+((145-y)/10);
+ if(y>=80)return 119+(((115-y)/9)&1);
+ if(y>=50)return 120+(((80-y)/8)%2);
+ if(y>=20)return 121-(((50-y)/9)%2);
+ return 122;
+}
+static int ru_crack_hidden_by_houses(int x,int y){
+ return y>=118&&y<=156&&x>=105&&x<=136;
 }
 /* Cityscape directly sourced from the author's monochrome Utrecht art.
- * The foreground street fractures in a staged, deterministic canyon.
- * 1-bit draw only; no audio/DSP dependency, heap, timer allocations or floats. */
+ * The foreground street fractures first; then the rupture threads upward
+ * behind the front houses and finally tears through the Dom Tower itself. */
 static const uint16_t ru_saver_time_values[8]={15u,30u,45u,60u,90u,120u,180u,300u};
 static void ru_crack_saver(uint8_t frame){
  int phase=frame<6u?0:(int)frame-6;
  int depth=phase>47?47:phase;
  int opening=depth>0?(1+depth*75/47):0;
- /* City skyline, Dom Tower, gables, canals and archways: static backdrop. */
- for(int y=0;y<RU_UTRECHT_HEIGHT;y++){
-  const uint8_t *line=&ru_utrecht_city[y*30];
-  for(int x=0;x<240;x++)if(line[x>>3]&(uint8_t)(128u>>(x&7)))ru_set(x,y);
+ int tower_sink=0;
+ if(depth>40){
+  tower_sink=1+((depth-41)*4)/6;
+  if(tower_sink>5)tower_sink=5;
  }
- /* Cobblestone street, spreading left/right across the street only. */
+ /* Draw the static Utrecht skyline, but keep the moving tower half back so it
+  * can be re-plotted a few pixels lower once the crack reaches the tower. */
+ for(int y=0;y<RU_UTRECHT_HEIGHT;y++)for(int x=0;x<240;x++){
+  if(!ru_city_pixel(x,y))continue;
+  if(tower_sink&&ru_tower_sink_region(x,y))continue;
+  ru_set(x,y);
+ }
+ if(tower_sink)for(int y=0;y<RU_UTRECHT_HEIGHT;y++)for(int x=0;x<240;x++)
+  if(ru_tower_sink_region(x,y)&&y+tower_sink<RU_UTRECHT_HEIGHT &&
+     !ru_crack_hidden_by_houses(x,y+tower_sink))ru_set(x,y+tower_sink);
+ /* Cobblestone street and opening ravine in the foreground. */
  for(int y=171;y<240;y++){
   int ry=y-171,center=119+((ry/11)%4-1)*3;
   int wid=opening?(opening*(ry+9)/75):0;
@@ -577,35 +613,60 @@ static void ru_crack_saver(uint8_t frame){
   for(int x=0;x<240;x++){
    int side=x<center?-1:1;
    int distance=x>center?x-center:center-x;
-   if(wid && distance<wid)continue; /* void of the ravine */
+   if(wid&&distance<wid)continue;
    int shifted=x-side*(wid/2);
    int rowheight=(y<188?5:y<211?7:9);
    int seam=((shifted+(((ry/rowheight)&1)*9))%17)==0||ry%rowheight==0;
-   if(!seam || (ru_land_hash((uint32_t)(shifted+250),(uint32_t)y)&31u)==0u)ru_set(x,y);
-   if(wid && distance>=wid && distance<wid+3){
-    if((y/6)%3!=1)ru_set(x,y); /* bright broken curb */
+   if(!seam||(ru_land_hash((uint32_t)(shifted+250),(uint32_t)y)&31u)==0u)ru_set(x,y);
+   if(wid&&distance>=wid&&distance<wid+3){
+    if((y/6)%3!=1)ru_set(x,y);
    }
-   if(wid && distance>=wid+4 && distance<wid+12 && y>184 && ((y+shifted/9)%21)<2)ru_set(x,y);
+   if(wid&&distance>=wid+4&&distance<wid+12&&y>184&&((y+shifted/9)%21)<2)ru_set(x,y);
   }
  }
  if(depth){
-  /* Zigzag fracture branches in the near road, becoming longer over time. */
+  /* Advance the fracture upward through the city and tower. Lower houses hide
+   * a section of it so the split feels like it continues behind them. */
+  int head_y=171-(depth>18?(depth-18)*6:0); if(head_y<8)head_y=8;
+  for(int y=head_y;y<171;y++){
+   int x=ru_city_fault_x(y);
+   if(depth<=18||ru_crack_hidden_by_houses(x,y))continue;
+   int width=1;
+   if(y<118&&depth>18)width=(depth>28&&y<110)?2:1;
+   if(y>=145&&depth>10)width=2;
+   for(int dx=-width;dx<=width;dx++)ru_clr(x+dx,y);
+   /* Small side branches in the city and tower area. */
+   if(y<118&&depth>22&&(y%11)==0){
+    int dir=((y/11)&1)?1:-1;
+    int bx=x+dir*(1+(depth-22)/10);
+    int by=y+2;
+    for(int t=0;t<4;t++)if(!ru_crack_hidden_by_houses(bx+dir*t,by+t/2))ru_clr(bx+dir*t,by+t/2);
+   }
+  }
+  /* Zigzag fracture branches around the road opening itself. */
   for(int k=0;k<8;k++){
    int y=182+k*8;int center=119+(((y-171)/11)%4-1)*3;
    int half=(opening*(y-162))/75;
    int dir=(k&1)?1:-1;
    int x=center+dir*(half+2);
    int span=(depth*3/2)-(k*3);if(span>32)span=32;
-   if(span>0){ru_line(x,y,x+dir*span,y-4+(k%3)*3);}
+   if(span>0){
+    int x1=x+dir*span,y1=y-4+(k%3)*3;
+    int dx=x1>x?x1-x:x-x1,dy=y1>y?y-y1:y1-y;
+    int sx=x<x1?1:-1,sy=y<y1?1:-1,err=dx+dy;
+    for(;;){
+     ru_clr(x-1,y);ru_clr(x,y);ru_clr(x+1,y);
+     if(x==x1&&y==y1)break;
+     int e=err*2;if(e>=dy){err+=dy;x+=sx;}if(e<=dx){err+=dx;y+=sy;}
+    }
+   }
   }
-  /* Tiny crumbling masonry: different fall speed, frozen at final frame. */
-  if(depth>12)for(int k=0;k<22;k++){
-   int y=178+(k*17)%52;int shift=(depth-12)*(1+(k%3))/5;
-   int center=119+(((y-171)/11)%4-1)*3;
-   int half=(opening*(y-162))/75;
-   int x=center+(k&1?1:-1)*(half+4+(k*7)%11);
-   int yy=y+shift;if(yy>238)yy=238;
-   ru_rect(x,yy,1+k%3,1+k%2);
+  /* Tiny bits of tower masonry drift downward after the split opens up. */
+  if(depth>18)for(int k=0;k<10;k++){
+   int sx=124+(k%3);int sy=92+(k*7)%38;
+   int yy=sy+tower_sink+((depth-18)*(1+(k%2)))/10;
+   int xx=sx+((k&1)?1:-1)*(k%2);
+   ru_set(xx,yy);if((k%3)==0)ru_set(xx,yy+1);
   }
  }
 }
@@ -689,23 +750,15 @@ static void ru_render(const RuState *v){ru_clear();if(v->saver_active){ru_crack_
  }
  if(page==RU_PAGE_SHAPE){ru_frame(8,50,224,30);ru_center("SOUND SHAPING",120,61,1);ru_draw_knobs(v);ru_footer("ALG OSC / HOME SUB 1");return;}
  if(page==RU_PAGE_PLAY){
-  /* Keep the wave scope in 50..79: upper knobs begin at pixel y=83. */
-  ru_frame(8,50,224,30);
-  if(v->main_wave){
-   /* Actual SAW phase shape (one 1-bit ramp per period), not a CXS drawing. */
-   int prev=76;
-   for(int x=11;x<229;x++){
-    int phase=(x-11)%36,y=76-(phase*20)/35;
-    ru_line(x==11?x:x-1,prev,x,y);prev=y;
-   }
-  }else{
-   ru_dither(11,51,217,1,0);
-   int py=64;
-   for(int x=11;x<229;x++){
-    int k=(x/12+v->macro[0]/15)%7;
-    int y=64+((k&1)?-8:8)+(int)(v->macro[1]/40);
-    ru_line(x==11?11:x-1,py,x,y);py=y;
-   }
+  /* Copy the user's ORIGINAL 1-bit PNG frame directly into the existing
+   * 240-wide 1-bit UI canvas. X=8 is byte aligned (one byte offset).
+   * No scaling, line drawing, buffers, compositing, alpha or audio work.
+   * The outer border is INCLUDED in every source sprite. */
+  uint8_t frame=v->dam_frame<RU_DAM_NUM_FRAMES?v->dam_frame:0u;
+  for(uint32_t y=0u;y<RU_DAM_H;y++){
+   const uint8_t *p=ru_dam_sprites[frame][y];
+   uint32_t dst=(RU_DAM_Y+y)*(RU_W/8u)+(RU_DAM_X/8u);
+   for(uint32_t b=0u;b<RU_DAM_ROW_BYTES;b++)ru_bits[dst+b]=p[b];
   }
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
  }

@@ -1,16 +1,16 @@
 {
-  "app_sha256": "518039282cd0fc8d078b7d0850f4024a6eb55138e2afd60655179ea03f0deb6d",
+  "app_sha256": "06b087caea7185724761fb0cb0fa2403855077db2c8b2591dd60630f8ac0156f",
   "storage_writes": true,
   "ota_writes": true,
   "readonly_hardware_test": false,
   "flash_read_only": false,
-  "version": "RUPTURE V1.42",
+  "version": "RUPTURE V1.50",
   "hardware_verified": false,
   "usb_audio_44100": true,
   "usb_audio_48000_experimental": true,
   "extended_store_experimental": false,
   "multi_project_experimental": true,
   "product": "FM-1_968",
-  "application": "RUPTURE CXS mono6 + ladder",
+  "application": "RUPTURE CXS/SAW mono + ladder",
   "release_ready": false
 }

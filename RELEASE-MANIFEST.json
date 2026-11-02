@@ -1,13 +1,13 @@
 {
-  "version": "1.48",
+  "version": "1.50",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.48.fwsc",
+  "firmware_file": "RUPTURE-V1.50.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "ceb711f8cc1b72f0147c35a15060abf99eae5111d07f7d0eadf79e4d3e9df8fa",
-  "app_bytes": 242336,
-  "app_sha256": "5c71605c7d8b54d06af48e0630f4825480d5862889b8f2a0abc37f148a08569f",
+  "firmware_sha256": "21bfe57cce5f873eca7daacb6b73d3f92795e2d895019e49387a31f2351ef17d",
+  "app_bytes": 253380,
+  "app_sha256": "06b087caea7185724761fb0cb0fa2403855077db2c8b2591dd60630f8ac0156f",
   "native_screens": 64,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -49,7 +49,9 @@
     "V1.46 PLAY and SOUND SHAPE native header spacing verified in host pixel export; SAW controls and shared saved knob values tested on host, not on physical FM1 DMA. Four SAW dial roles are BRIGHT, EDGE, BODY and LEVEL. They reuse the four legacy macro values; CXS macro settings therefore reflect changes made in SAW mode.",
     "V1.47 makes all four SOUND SHAPING knobs audibly modify sustained SAW; dedicated SAW shaping bypasses the 64-bit CXS shaper when SAW is fully selected. All four were verified over long sustained host PCM tests with UBSan; physical FM1 output and worst-case DMA margin have not been measured.",
     "V1.48 restores SAVE project-browser access from all ordinary UI screens except sequencer and protected name/OTA/recovery actions; source routing audit covers all 49 page IDs. Physical button events remain unverified.",
-    "V1.48 strong-SA W harmonic guard reduces spectral aliases in host tests at fully raised parameters, but intentionally softens upper harmonics during strong nonlinear shaping. No physical FM1 noise/speaker/DMA tests have been performed."
+    "V1.48 strong-SA W harmonic guard reduces spectral aliases in host tests at fully raised parameters, but intentionally softens upper harmonics during strong nonlinear shaping. No physical FM1 noise/speaker/DMA tests have been performed.",
+    "V1.49 DAM animation uses exact user PNG pixels (10080 static sprite bytes), LCD blits are UI-only and FM1 physical frame timing, SPI/USB/audio under stress must be validated. No audio or flash storage schema changes.",
+    "V1.50 Utrecht Domtoren screensaver effects are UI-only and have been rendered and cross-built but require physical FM1 framebuffer timing validation. The protective OTA header and loader are verified unchanged against V1.49."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -274,5 +276,13 @@
     "old_release_constraint": "Existing V1.42 units run their old OTA code until reinstalled via a working route"
   },
   "save_router_v148": "SAVE opens PROJECTS on all ordinary UI screens; SEQ/SEQ SLOTS retain sequence saves; NAME editor remains SAVE commit; OTA/recovery excluded.",
-  "saw_harmonic_guard_v148": "Adaptive crossfade of existing bandlimited 64/32/16 SAW tables before nonlinear waveshaper at strong parameters; no additional tables, buffers or voices; neutral sample-identical. Physical FM1 audio quality requires verification."
+  "saw_harmonic_guard_v148": "Adaptive crossfade of existing bandlimited 64/32/16 SAW tables before nonlinear waveshaper at strong parameters; no additional tables, buffers or voices; neutral sample-identical. Physical FM1 audio quality requires verification.",
+  "screensaver_v150": {
+    "scene": "Utrecht streets and Dom Tower, crack propagation, right-half 1-5 pixel vertical sinking",
+    "frames": 64,
+    "hold_ms": 2200,
+    "reverse": true,
+    "new_fullscreen_sprites": 0,
+    "hardware_verified": false
+  }
 }

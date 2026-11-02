@@ -1,0 +1,58 @@
+PASS: 11 parameter sweeps, cycle conservation, bounded PCM, mono note stack, panic
+PASS: fixed-point CXS oscillator, deterministic exchange and exact conserved period
+PASS: 12x8 project schema, CRC integrity, USB-MIDI, TRS running status, MIDI clock
+PASS: scale guide, Keylock full MIDI range, 5 arpeggiator modes
+PASS: empty / own / foreign read-only detection, dual-confirmation gates
+PASS RUPTURE six-note memory (overflow, return, duplicates, sustain, port identity, priority, glide, panic)
+PASS: RUPTURE OCT 0 bass reference, octave LEDs, pitch unchanged, 101-position knobs and native screen
+PASS: 8 reserved native SEQ slots, distinct notes, corruption isolation
+PASS: chorus, delay, reverb, EQ produce distinct PCM versus bypass
+PASS: RUPTURE full icon threshold and invalid ADC guard
+PASS: RUPTURE K4 signed HIGH AIR raises or lowers highs without cutting lows (150Hz 1.006, 6kHz 1.769 ratios)
+PASS TRS 31250 baud parser: running status, realtime, MIDI channel, SysEx and system-common
+PASS CXS four oscillator parameters persist in tagged legacy-sized patch records
+PASS full PJT32 encode/decode persists RUPTURE CXS preset parameters
+CXS LFO & four sound shapers: PASS
+PASS CXS four-shaper PJT32 roundtrip, legacy defaults, unchanged 33-byte record
+PASS twelve-slot flash tests, four-slot v12 migration, CRC, torn-write fallback, deletion, CXS restoration
+PASS V1.6 native mono LAST/HIGH/LOW, ties, bounded forward/reverse glide
+RUPTURE V1.7 sequence velocity / guarded autosave PASS
+RUPTURE 8 persisted sequence names and white step LED mapping PASS
+PASS V1.9: two independent CXS/classic subs, octave/detune/drift, mixing, click-free fades, OFF parity
+PASS V1.10: SUB labels, independent classic audio, additive main unity, bounded peaks
+PASS dual SUB1/SUB2 per-preset roundtrip, codec validation, defaults and sound shape coexistence
+PASS V1.12 PJT32 Note Memory/Master 0..200, extremes, invalid defaults, CXS+SUB+SHAPE coexistence
+PASS V1.13 device-global gain 0..200, project switching, torn write, 28-entry journal, verified A/B compaction
+PASS FX bypass: zero-allocation fades, exact dry, no abrupt cutoff
+COMPRESSOR difference=31782039
+WAVEFOLDER (REMOVED) difference=0
+TRANSIENT (REMOVED) difference=0
+TILT EQ difference=33058656
+OCTAVE FUZZ difference=55770669
+PASS active COMP/TILT/FUZZ audible, removed FOLDER/TRANSIENT bypassed, defaults exact
+Sandpaper spectral ratio: 95 Hz 0.993; 4.5 kHz -0.029
+PASS Sandpaper: spectral smoothing, bass preservation, independent knobs, warm body, bypass, bounds
+PASS PJT33 FX memory: all 16 parameters, 4 enabled, 22 bypass bits; old-project reset, cross-project isolation, corrupt/truncated reject
+PASS PJT33 twelve-slot flash tests, four-slot v12 migration, CRC, torn-write fallback, deletion, CXS restoration
+PASS V1.18: all ten FX worst-case, peak=26164/32767, clipped=0, active=180343, dropouts=0, energy=1275664908, exact dry
+PASS V1.19: DMA budget, scope shedding, half ownership, tick wrap and nested timing
+/mnt/data/RUPTURE-FM1-V1.50-PROJECT/tests/test_v120_boot_art.py:9: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  assert list(last.getdata())==list(base.getdata()),'FM1 C splash is not the approved artwork'
+/mnt/data/RUPTURE-FM1-V1.50-PROJECT/tests/test_v120_boot_art.py:15: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  pixels.append(sum(bool(v) for v in p.getdata()))
+PASS V1.20 24 actual firmware frames, true 1-bit, last image bit-exact, progressive crack
+PASS: SAVE routes HOME and FX/GLO to PROJECTS; SEQ remains separate; FX chord guarded
+tests/test_v122_fx_quality.c: In function 'level':
+tests/test_v122_fx_quality.c:17:3: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+   17 |   if(control==0)a=val; if(control==1){a=85;f=val;} if(control==2){a=85;m=val;} if(control==3){a=85;o=val;}
+      |   ^~
+tests/test_v122_fx_quality.c:17:24: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+   17 |   if(control==0)a=val; if(control==1){a=85;f=val;} if(control==2){a=85;m=val;} if(control==3){a=85;o=val;}
+      |                        ^~
+tests/test_v122_fx_quality.c:22:3: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+   22 |   if(control==1)so=val;if(control==2)wa=val;if(control==0)sm=val;
+      |   ^~
+tests/test_v122_fx_quality.c:22:24: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+   22 |   if(control==1)so=val;if(control==2)wa=val;if(control==0)sm=val;
+      |                        ^~
+PASS V1.22 TILT K1-4, SAND SOFT/WARMTH, FUZZ loudness dry=5372 wet=5853, knob jump=1453, PJT33 BLEND tag

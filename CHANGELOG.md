@@ -1,3 +1,18 @@
+# V1.50 — Extended Utrecht Screensaver Rupture
+
+- Extends the procedural Utrecht screensaver so the crack no longer stops at the foreground ground split. Once the ground has ruptured, the fracture now climbs upward through the streets, disappears briefly behind the front houses, and continues visibly through the Dom Tower.
+- Adds a late-stage structural shift in the Dom Tower: one cracked half sinks a few pixels downward while the saver is near its peak frame, then returns automatically during the existing reverse loop.
+- Keeps the established saver timing model intact: the 64-frame saver still plays forward, holds, reverses back to frame zero, and loops using the existing state machine. No extra full-screen animation frame table, heap allocation, DSP work, or audio-thread rendering was introduced.
+- Implementation remains purely 1-bit native UI drawing inside `ru_crack_saver()`, using the existing Utrecht city art plus procedural crack carving and a small moving tower-half mask. Physical FM1 validation is still required.
+
+# V1.49 — DAM Sprite Waveform Bar
+
+- Replaces PLAY waveform bars (both CXS and SAW) with **the actual 12 user-supplied 224×30 monochrome PNG sprites**. Native ROM stores their exact 1-bit pixels; no redraw, scaling, or procedural fluid simulation.
+- The crack opens on the first gated note; leak animation cycles only source frames 06–08; stops on the last gate release and closes via source frames 09–12. A very short press skips safely to the matching closing frame.
+- Leak frame interval reacts to displayed octave -2..+5: 270/220/165/115/75/55/45/35ms. Existing audio ISR, presets, sequencer, effects, MIDI/USB, storage format, recovery boothead, and OTA loader preserved.
+- +10,080 static bytes (flash) for 12 original bitmaps, no new framebuffers or audio allocations. The renderer copies 840 bytes into the already-existing 1-bit UI canvas; unchanged LCD bands remain cached.
+- Added exact pixel comparison and timing-state tests. Native crossbuild passes; physical FM1 display and audio under load require validation.
+
 # RUPTURE V1.48 — Global SAVE Routing & SAW Harmonic Guard
 
 - **SAVE anywhere in normal editing:** FILTER, FX, EQ2, ENV, LFO, ARP, GLO, SETTINGS, STORAGE, HELP, SOUND SHAPE, SUB and all other ordinary UI pages now open the same 12-slot PROJECTS browser. There is no implicit flash write when entering the browser. A project slot still needs the existing name/confirmation flow. SEQ and SEQ SLOTS retain independent sequence-saving; in the NAME editor SAVE still commits the typed name. OTA/SAFE/LOADING and disabled legacy screens remain protected from UI redirection.
