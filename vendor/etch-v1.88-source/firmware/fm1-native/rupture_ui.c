@@ -65,10 +65,12 @@
 #define RU_PAGE_SAVER_OPTIONS 47
 #define RU_PAGE_AUTOLOAD 48
 #define RU_PAGE_COUNT 49
+#define RU_PAGE_WELCOME 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
+ uint8_t welcome_phase,welcome_choice,welcome_crt,welcome_status,welcome_hold_pct,welcome_store_ready;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -783,7 +785,85 @@ static void ru_bug_qr(void){
  }
  ru_center("SCAN TO REPORT A BUG",120,211,1);
 }
-static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
+/* First-run overlay is a dedicated full 1-bit UI page. No effects on DSP. */
+static void ru_welcome_draw(const RuState *v){
+ ru_clear();ru_wordmark();ru_rect(7,25,226,1);
+ ru_frame(7,42,226,179);
+ ru_center("WELCOME TO THE",120,53,1);
+ ru_center("RUPTURE",120,66,2);
+ ru_rect(18,88,204,1);
+ switch(v->welcome_phase){
+ case 1u:
+  ru_center("THANK YOU FOR USING",120,102,1);
+  ru_center("RUPTURE ON YOUR",120,116,1);
+  ru_center("M-VAVE FM1!",120,130,1);
+  ru_center("BEFORE WE BEGIN,",120,150,1);
+  ru_center("A FEW THINGS TO SET UP.",120,164,1);
+  ru_frame(34,186,172,25);ru_center("SEL  NEXT",120,195,1);
+  break;
+ case 2u:
+  ru_center("HAVE YOU BACKED UP",120,107,1);
+  ru_center("YOUR PREVIOUS FIRMWARE",120,120,1);
+  ru_center("AND PROJECTS?",120,133,1);
+  goto choices;
+ case 3u:
+  ru_center("NO BACKUP FOUND",120,107,1);
+  ru_center("DO YOU STILL WANT",120,120,1);
+  ru_center("TO CONTINUE?",120,133,1);
+  goto choices;
+ case 4u:
+  ru_center(":(",120,111,2);
+  ru_center("YOU CAN STILL",120,151,1);
+  ru_center("CONTINUE TO RUPTURE.",120,165,1);
+  ru_frame(34,185,172,26);ru_center("SEL  CONTINUE",120,195,1);
+  break;
+ case 5u:
+  ru_center("FORMAT FM1 STORAGE?",120,104,1);
+  ru_center("BACK UP BEFORE ERASING",120,120,1);
+  ru_center("YOUR PROJECTS AND DATA.",120,133,1);
+  ru_center(v->welcome_store_ready?"STORAGE ALREADY READY":"RECOMMENDED FOR RUPTURE",120,146,1);
+  goto choices;
+ case 6u:
+  ru_center("CONFIRM FORMAT",120,104,1);
+  ru_center("DELETES OLD USER DATA!",120,124,1);
+  ru_center("HOLD SAVE FOR 3 SEC",120,143,1);
+  ru_frame(24,166,192,13);
+  if(v->welcome_hold_pct)ru_rect(26,168,(int)v->welcome_hold_pct*188/100,9);
+  ru_center("SEL / HOME CANCEL",120,195,1);
+  break;
+ case 7u:
+  ru_center(v->welcome_status==1u?"STORAGE FORMATTED":
+    v->welcome_status==2u?"STORAGE ALREADY READY":"FORMAT FAILED",120,116,1);
+  ru_center(v->welcome_status==3u?"NO DATA WAS ERASED":
+    "YOU CAN CONTINUE.",120,139,1);
+  ru_frame(34,185,172,26);ru_center("SEL  NEXT",120,195,1);
+  break;
+ case 8u:
+  ru_center("ENABLE THE CRT",120,107,1);
+  ru_center("SCREEN FILTER?",120,120,1);
+  ru_center("DEFAULT IS OFF",120,135,1);
+  goto choices;
+ case 9u:
+  ru_center("SETUP COMPLETE",120,106,1);
+  ru_center(v->welcome_crt?"CRT FILTER ON":"CRT FILTER OFF",120,128,1);
+  ru_center(v->welcome_store_ready?"SETTINGS WILL BE SAVED":
+    "STORAGE NOT INITIALIZED",120,146,1);
+  ru_frame(20,182,200,29);
+  ru_center("CONTINUE TO RUPTURE",120,192,1);
+  break;
+ default:break;
+ }
+ ru_rect(7,226,226,1);
+ ru_center("SELECT TURN / SEL CONFIRM",120,232,1);
+ return;
+choices:
+ ru_frame(23,163,91,30);ru_frame(126,163,91,30);
+ if(v->welcome_choice)ru_rect(133,167,77,2);else ru_rect(30,167,77,2);
+ ru_center("NO",68,179,1);ru_center("YES",172,179,1);
+ ru_center("TURN SELECT   SEL OK",120,204,1);
+ ru_rect(7,226,226,1);ru_center("RUPTURE FIRST RUN",120,232,1);
+}
+static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
  static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","PROJECTS","MIDI"};

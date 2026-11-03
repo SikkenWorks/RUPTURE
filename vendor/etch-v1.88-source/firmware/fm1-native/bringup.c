@@ -207,8 +207,12 @@ static void etch_panel_commit(void){
 #define RU_BITS_EXTERNAL 1
 #include "rupture_ui.c"
 #include "rupture_panel_anim.h"
+#include "rupture_welcome.h"
 #include "rupture_save_route.h"
 static uint8_t ru_crt_enabled=0u;
+static uint8_t ru_welcome_done=0u;
+static uint8_t ru_welcome_save_pending=0u;
+static RuWelcome ru_welcome={0};
 static uint8_t ru_crt_active=0u; /* set per rendered page; QR has no optics */
 /* Reuse the existing 173-line Felucca-safe DMA canvas; avoid per-pixel LCD
    bus writes and do not write outside its verified transfer bounds. */
@@ -2708,6 +2712,13 @@ static void rupture_native_screen(void){
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
  v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;
+ v.welcome_phase=ru_welcome.phase;v.welcome_choice=ru_welcome.choice;
+ v.welcome_crt=ru_welcome.crt;v.welcome_status=ru_welcome.status;
+ v.welcome_store_ready=(uint8_t)(native_store_status==ETCH_STORE_OK);
+ v.welcome_hold_pct=(uint8_t)(ru_welcome.phase==RU_WELCOME_ERASE&&ru_welcome.save_hold_since?
+  (uint32_t)(etch_ms-ru_welcome.save_hold_since)>=3000u?100u:
+  (uint32_t)(etch_ms-ru_welcome.save_hold_since)*100u/3000u:0u);
+ if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped)v.page=RU_PAGE_WELCOME;
  v.crt_enabled=ru_crt_enabled;v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
@@ -4681,9 +4692,11 @@ void fm1_cstart(void){
   /* Prompt is opt-in and only for an occupied ETCH-target region.
    * Do not offer format in Safe Mode, on read I/O failures, or for healthy
    * existing ETCH projects. This performs NO flash writes. */
+#ifndef RUPTURE_BUILD
   etch_storage_prompt_open(&native_storage_boot,native_store_status,
       (uint8_t)(native_recovery_reason==ETCH_RECOVERY_NORMAL && !native_keyboard_mode && !native_flash_probe.io_error),
       (uint8_t)ETCH_NATIVE_STORAGE);
+#endif
   /* Foreign Felucca data is read-only: never auto-erase or boot to SAFE.
    * Use RAM factory patches; explicit manual initialise is required for SAVE. */
   if(native_store_status==ETCH_STORE_FOREIGN){
@@ -4715,10 +4728,15 @@ void fm1_cstart(void){
  /* A completed global-volume log overrides per-preset legacy settings.
   * Read-only on boot. Default 100 on an older record without the log. */
  if(native_store_status==ETCH_STORE_OK){
-  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u,crt=0u;
-  if(etch_store_user_settings_crt_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice,&crt)==ETCH_STORE_OK){
+  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u,crt=0u,welcome_done=0u;
+  if(etch_store_user_settings_welcome_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice,&crt,&welcome_done)==ETCH_STORE_OK){
+   ru_welcome_done=welcome_done;
    rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;ru_crt_enabled=crt;
   }
+ }
+ if(!safe && !native_keyboard_mode && !ru_welcome_done){
+  ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
+  ru_welcome.crt=ru_crt_enabled;
  }
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
 #endif
@@ -4984,6 +5002,47 @@ void fm1_cstart(void){
     last_seq_notes=fm1_in.notes;
     continue;
    }
+#ifdef RUPTURE_BUILD
+   /* RUPTURE first-run UI intercepts navigation, SAVE and project writes.
+    * Any requested ERASE is executed explicitly on the main thread, only
+    * after YES and 3 seconds of physical SAVE hold. No erase on cold boot. */
+   if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped){
+    uint8_t old_phase=ru_welcome.phase,old_choice=ru_welcome.choice;
+    uint8_t action=ru_welcome_step(&ru_welcome,select?select:dm,pressed,buttons,etch_ms);
+    if(action==RU_WELCOME_ACTION_FORMAT){
+     ru_welcome.status=3u;
+     if(native_store_status==ETCH_STORE_OK){
+      /* Preserve existing valid projects. Already-initialized FM1 storage
+       * is never destructively overwritten by a first-run wizard. */
+      ru_welcome.status=2u;
+     }else if((native_store_status==ETCH_STORE_FOREIGN || native_store_status==ETCH_STORE_EMPTY)&&
+       !native_flash_probe.io_error && native_recovery_reason==ETCH_RECOVERY_NORMAL&&
+       !native_updating&&!native_safe&&ETCH_NATIVE_STORAGE){
+      native_library_initialize(muted);
+      if(native_store_status==ETCH_STORE_OK){
+       ru_welcome.status=1u;native_project_browser_refresh();
+       native_storage_setup_armed=0u;
+      }
+     }
+     ru_welcome.phase=RU_WELCOME_FORMAT_RESULT;
+    }else if(action==RU_WELCOME_ACTION_FINISH){
+     ru_crt_enabled=ru_welcome.crt;ru_band_valid=0u;
+     ru_welcome_done=1u;
+     if(native_store_status==ETCH_STORE_OK){
+      ru_welcome_save_pending=1u;ru_global_gain_dirty=1u;
+      ru_global_gain_changed_ms=etch_ms>2600u?etch_ms-2600u:1u;
+     }
+    }
+    if(first_frame||pressed||select||dm||action||old_phase!=ru_welcome.phase||
+       old_choice!=ru_welcome.choice||
+       (ru_welcome.phase==RU_WELCOME_ERASE && (buttons&(1u<<9)) &&
+        (uint32_t)(etch_ms-last_ui_paint_ms)>=120u)){
+     screen();last_ui_paint_ms=etch_ms;
+    }
+    last_seq_notes=fm1_in.notes;
+    continue;
+   }
+#endif
    /* Startup question intercepts ALL ordinary UI navigation and SAVE.
     * Only the intentional confirm+hold path may call the existing bounded
     * initialize routine; no erase before its second confirmation. */
@@ -5131,8 +5190,8 @@ void fm1_cstart(void){
       !native_blend_audio_busy()){
      uint8_t was_tripped=native_tripped;uint8_t was_muted=muted;
      ru_global_gain_attempt_ms=etch_ms;native_pause();
-     int gr=etch_store_user_settings_crt_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project,ru_crt_enabled);
-     if(gr==ETCH_STORE_OK)ru_global_gain_dirty=0u;
+     int gr=etch_store_user_settings_welcome_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project,ru_crt_enabled,ru_welcome_done);
+     if(gr==ETCH_STORE_OK){ru_global_gain_dirty=0u;ru_welcome_save_pending=0u;}
      if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
    }
    /* Autosave only after an explicit first SAVE / project LOAD. Never while

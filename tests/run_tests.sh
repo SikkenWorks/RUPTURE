@@ -279,3 +279,7 @@ python3 tests/test_dam_sprites.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
  tests/test_v155_cxs_pressure.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
  -o /tmp/rupture_v155_pressure && /tmp/rupture_v155_pressure
+
+# V1.59: first-run overlay, explicit flash confirmation and NOR journal continuity.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v159_welcome.c -o /tmp/rupture_v159_welcome && /tmp/rupture_v159_welcome
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v159_welcome_storage.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v159_store && /tmp/rupture_v159_store

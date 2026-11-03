@@ -125,7 +125,12 @@ static void native_library_save(uint8_t muted){
 }
 
 static void native_library_initialize(uint8_t muted){
+ #ifdef RUPTURE_BUILD
+ if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||
+    (native_store_status!=ETCH_STORE_FOREIGN&&native_store_status!=ETCH_STORE_EMPTY))return;
+#else
  if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||native_store_status!=ETCH_STORE_FOREIGN)return;
+#endif
  uint8_t tripped=native_tripped;native_pause();
  /* Reclaiming old storage must not leave all usable factory wave slots
   * blank. Make a new ETCH project from the known-good factory bank. */

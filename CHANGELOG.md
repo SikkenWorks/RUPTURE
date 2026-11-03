@@ -1,3 +1,12 @@
+# RUPTURE V1.59 — First-Run Welcome and Clean Release
+
+- First launch shows a 240×240 monochrome welcome overlay with backup confirmation, a continue-without-backup branch (including `:(`), optional storage formatting, CRT ON/OFF selection and a visible CONTINUE TO RUPTURE action.
+- Flash format is never automatic. The wizard requires an explicit YES followed by a three-second physical SAVE hold; HOME/SEL cancels. Already-valid RUPTURE project storage is preserved rather than reformatted.
+- Setup-completed status is stored in the existing CRC-protected global settings journal, without a new flash partition or per-project format. The marker is copied through A/B project saves and journal compaction. If the user continues with no compatible, initialized storage, no journal write is possible and the wizard may reappear on reboot.
+- CRT preference stays stored globally; previously chosen CRT preferences are respected until changed. The audio ISR, synthesis/DSP code, protected bootheader, trusted OTA loader and cross-firmware/V15 restore logic are unchanged.
+- README is now a permanent user guide with no release-history text. CHANGELOG.md contains release history. The distribution is cleaned of stale firmware binaries, old build outputs and redundant logs.
+- Native build, welcome-flow and storage-journal tests passed. Physical FM1 formatting, startup and V15 restoration remain to be tested on hardware.
+
 # RUPTURE V1.58 — SHAKE ANIMATION (LFO, ENV, SOUND SHAPE)
 
 - Adds a subtle, 1-2 pixel shake to existing LFO sinkhole, ENV wall rupture and SOUND SHAPE volcano 1-bit sprites.
