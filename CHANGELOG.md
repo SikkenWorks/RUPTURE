@@ -1,3 +1,54 @@
+# RUPTURE V1.67 — Consistent Knob Focus
+
+- Fixed the actual issue: K1–K4 focus is now recorded for **every editable rotary page**, including all eight FX choices. The internal FX-page forwarding can no longer hide the focus indication.
+- Added the same side-of-knob focus bars to the SEQUENCER, which uses a separate renderer, and to the fifth ALGORITHM/BLEND knob on SUB 1 and SUB 2. Channel EQ shows a corresponding row indicator because its parameters are displayed as values rather than round knobs.
+- The active indicator lasts approximately 950 ms after the last turn and clears on page changes, FX selection changes, and EQ tab changes. It never draws through labels or values.
+- No changes to synthesis, DSP, sequencer timing, project format, OTA code, trusted OTA loader, or protected bootheader. Physical FM1 validation remains required.
+
+---
+
+# RUPTURE V1.66 — SEL, Animation Timing & Sound Shape Fixes
+
+- Replaced the old **SCL** label with **SEL** on native RUPTURE screens and help pages, and in the current user documentation. Hardware button mapping is unchanged.
+- Fixed the V1.64 animation slowdown: changed sprite/shake frames remain pending until an LCD paint actually happens. Scheduled frame updates also catch up to wall-clock time after a slow main-loop iteration. Real repeated DMA misses still impose a protective render budget.
+- PLAY has an actual subtle 1-pixel water-loop shake. ENV, LFO and SOUND SHAPE preserve their held-note animations and closing sequences. Original 1-bit PNG bytes, frame order and octave-based PLAY speed are preserved.
+- **CXS WEIGHT** now increases the low/high tonal contrast instead of mostly adding gain. **CXS PUNCH** emphasizes upper-band/transient content for the full duration of a held note instead of ending after eight oscillator cycles. The original first-eight-cycle attack accent remains at reduced intensity.
+- With WEIGHT/PUNCH at zero, CXS output is sample-identical to V1.65; existing saved presets with **nonzero** WEIGHT or PUNCH will intentionally sound different. SAW shaping stays unchanged. No project/storage format change or new audio buffer.
+- Native build, targeted real CXS/SAW audio regressions, sprite renderer checks, OTA staging/regression, package CRC, pinned bootheader/loader and WebInstaller parity were retested. Physical FM1 audio and V15 restore tests remain outstanding.
+
+# RUPTURE V1.65 — Software Release Candidate / Validation Gate
+
+- Rebuilt and audited the V1.64 feature set without changing audio/DSP, storage schema, USB/OTA or rescue logic.
+- Corrected the SYSTEM INFO version and fixed the outdated firmware filename in README.
+- Added a structured, reproducible release-gate report with a physical FM1 acceptance matrix.
+- Verified application package boundaries, pinned bootheader/loader, installer parity and regression results.
+- **Release status: software RC only.** Real FM1 stress and actual V15/cross-firmware recovery remain mandatory before a production release.
+
+# RUPTURE V1.64 — Hardware Status & Audio-First LCD Scheduler
+
+- Consolidated two competing screen-rendering paths into one and replaced redundant 50 ms idle full-screen redraws with a calibrated main-loop display budget: 350 ms idle refresh, 50 ms animation refresh under normal conditions, 100 ms with pressure/late DMA indicators, and 180 ms under severe stress. No new DSP/ISR work, buffers, synthesis routines or notes were changed.
+- Physical inputs, notes, page transitions and explicit warnings remain immediately paintable. Only optional intermediate cosmetic frames are dropped when audio pressure increases.
+- SYSTEM INFO now identifies the battery result as a **coarse voltage band** (LOW, MID, HIGH, FULL or UNKNOWN), not as a precise fuel-gauge percentage. USB link status and existing DSP/DMA diagnostics remain read-only.
+- Existing FM1 key LEDs, active-note and sequencer LED mappings, 1-bit RUPTURE animations, PROJECT & PRESET safety, screen filter default OFF, and first-run wizard are retained.
+- Protected 16 KB bootheader, trusted OTA loader, firmware identity and native cross-firmware / V15 recovery implementation preserved. OTA simulations do not replace a physical cross-firmware and V15 restoration test.
+
+# RUPTURE V1.63 — Project & Preset Safety Polish
+
+- Added an explicit unsaved-work indicator in the UI header and next to the active project's name in the project library. This is separate from the autosave retry flag, so a failed autosave never falsely clears the warning.
+- The existing two-press project OPEN confirmation now warns about **unsaved edits**. STORAGE > PROJECTS also warns before switching away or reloading the current project. HOME or moving the cursor cancels confirmation.
+- Uniform flash-operation feedback: SAVING/LOADING, SAVED SUCCESSFULLY, LOADED SUCCESSFULLY, SAVE FAILED, LOAD FAILED. Success is only announced when the existing storage operation reports OK.
+- Added a RAM-only, single-gesture knob UNDO using HOME+SCL. Safe single-byte controls on PLAY, SHAPE, SUB 1/2 and TILT/FUZZ/SANDPAPER only. Complex FX, sequencer changes and project loads intentionally excluded.
+- Updated SYSTEM INFO to report the actual V1.63 firmware version. Existing animations, CRT default OFF, boot identity, native audio DSP, storage journal format, protected OTA bootheader, trusted loader and cross-firmware/V15 restore source left unchanged.
+- OTA/V15 hardware cross-install and audio stress tests remain required on physical FM1 units.
+
+# RUPTURE V1.62 — Native Control & System Info
+
+- Added a dedicated read-only SYSTEM INFO screen under GLO: firmware and identity, USB link, battery, storage, project-slot count and measured DSP/DMA peaks.
+- Polished continuous knob behavior: one step per slow detent; controlled two-step acceleration only on sustained rapid turns. Discrete choices never accelerate.
+- Added a subtle, temporary focus marker to the last changed control knob.
+- Kept CXS/SAW audio DSP, all existing waveform animations, storage journal schema and OTA/recovery routines unchanged.
+- Physical FM1 verification remains required, especially audio DMA margin and cross-firmware/V15 transition.
+
 # RUPTURE V1.60 — First-run format confirmation
 
 - Following a deliberate three-second SAVE hold, the wizard now displays a dedicated **FORMATTING... / PLEASE DO NOT POWER OFF** screen while the existing storage operation runs.

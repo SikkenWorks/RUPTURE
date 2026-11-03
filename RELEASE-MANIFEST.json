@@ -1,13 +1,13 @@
 {
-  "version": "1.60",
+  "version": "1.67",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.60.fwsc",
+  "firmware_file": "RUPTURE-V1.67.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "6676435fa03eae10fd2aae17852e42e1e84e3b91365627f3b0bd6ba8445f8d23",
-  "app_bytes": 315740,
-  "app_sha256": "dcf5e690fee81030db1275256b95b2cfada6ec96be081d9f654f9bca9be7f6cc",
+  "firmware_sha256": "e5c1dd4c06076bd78c91b1cf1b0730573eed2b85eccc75d8e6d35ade0f14c2bf",
+  "app_bytes": 319496,
+  "app_sha256": "561af927557885b17108e9bfe935dfd578489419769263deb97c83cbda814f00",
   "native_screens": 71,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -57,7 +57,8 @@
     "The first-run storage format is always optional; destructive initialization only follows YES and three seconds of SAVE hold. For already-valid RUPTURE project storage the wizard does not format again.",
     "If the user skips formatting with unavailable/foreign storage, the completion flag cannot be written safely. The wizard may therefore return at the next boot.",
     "CRT preference and first-run completion reside in the existing CRC-protected global settings NOR journal. Physical cold-boot and storage-format testing remains necessary.",
-    "V1.60 first-run format confirmation has host tests; physical FM1 storage formatting and display remain unverified."
+    "V1.60 first-run format confirmation has host tests; physical FM1 storage formatting and display remain unverified.",
+    "V1.63 one-gesture UNDO is intentionally limited to simple single-byte knob controls (PLAY, SHAPE, SUB, TILT, FUZZ, SANDPAPER); it does not support sequence, composite filter, or project-wide undo. Physical controls and project-load safety require FM1 hardware validation."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -300,5 +301,7 @@
     "qr_unmodified": true,
     "audio_interrupt_unchanged": true,
     "hardware_verified": false
-  }
+  },
+  "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
+  "release_ready": false
 }

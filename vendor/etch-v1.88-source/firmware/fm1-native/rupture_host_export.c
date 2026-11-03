@@ -52,6 +52,7 @@ if(v.page==RU_PAGE_SEQ_SLOTS){v.selected=1;v.seq_mask=0x0bu;for(int i=0;i<4;i++)
 if(v.page==RU_PAGE_PROJECTS){v.project=2u;v.active_project=1u;}
 if(v.page==RU_PAGE_SEQ_SLOTS){v.seq_slot=2u;v.active_seq_slot=1u;}
 if(v.page==RU_PAGE_NAME){const char *n="MIDNIGHT BASS";for(int j=0;j<12;j++)v.edit_name[j]=n[j];v.edit_name[12]=0;v.edit_cursor=4;}
+if(v.page==RU_PAGE_SYS_INFO){v.system_usb=1;v.system_storage_ok=1;v.system_battery_valid=1;v.system_projects_used=4;v.diag_dsp=32;v.diag_late=0;}
 if(v.page==RU_PAGE_DIAG){v.diag_wall=62;v.diag_dsp=58;v.diag_render=52;v.diag_copy=9;v.diag_slack=38;v.diag_late=0;v.diag_guard=0;v.diag_scope=137;}
 if(v.page==RU_PAGE_LOADING){v.show_battery=0;v.boot_step=argc>=4?(uint8_t)atoi(argv[3]):10;}if(strcmp(argv[1],"storage-save")==0)ru_storage_popup(1u,2u,65u,0u);
 else if(strcmp(argv[1],"storage-load")==0)ru_storage_popup(2u,4u,65u,0u);

@@ -283,3 +283,7 @@ python3 tests/test_dam_sprites.py
 # V1.60: first-run confirmation is legible and SEL-acknowledged; V1.59 NOR storage continuity.
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v160_welcome.c -o /tmp/rupture_v160_welcome && /tmp/rupture_v160_welcome
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v159_welcome_storage.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v159_store && /tmp/rupture_v159_store
+
+# V1.63: real 240x240 UI rendering and RAM-only undo gesture policy.
+"$cc" -std=c11 -O2 tests/test_v163_edit_safety.c -o /tmp/rupture_v163_edit_safety
+/tmp/rupture_v163_edit_safety

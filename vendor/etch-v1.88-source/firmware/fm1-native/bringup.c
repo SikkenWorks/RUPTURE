@@ -207,6 +207,8 @@ static void etch_panel_commit(void){
 #define RU_BITS_EXTERNAL 1
 #include "rupture_ui.c"
 #include "rupture_panel_anim.h"
+#include "rupture_lcd_budget.h"
+#include "rupture_encoder_feel.h"
 #include "rupture_welcome.h"
 #include "rupture_save_route.h"
 static uint8_t ru_crt_enabled=0u;
@@ -687,6 +689,9 @@ static uint32_t ru_saver_hold_until_ms=0u;
 static uint32_t ru_global_gain_changed_ms=0u,ru_global_gain_attempt_ms=0u;
 static uint8_t rupture_glo_screen,rupture_glo_selected,rupture_help_page;
 static uint8_t ru_page=RU_PAGE_PLAY,ru_prev=RU_PAGE_PLAY,ru_menu=0,ru_focus=0,ru_seq_slot=1;
+static RuEncoderFeel ru_knob_feel[4]={{0}};
+static uint8_t ru_knob_focused=0u,ru_knob_focus_page=RU_PAGE_PLAY;
+static uint32_t ru_knob_focus_until=0u;
 static uint8_t ru_project_slot=1,ru_reverb_type=1,ru_help_chapter=0,ru_help_scroll=0,ru_selected;
 static uint8_t ru_edit_target=0u,ru_edit_pos=0u,ru_edit_after_save=0u,ru_name_new_slot=0u;
 static char ru_edit_name[13];
@@ -716,10 +721,12 @@ static uint8_t ru_seq_velocity=110u; /* K3: step note velocity 1..127 */
 #include "rupture_help_cards.h"
 /* Dirty RAM only; flash never accessed from IRQ or encoder callbacks. */
 static uint8_t ru_autosave_dirty=0u,ru_autosave_armed=0u,ru_autosave_active=0u;
+/* A failed autosave deliberately blocks retries, but must NEVER hide unsaved work. */
+static uint8_t ru_project_dirty=0u;
 static uint32_t ru_last_edit_ms=0u,ru_last_store_ms=0u;
 static uint32_t ru_save_feedback_until=0u;
 static uint8_t ru_save_feedback=0u;
-static void ru_mark_dirty(void){ru_autosave_dirty=1u;ru_last_edit_ms=etch_ms?etch_ms:1u;}
+static void ru_mark_dirty(void){ru_autosave_dirty=1u;ru_project_dirty=1u;ru_last_edit_ms=etch_ms?etch_ms:1u;}
 
 /* Confirm state: 0 idle, 1 overwrite another slot, 2 open an occupied slot.
  * Never repurpose one button's pending confirmation for the other button. */
@@ -728,6 +735,11 @@ static uint8_t ru_project_confirm=0u,ru_project_feedback=0u;
 /* Zero means no named sequence has been explicitly loaded/saved in the active project.
  * The browser cursor is not the active sequence identity. */
 static uint8_t ru_active_seq_slot=0u;
+/* One gesture of last-change undo. This is RAM only (never saved to NOR). */
+#include "rupture_undo_gesture.h"
+static RuKnobUndo ru_knob_undo={0};
+static uint8_t ru_undo_notice=0u;
+static uint32_t ru_undo_notice_until=0u;
 static uint8_t ru_preset_seq_changed=0;
 static uint32_t ru_home_since,ru_seq_since;
 static uint8_t ru_home_used,ru_seq_used;
@@ -807,11 +819,11 @@ static void ru_fx_apply_extra(void){
  rupture_fuzz_controls(ru_fuzz[0],ru_fuzz[1],ru_fuzz[2],ru_fuzz[3],ru_fuzz_enabled);
  rupture_sandpaper_controls(ru_sand[0],ru_sand[1],ru_sand[2],ru_sand[3],ru_sand_enabled);
 }
-static uint32_t ru_battery_sample_ms,ru_last_paint_ms;
+static uint32_t ru_battery_sample_ms;
 static uint32_t ru_splash_start_ms;
 static uint8_t ru_splash_done,ru_splash_started;
 static int16_t ru_visual_q8[4];
-static uint8_t ru_visual_page=255u,ru_visual_moving;
+static uint8_t ru_visual_page=255u,ru_visual_moving,ru_anim_dirty;
 
 
 /* UART DMA is independent of USB: physically received TRS bytes feed the
@@ -879,7 +891,12 @@ static void ru_storage_finish(uint8_t ok){
  if(!ru_storage_kind)return;
  etch_store_set_progress(0);
  ru_storage_popup(ru_storage_kind,ru_storage_last_phase,ok?100u:ru_storage_last_pct==255u?0u:ru_storage_last_pct,ok?1u:2u);
- ru_crt_active=ru_crt_enabled;ru_commit();ru_storage_kind=0u;
+ ru_crt_active=ru_crt_enabled;ru_commit();
+ /* The result is displayed independently of the short progress popup. */
+ ru_save_feedback=ok?(ru_storage_kind==2u||ru_storage_kind==4u?4u:1u):
+  (ru_storage_kind==2u||ru_storage_kind==4u?5u:2u);
+ ru_save_feedback_until=etch_ms+2000u;
+ ru_storage_kind=0u;
 }
 #endif
 #include "native_seq_cursor.h"
@@ -2704,7 +2721,8 @@ static void rupture_native_screen(void){
   ru_crt_active=(uint8_t)(intro.crt_enabled&&intro.page!=RU_PAGE_BUG_REPORT);ru_render(&intro);ru_commit();return;
  }
  if(native_audio.fx.eq2_enabled!=native_project_cfg.eq2.enabled)ru_eq2_apply();
- ru_footer_status=((int32_t)(ru_save_feedback_until-etch_ms)>0)?ru_save_feedback:0u;
+ ru_footer_status=((int32_t)(ru_undo_notice_until-etch_ms)>0)?(uint8_t)(ru_undo_notice==1u?6u:7u):
+  ((int32_t)(ru_save_feedback_until-etch_ms)>0)?ru_save_feedback:0u;
  RuState v={0};v.page=ru_page;v.selected=ru_selected;v.audio_fault=(uint8_t)(native_tripped&&!native_safe);
  if(native_safe||native_tripped)v.page=RU_PAGE_SAFE;
  else if(native_updating)v.page=RU_PAGE_UPDATE;
@@ -2719,7 +2737,18 @@ static void rupture_native_screen(void){
   (uint32_t)(etch_ms-ru_welcome.save_hold_since)>=3000u?100u:
   (uint32_t)(etch_ms-ru_welcome.save_hold_since)*100u/3000u:0u);
  if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped)v.page=RU_PAGE_WELCOME;
- v.crt_enabled=ru_crt_enabled;v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
+ v.crt_enabled=ru_crt_enabled;
+ v.knob_focus=ru_knob_focused;
+ v.knob_focus_visible=(uint8_t)(ru_knob_focus_page==v.page &&
+  (int32_t)(ru_knob_focus_until-etch_ms)>0);
+ v.project_dirty=ru_project_dirty;
+ v.system_usb=(uint8_t)(usb.config!=0u&&!usb.suspended);
+ v.system_storage_ok=(uint8_t)(native_store_status==ETCH_STORE_OK);
+ v.system_storage_empty=(uint8_t)(native_store_status==ETCH_STORE_EMPTY);
+ v.system_battery_valid=(uint8_t)(ru_battery_percent>=0);
+ v.system_audio_fault=(uint8_t)native_tripped;
+ for(uint16_t pm=native_project_present;pm;pm>>=1u)v.system_projects_used+=(uint8_t)(pm&1u);
+ v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
  for(uint8_t i=0u;i<8u;i++)for(uint8_t j=0u;j<13u;j++)v.manager_seq_names[i][j]=ru_manager_seq_names[i][j];
@@ -2847,6 +2876,10 @@ static void rupture_native_screen(void){
  case RU_PAGE_GLO:v.selected=ru_selected;break;
  case RU_PAGE_STORAGE:v.selected=ru_selected;break;
  case RU_PAGE_OTHER:v.selected=ru_saver_options_selected;break;
+ case RU_PAGE_SYS_INFO:
+  v.diag_dsp=(uint16_t)(etch_diag_cpu_permille(native_max_ticks,ETCH_NATIVE_FRAMES*544u)/10u);
+  v.diag_late=native_late;
+  break;
  case RU_PAGE_DIAG:
   {uint32_t budget=ETCH_NATIVE_FRAMES*544u;
    v.diag_wall=(uint16_t)(etch_diag_cpu_permille(native_max_wall_ticks,budget)/10u);
@@ -3078,7 +3111,7 @@ static void screen_render(void){
    label(native_guide_performance?"GLO: FIFTHS":"SEQ: REC BAKE",12,184,CYAN);
    lcd_fill(0,195,240,1,0x2945);
    /* All four labels/values occupy separate 60px cells, none exceed 7 glyphs. */
-   label("K1 KEY",4,201,FAINT);label("K2 SCL",64,201,FAINT);
+   label("K1 KEY",4,201,FAINT);label("K2 SEL",64,201,FAINT);
    label("K3 LOCK",124,201,FAINT);label("K4 NOTE",184,201,FAINT);
    label(etch_note_name(h->root),4,220,WHITE);
    label(etch_mode_short(h->mode),64,220,WHITE);
@@ -3622,7 +3655,7 @@ static void screen(void){
 }
 #ifdef RUPTURE_BUILD
 static uint8_t ru_menu_pages[]={RU_PAGE_FILTER,RU_PAGE_ENV,RU_PAGE_LFO,RU_PAGE_FX,RU_PAGE_SEQ,RU_PAGE_ARP,RU_PAGE_GUIDE,RU_PAGE_KEYLOCK,RU_PAGE_NOTE_MEMORY,RU_PAGE_PROJECTS,RU_PAGE_MIDI};
-static void ru_nav_to(uint8_t page){ru_prev=ru_page;ru_page=page;ru_focus=0u;ru_seq_confirm=0u;ru_seq_feedback=0u;ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;}
+static void ru_nav_to(uint8_t page){ru_prev=ru_page;ru_page=page;ru_knob_focus_until=0u;ru_focus=0u;ru_seq_confirm=0u;ru_seq_feedback=0u;ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;}
 static void ru_begin_name(uint8_t sequence,uint8_t save_after){
  ru_edit_target=sequence;ru_edit_after_save=save_after;ru_edit_pos=0u;
  ru_name_new_slot=(uint8_t)(sequence && !ru_seq_slot_used((uint8_t)(RU_SEQ_BANK_BASE+ru_seq_slot-1u)));
@@ -3697,7 +3730,7 @@ static void ru_seq_slot_action(uint8_t save){
   native_library_commit(0u);
   ru_storage_finish((uint8_t)(native_store_status==ETCH_STORE_OK));
   ru_seq_feedback=(native_store_status==ETCH_STORE_OK)?2u:3u;
-  if(ru_seq_feedback==2u){ru_active_seq_slot=ru_seq_slot;ru_autosave_armed=1u;ru_autosave_dirty=0u;ru_last_store_ms=etch_ms?etch_ms:1u;}
+  if(ru_seq_feedback==2u){ru_active_seq_slot=ru_seq_slot;ru_autosave_armed=1u;ru_autosave_dirty=0u;ru_project_dirty=0u;ru_last_store_ms=etch_ms?etch_ms:1u;}
  }else{ /* SEL: only OPEN occupied sequence, always with a confirmation. */
   if(!ru_seq_slot_used(slot)){ru_seq_feedback=3u;first_frame=1u;return;}
   if(ru_seq_confirm!=2u){ru_seq_confirm=2u;ru_seq_feedback=5u;first_frame=1u;return;}
@@ -3727,7 +3760,7 @@ static void ru_seq_slot_action(uint8_t save){
    native_seq_rate=native_project_cfg.pattern_rate[slot];
    native_seq_gate=native_project_cfg.pattern_gate[slot]?native_project_cfg.pattern_gate[slot]:75u;
    native_seq_swing=native_project_cfg.pattern_swing[slot];
-   native_seq_step=0u;ru_active_seq_slot=ru_seq_slot;ru_seq_feedback=1u;
+   native_seq_step=0u;ru_active_seq_slot=ru_seq_slot;ru_seq_feedback=1u;ru_mark_dirty();
    native_parameter_publish();
   }
   if(was_running){fm1_irq_off();native_start();fm1_irq_enable_all();}
@@ -3769,7 +3802,7 @@ static uint8_t ru_store_project(uint8_t automatic){
  ru_autosave_active=0u;
  if(native_store_status==ETCH_STORE_OK){
   ru_last_store_ms=etch_ms?etch_ms:1u;
-  ru_autosave_dirty=0u;ru_autosave_armed=1u;
+  ru_autosave_dirty=0u;ru_project_dirty=0u;ru_autosave_armed=1u;
   ru_project_slot=project;ru_project_feedback=2u;
   ru_save_feedback=automatic?3u:1u;
   ru_save_feedback_until=etch_ms+1600u;
@@ -3800,6 +3833,8 @@ static void ru_project_action(uint8_t save){
  }else{ /* SEL: ask before opening any occupied project. */
   if(!(native_project_present&(1u<<(ru_project_slot-1u)))){ru_project_feedback=3u;first_frame=1u;return;}
   if(ru_project_confirm!=2u){ru_project_confirm=2u;ru_project_feedback=5u;first_frame=1u;return;}
+  /* A second physical SEL is an intentional discard of unsaved RAM edits.
+   * HOME or moving the browser cursor cancels this confirmation. */
   ru_project_confirm=0u;
   if(native_updating || native_store_status!=ETCH_STORE_OK){ru_project_feedback=3u;first_frame=1u;return;}
   native_project_browser=(uint8_t)(ru_project_slot-1u);
@@ -3809,7 +3844,7 @@ static void ru_project_action(uint8_t save){
   native_project_browser_load(0u);
   ru_storage_finish((uint8_t)(native_store_status==ETCH_STORE_OK));
   ru_project_feedback=native_store_status==ETCH_STORE_OK?1u:3u;
-  if(ru_project_feedback==1u){ru_active_seq_slot=0u;ru_autosave_dirty=0u;ru_autosave_armed=1u;ru_last_store_ms=etch_ms;}
+  if(ru_project_feedback==1u){ru_active_seq_slot=0u;ru_autosave_dirty=0u;ru_project_dirty=0u;ru_knob_undo.valid=0u;ru_autosave_armed=1u;ru_last_store_ms=etch_ms;}
  }
  first_frame=1u;
 }
@@ -3876,8 +3911,68 @@ static void ru_commit_name(void){
  }
  first_frame=1u;
 }
+/* Return only truly single-byte project parameters. Composite FX / DSP
+ * parameters are deliberately excluded rather than restoring half a state. */
+static uint8_t *ru_undo_target(uint8_t page,uint8_t k){
+ if(k>=4u)return 0;
+ if(page==RU_PAGE_PLAY){static uint8_t *const t[4]={&ru_pressure,&ru_balance,&ru_memory,&ru_density};return t[k];}
+ if(page==RU_PAGE_SHAPE){static uint8_t *const t[4]={&ru_weight,&ru_edge,&ru_bite,&ru_punch};return t[k];}
+ if(page==RU_PAGE_SUB1||page==RU_PAGE_SUB2){uint8_t z=(uint8_t)(page-RU_PAGE_SUB1);
+  return k==0u?&ru_sub_type[z]:k==1u?&ru_sub_oct[z]:k==2u?&ru_sub_detune[z]:&ru_sub_drift[z];}
+ if(page==RU_PAGE_TILT)return &ru_tilt[k];
+ if(page==RU_PAGE_FUZZ)return &ru_fuzz[k];
+ if(page==RU_PAGE_SANDPAPER)return &ru_sand[k];
+ return 0;
+}
+static void ru_undo_capture(uint8_t page,uint8_t k,uint8_t value,uint32_t now){
+ ru_undo_gesture_capture(&ru_knob_undo,page,k,value,now);ru_undo_notice=0u;
+}
+static uint8_t ru_undo_last(void){
+ if(!ru_knob_undo.valid)return 0u;
+ uint8_t *target=ru_undo_target(ru_knob_undo.page,ru_knob_undo.control);
+ if(!target){ru_knob_undo.valid=0u;return 0u;}
+ if(*target!=ru_knob_undo.old_value){
+  *target=ru_knob_undo.old_value;
+  if(ru_knob_undo.page==RU_PAGE_TILT||ru_knob_undo.page==RU_PAGE_FUZZ||ru_knob_undo.page==RU_PAGE_SANDPAPER)ru_fx_apply_extra();
+  ru_mark_dirty();
+ }
+ ru_knob_undo.valid=0u;first_frame=1u;return 1u;
+}
+/* K1-K4 focus follows the visible destination page, not the internal FX
+ * implementation page used by ru_adjust's recursive dispatch. Pure UI state. */
+static uint8_t ru_knob_focusable(uint8_t page,uint8_t control){
+ if(control>=4u)return 0u;
+ switch(page){
+ case RU_PAGE_PLAY:case RU_PAGE_SHAPE:case RU_PAGE_SUB1:case RU_PAGE_SUB2:
+ case RU_PAGE_FILTER:case RU_PAGE_ENV:case RU_PAGE_LFO:
+ case RU_PAGE_FX:case RU_PAGE_EQ:case RU_PAGE_SEQ:case RU_PAGE_SEQ_SLOTS:
+ case RU_PAGE_GUIDE:case RU_PAGE_KEYLOCK:case RU_PAGE_NOTE_MEMORY:
+ case RU_PAGE_ARP:case RU_PAGE_REVERB:case RU_PAGE_DELAY:
+ case RU_PAGE_CHORUS:case RU_PAGE_DRIVE:case RU_PAGE_COMP:
+ case RU_PAGE_FOLDER:case RU_PAGE_TILT:case RU_PAGE_FUZZ:
+ case RU_PAGE_SANDPAPER:return 1u;
+ case RU_PAGE_PROJECTS:return (uint8_t)(control<=1u);
+ case RU_PAGE_SETTINGS:return (uint8_t)(control==0u&&
+  (ru_settings_open || ru_settings_selected==0u));
+ case RU_PAGE_SAVER_OPTIONS:return (uint8_t)(control==0u&&ru_saver_options_selected==1u);
+ default:return 0u;
+ }
+}
 static void ru_adjust(uint8_t control,int32_t amount){
  if(!amount)return;
+ uint8_t *undo_target=ru_undo_target(ru_page,control);
+ uint8_t undo_previous=undo_target?*undo_target:0u;
+ /* Knob acceleration applies exclusively to continuous parameters; never
+  * to TYPE/OCT/MODE/ROUTING or navigation pages. */
+ uint8_t continuous=(uint8_t)(
+  ru_page==RU_PAGE_PLAY||ru_page==RU_PAGE_SHAPE||
+  (ru_page==RU_PAGE_SUB1&&control>=2u)||(ru_page==RU_PAGE_SUB2&&control>=2u)||
+  (ru_page==RU_PAGE_FILTER&&control>=1u)||ru_page==RU_PAGE_ENV||
+  (ru_page==RU_PAGE_LFO&&control==1u)||
+  (ru_page==RU_PAGE_SETTINGS&&control==0u));
+ if(control<4u){
+  amount=ru_encoder_feel(&ru_knob_feel[control],etch_ms,amount,continuous);
+ }
  if(ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_SHAPE){
   uint8_t *main_macros[]={&ru_pressure,&ru_balance,&ru_memory,&ru_density};
   uint8_t *shape_macros[]={&ru_weight,&ru_edge,&ru_bite,&ru_punch};
@@ -4050,7 +4145,20 @@ static void ru_adjust(uint8_t control,int32_t amount){
   if(control==2u)native_resonance=etch_encoder_pct(native_resonance,amount);
   if(control==3u)native_filter_type=(uint8_t)ui_bound((int32_t)native_filter_type+amount,0,4);
  }
- if(ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD)ru_mark_dirty();
+ if(undo_target && *undo_target!=undo_previous)
+  ru_undo_capture(ru_page,control,undo_previous,etch_ms);
+ /* At a clamped endpoint, a click has not changed the project. */
+ if((!undo_target || *undo_target!=undo_previous) &&
+    ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD)ru_mark_dirty();
+ /* Apply after all FX forwarding: the visible FX panel, not its temporary
+  * internal effect page, owns the active-knob marker. Force an immediate
+  * UI redraw even when the parameter is already at its endpoint. */
+ if(ru_knob_focusable(ru_page,control)){
+  ru_knob_focused=control;
+  ru_knob_focus_page=ru_page;
+  ru_knob_focus_until=etch_ms+950u;
+  first_frame=1u;
+ }
 }
 
 /* Manage catalogs without replacing a stored project with live RAM. All
@@ -4197,6 +4305,15 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   * editor during the same button event. Releasing and pressing SAVE again
   * is required to write any newly named slot. */
  const uint8_t entry_page=ru_page;
+ /* HOME held + SEL tap: safe single-gesture undo of supported K1-K4 edits.
+  * Suppress ordinary HOME release navigation and SEL confirmation. */
+ if((buttons&(1u<<8)) && (pressed&(1u<<3)) &&
+    ru_page!=RU_PAGE_PROJECTS && ru_page!=RU_PAGE_SEQ_SLOTS &&
+    ru_page!=RU_PAGE_NAME && ru_page!=RU_PAGE_WELCOME){
+  ru_undo_notice=ru_undo_last()?1u:2u;ru_undo_notice_until=etch_ms+1500u;
+  ru_home_used=1u;pressed&=~(1u<<3);*pressed_ptr=pressed;
+  first_frame=1u;
+ }
  /* Physical OCT buttons are independent of the legacy ETCH UI router.
     Preserve -4..+3 range; do not accidentally toggle mono/poly on a chord. */
  int8_t prior_oct=native_controls.octave;
@@ -4228,7 +4345,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    * Legacy EQ has only one view; EDIT there remains on that view. */
   if(ru_page==RU_PAGE_EQ){
    if(native_project_cfg.eq2.enabled)ru_eq_tab=(uint8_t)((ru_eq_tab+1u)%3u);
-   first_frame=1u;
+   ru_knob_focus_until=0u;first_frame=1u;
   }else{ru_nav_to(RU_PAGE_EQ);ru_eq_tab=0u;}
  } /* EDIT = CHANNEL EQ */
  if(pressed&(1u<<10))ru_nav_to(RU_PAGE_ARP);
@@ -4272,12 +4389,17 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(entry_page==RU_PAGE_NAME && (pressed&(1u<<9))){if(ru_manager_name)ru_manager_commit_name();else ru_commit_name();}
  }
  else if(ru_page==RU_PAGE_GLO){
-  if(select){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+select,0,4);first_frame=1u;}
+  if(select){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+select,0,5);first_frame=1u;}
   if(pressed&(1u<<3)){
-   ru_nav_to(ru_selected==0u?RU_PAGE_SETTINGS:ru_selected==1u?RU_PAGE_HELP:
-             ru_selected==2u?RU_PAGE_DIAG:ru_selected==3u?RU_PAGE_ABOUT:RU_PAGE_BUG_REPORT);
+   ru_nav_to(ru_selected==0u?RU_PAGE_SETTINGS:ru_selected==1u?RU_PAGE_SYS_INFO:
+             ru_selected==2u?RU_PAGE_HELP:ru_selected==3u?RU_PAGE_DIAG:
+             ru_selected==4u?RU_PAGE_ABOUT:RU_PAGE_BUG_REPORT);
    ru_settings_open=0u;if(ru_page==RU_PAGE_ABOUT)ru_about_scroll=0u;
   }
+ }
+ else if(ru_page==RU_PAGE_SYS_INFO){
+  /* Explicit drill-down; all figures are read-only. */
+  if(pressed&(1u<<3))ru_nav_to(RU_PAGE_DIAG);
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){
@@ -4372,14 +4494,18 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(pressed&(1u<<3)){
    if(ru_manager_action==0u || ru_manager_action==1u){
     /* Explicitly confirm switching projects before entering sequence editing. */
-    if(ru_manager_project!=(uint8_t)etch_store_project_selected() && ru_manager_confirmation!=4u){
+    if((ru_project_dirty || ru_manager_project!=(uint8_t)etch_store_project_selected()) && ru_manager_confirmation!=4u){
      ru_manager_confirmation=4u;ru_manager_status=4u;first_frame=1u;
     }else{
      ru_manager_confirmation=0u;ru_manager_status=0u;
-     if(ru_manager_project!=(uint8_t)etch_store_project_selected()){
+     if(ru_project_dirty || ru_manager_project!=(uint8_t)etch_store_project_selected()){
+      /* Even re-opening the CURRENT project discards edits only after the
+       * explicit second SEL confirmation above. Never clear dirty without IO. */
       native_project_browser=ru_manager_project;native_project_browser_load(0u);
      }
      if(native_store_status==ETCH_STORE_OK){
+      ru_project_dirty=0u;ru_autosave_dirty=0u;ru_knob_undo.valid=0u;
+
       if(ru_manager_action==1u){ru_manager_seq=0u;ru_manager_refresh_sequences();ru_nav_to(RU_PAGE_STORAGE_SEQUENCES);}
       else{ru_nav_to(RU_PAGE_PLAY);ru_project_slot=(uint8_t)(ru_manager_project+1u);}
      }else ru_manager_status=3u;
@@ -4440,7 +4566,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
       etch_store_project_select(0u);ru_project_slot=1u;ru_seq_slot=1u;ru_active_seq_slot=0u;
       ru_autosave_enabled=0u;ru_screensaver_enabled=1u;ru_saver_delay_index=1u;ru_autoload_project=0u;rupture_master_pct=100u;
       native_new_project();native_project_present=0u;
-      ru_autosave_dirty=0u;ru_autosave_armed=0u;ru_global_gain_dirty=0u;
+      ru_autosave_dirty=0u;ru_project_dirty=0u;ru_knob_undo.valid=0u;ru_autosave_armed=0u;ru_global_gain_dirty=0u;
       native_seq_run=0u;native_seq_recording=0u;
       ru_manager_status=1u;ru_nav_to(RU_PAGE_STORAGE);
      }else ru_manager_status=3u;
@@ -4455,7 +4581,8 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(alg){ru_help_scroll=(uint8_t)ui_bound((int32_t)ru_help_scroll+alg,0,2);first_frame=1u;}
  }
  else if(ru_page==RU_PAGE_FX){
-  if(select){ru_fx_selected=(uint8_t)ui_bound((int32_t)ru_fx_selected+(select>0?1:-1),0,7);first_frame=1u;}
+  if(select){ru_fx_selected=(uint8_t)ui_bound((int32_t)ru_fx_selected+(select>0?1:-1),0,7);
+   ru_knob_focus_until=0u;first_frame=1u;}
   if(pressed&(1u<<3)){
    if(ru_fx_selected<4u){
     uint8_t bit=ru_fx_selected==0u?ETCH_FXB_REVERB:ru_fx_selected==1u?ETCH_FXB_DELAY:ru_fx_selected==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE;
@@ -4529,12 +4656,13 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
     ru_page!=RU_PAGE_STORAGE&&ru_page!=RU_PAGE_STORAGE_PROJECTS&&
     ru_page!=RU_PAGE_STORAGE_ACTIONS&&ru_page!=RU_PAGE_STORAGE_SEQUENCES&&
     ru_page!=RU_PAGE_STORAGE_SEQ_ACTIONS&&ru_page!=RU_PAGE_WIPE_ALL&&
-    ru_page!=RU_PAGE_OTHER&&ru_page!=RU_PAGE_SAVER_OPTIONS&&ru_page!=RU_PAGE_ABOUT&&ru_page!=RU_PAGE_BUG_REPORT){
+    ru_page!=RU_PAGE_OTHER&&ru_page!=RU_PAGE_SAVER_OPTIONS&&ru_page!=RU_PAGE_ABOUT&&ru_page!=RU_PAGE_BUG_REPORT&&ru_page!=RU_PAGE_SYS_INFO){
   ru_adjust(0,dm);ru_adjust(1,dd);ru_adjust(2,up);ru_adjust(3,down);
   if(alg){
    if(ru_page==RU_PAGE_SUB1||ru_page==RU_PAGE_SUB2){
     uint8_t z=(uint8_t)(ru_page-RU_PAGE_SUB1);
     ru_sub_blend_amount[z]=(uint8_t)ui_bound((int32_t)ru_sub_blend_amount[z]+alg,0,100);
+    ru_knob_focused=4u;ru_knob_focus_page=ru_page;ru_knob_focus_until=etch_ms+950u;
     ru_mark_dirty();first_frame=1u;
    }else if(ru_page==RU_PAGE_PLAY||ru_page==RU_PAGE_SHAPE){
     ru_main_wave=(uint8_t)(alg>0?1u:0u);
@@ -4581,12 +4709,9 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
  native_parameter_publish();
  if(select||alg||dm||dd||up||down||pressed)first_frame=1u;
- if((first_frame||ru_visual_moving||ru_splash_active()||
-      (uint32_t)(etch_ms-ru_last_paint_ms)>1000u) &&
-    (uint32_t)(etch_ms-ru_last_paint_ms)>=33u){
-    screen();ru_last_paint_ms=etch_ms;
- }
-
+ /* All LCD drawing now goes through the SINGLE budgeted paint decision in
+  * the outer 25ms main loop. Keeping this old render-on-input path would
+  * double-paint knob events and bypass the audio-pressure frame limiter. */
  (void)pressed_ptr;
 }
 #endif
@@ -5182,7 +5307,11 @@ void fm1_cstart(void){
     /* Hidden pages never advance frames or consume extra repaint budget. */
     ru_dam_anim=(RuDamAnim){0};
     ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=255u;
+    ru_anim_dirty=0u;
    }
+   /* Do not lose a sprite/shake change when a screen repaint is postponed.
+    * A fresh frame remains pending until the LCD actually paints it. */
+   if(ru_dam_changed)ru_anim_dirty=1u;
 
    /* Global master persists independently of projects. Coalesce encoder
     * turns, never write during playback, held USB/TRS notes, OTA or faults.
@@ -5209,9 +5338,17 @@ void fm1_cstart(void){
     (void)ru_store_project(1u);first_frame=1u;
    }
    last_seq_notes=fm1_in.notes;
-   if(first_frame || (!ru_saver_active && (pressed || select || alg || dm || dd || up || down || notes_changed || ru_dam_changed ||
-      (uint32_t)(etch_ms-last_ui_paint_ms)>=50u))){
-      screen();last_ui_paint_ms=etch_ms;
+   /* V1.66: animation frames are urgent VISUAL events, not knob easing.
+    * V1.64 incorrectly throttled sprites to 100/180 ms at audio pressure,
+    * which looked like a slow animation despite correct note-gate logic.
+    * Frame timing and display cadence are now independent. All screen work
+    * stays in the main loop, leaving the ISR, OTA and flash untouched. */
+   if(ru_lcd_should_paint(etch_ms,last_ui_paint_ms,
+        (uint8_t)(first_frame||pressed||select||alg||dm||dd||up||down||notes_changed),
+        (uint8_t)(!ru_saver_active && (ru_anim_dirty||ru_splash_active())),
+        (uint8_t)(!ru_saver_active && ru_visual_moving),
+        native_ui_pressure,native_missed_streak)){
+     screen();last_ui_paint_ms=etch_ms;ru_anim_dirty=0u;
    }
    continue;
 #endif

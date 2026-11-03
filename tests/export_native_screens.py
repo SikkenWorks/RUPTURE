@@ -7,9 +7,9 @@ n=root/'vendor/etch-v1.88-source/firmware/fm1-native'
 exe=root/'tests/.rupture_host_export'
 subprocess.run(['gcc','-O2','-Wno-unused-function','-I',str(n),str(n/'rupture_host_export.c'),'-o',str(exe)],check=True)
 try:
- names=['PLAY', 'FILTER', 'ENVELOPE', 'LFO', 'FX', 'REVERB', 'DELAY', 'CHORUS', 'OVERDRIVE', 'SEQUENCER', 'SEQ SLOTS', 'ARPEGGIATOR', 'SCALE GUIDE', 'KEYLOCK', 'PROJECTS', 'GLO', 'SETTINGS', 'HELP', 'UPDATE', 'FOREIGN DATA', 'FORMAT CONFIRM', 'SAFE MODE', 'NOTE MEMORY', 'MIDI', 'LOADING', 'MENU', 'CHANNEL EQ', 'SOUND SHAPE', 'NAME EDITOR', 'SUB OSC 1', 'SUB OSC 2', 'COMPRESSOR', 'WAVEFOLDER', 'TRANSIENT SHAPER', 'TILT EQ', 'OCTAVE FUZZ', 'SANDPAPER', 'AUDIO DIAGNOSTICS','STORAGE','STORAGE PROJECTS','STORAGE ACTIONS','STORAGE SEQUENCES','STORAGE SEQ ACTIONS','WIPE ALL','OTHER','ABOUT','REPORT A BUG','SCREENSAVER OPTIONS']
+ names=['PLAY', 'FILTER', 'ENVELOPE', 'LFO', 'FX', 'REVERB', 'DELAY', 'CHORUS', 'OVERDRIVE', 'SEQUENCER', 'SEQ SLOTS', 'ARPEGGIATOR', 'SCALE GUIDE', 'KEYLOCK', 'PROJECTS', 'GLO', 'SETTINGS', 'HELP', 'UPDATE', 'FOREIGN DATA', 'FORMAT CONFIRM', 'SAFE MODE', 'NOTE MEMORY', 'MIDI', 'LOADING', 'MENU', 'CHANNEL EQ', 'SOUND SHAPE', 'NAME EDITOR', 'SUB OSC 1', 'SUB OSC 2', 'COMPRESSOR', 'WAVEFOLDER', 'TRANSIENT SHAPER', 'TILT EQ', 'OCTAVE FUZZ', 'SANDPAPER', 'AUDIO DIAGNOSTICS','STORAGE','STORAGE PROJECTS','STORAGE ACTIONS','STORAGE SEQUENCES','STORAGE SEQ ACTIONS','WIPE ALL','OTHER','ABOUT','REPORT A BUG','SCREENSAVER OPTIONS','AUTO LOAD','WELCOME','SYSTEM INFO']
  for i,name in enumerate(names):
-  if i in (32,33):continue # V1.22: removed WAVEFOLDER and TRANSIENT pages
+  if i in (32,33,49):continue # V1.22: removed WAVEFOLDER and TRANSIENT pages
   output=root/'ui/screens'/(name.lower().replace(' ','-')+'.png')
   temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),str(i),str(temp)],check=True)

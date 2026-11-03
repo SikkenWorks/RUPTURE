@@ -19,6 +19,7 @@ static inline uint8_t ru_save_destination(uint8_t page){
  case RU_PAGE_FORMAT_CONFIRM:
  case RU_PAGE_SAFE:
  case RU_PAGE_LOADING:
+ case RU_PAGE_SYS_INFO:
  case RU_PAGE_TRANSIENT: /* Unused, deliberately disabled legacy views. */
  case RU_PAGE_FOLDER:
   return RU_SAVE_NO_MENU;

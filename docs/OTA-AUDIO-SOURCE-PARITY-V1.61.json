@@ -1,0 +1,25 @@
+{
+  "release": "V1.61",
+  "core_files_byte_identical_to_v160": {
+    "ota.c": "770c90f879f8944db1f5a39b67a28ca5cebba27269bf8360d547ff56da1da04d",
+    "usb.c": "3e484359d55c68e7510b3b588315e1e781ca30d3946f7d0fea4288895cb6dbef",
+    "audio_core.c": "55f84e7e5f0640e776c4cbac3869dfe85495d1b3a58faee657afc5e32ebb8810",
+    "audio_target.c": "57dc6d4915823017445ea77a78744045d4e80d913d3bd6d02a266b9f2a30702c",
+    "native_cxs_q15.c": "8625829401e27711263b2a66dd18cd6180b2b590752f49214b9d036389a851c1",
+    "native_fx.c": "f5bdb482286e61d2b3e02ba103d959fb2d76e937f176cdc5c99a2d7f4781eb91",
+    "native_digest.c": "00719924709983caeb80aed873b29f37974541e689088787836864d53cedca17",
+    "native_performance.c": "1b9b5b361b015062fc24834be82ee859e75f4872137df4a427c3ccebf62c1565",
+    "native_project_codec.c": "7071116cfb9f20c3c142532ff9f1aea5c37fabb2abac6e6b720a9679f5e2423c",
+    "native_pattern_bank.c": "271b62652ace0f63f06f38df3811151ef34fdcc46a345801dcf6d1b4a771b0d4",
+    "wave_store.c": "c7a7a8574d2e1cb93872fe9c5683bc6461552326b1b80d73b6ec5fe03366fb0a",
+    "rupture_welcome.h": "35b9fef2e47248533690eac36a649cb6cf204294e6daf59f22a51c99bd19e647",
+    "rupture_panel_anim.h": "c73243ea9de527738b99379e2b5c61d8cb224a2c0c65d37b5091ae97290fff02",
+    "rupture_dam_anim.h": "e221ac55934278c6ff716612cb075616549af179d3d17b75f5db607133091fb7"
+  },
+  "notes": [
+    "Firmware identity FM-1_968 preserved",
+    "Physical V15 transition not retested",
+    "Native OTA app-only replay passed",
+    "Protected bootheader and OTA loader verified byte identical via package audit"
+  ]
+}
