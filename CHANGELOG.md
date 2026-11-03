@@ -1,3 +1,10 @@
+# RUPTURE V1.60 — First-run format confirmation
+
+- Following a deliberate three-second SAVE hold, the wizard now displays a dedicated **FORMATTING... / PLEASE DO NOT POWER OFF** screen while the existing storage operation runs.
+- The result remains on screen until SEL is pressed (with a short anti-skip interval): **FORMAT SUCCESSFUL / STORAGE READY** and a visible check mark only after successful initialization; **STORAGE ALREADY READY** if valid RUPTURE storage is present and no erase occurs; **FORMAT FAILED** on an unsuccessful operation.
+- Existing NO paths, CRT choice, project storage, animation sprites, synthesis, and OTA-to-other-firmware/V15 recovery code are preserved.
+- This is a UI/control-flow correction. No additional work or allocations in the audio callback. Hardware validation remains necessary.
+
 # RUPTURE V1.59 — First-Run Welcome and Clean Release
 
 - First launch shows a 240×240 monochrome welcome overlay with backup confirmation, a continue-without-backup branch (including `:(`), optional storage formatting, CRT ON/OFF selection and a visible CONTINUE TO RUPTURE action.

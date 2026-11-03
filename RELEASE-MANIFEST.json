@@ -1,13 +1,13 @@
 {
-  "version": "1.59",
+  "version": "1.60",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.59.fwsc",
+  "firmware_file": "RUPTURE-V1.60.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "1342e5bcf0ad988929d29b7cb32d9566edca0b7d8cec00d20077954bcbdd8ada",
-  "app_bytes": 315256,
-  "app_sha256": "0e7abbb0377172c386bc75d40e1cc114b237d646a074d721d4273625c315af03",
+  "firmware_sha256": "6676435fa03eae10fd2aae17852e42e1e84e3b91365627f3b0bd6ba8445f8d23",
+  "app_bytes": 315740,
+  "app_sha256": "dcf5e690fee81030db1275256b95b2cfada6ec96be081d9f654f9bca9be7f6cc",
   "native_screens": 71,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -56,7 +56,8 @@
     "V1.58 physical FM1 LCD, audio workload, V15 recovery and cross-firmware OTA require hardware validation",
     "The first-run storage format is always optional; destructive initialization only follows YES and three seconds of SAVE hold. For already-valid RUPTURE project storage the wizard does not format again.",
     "If the user skips formatting with unavailable/foreign storage, the completion flag cannot be written safely. The wizard may therefore return at the next boot.",
-    "CRT preference and first-run completion reside in the existing CRC-protected global settings NOR journal. Physical cold-boot and storage-format testing remains necessary."
+    "CRT preference and first-run completion reside in the existing CRC-protected global settings NOR journal. Physical cold-boot and storage-format testing remains necessary.",
+    "V1.60 first-run format confirmation has host tests; physical FM1 storage formatting and display remain unverified."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -170,7 +171,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "LFO ENV SOUND SHAPE 1-bit UI sprite shake, sustained hold jitter; no audio/OTA changes",
+  "release_feature": "First-run welcome format status: active formatting page, latched validated success/failure and explicit SEL acknowledgement",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",

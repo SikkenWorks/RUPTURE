@@ -5010,21 +5010,26 @@ void fm1_cstart(void){
     uint8_t old_phase=ru_welcome.phase,old_choice=ru_welcome.choice;
     uint8_t action=ru_welcome_step(&ru_welcome,select?select:dm,pressed,buttons,etch_ms);
     if(action==RU_WELCOME_ACTION_FORMAT){
-     ru_welcome.status=3u;
+     /* Render an actual busy page BEFORE invoking blocking flash IO. Never
+      * claim success until the existing bounded store writer returns OK. */
+     first_frame=1u;screen();last_ui_paint_ms=etch_ms;
+     uint8_t result=3u; /* failure unless explicitly established */
      if(native_store_status==ETCH_STORE_OK){
-      /* Preserve existing valid projects. Already-initialized FM1 storage
-       * is never destructively overwritten by a first-run wizard. */
-      ru_welcome.status=2u;
+      /* Compatible storage exists. Do not erase user projects again. */
+      result=2u;
      }else if((native_store_status==ETCH_STORE_FOREIGN || native_store_status==ETCH_STORE_EMPTY)&&
        !native_flash_probe.io_error && native_recovery_reason==ETCH_RECOVERY_NORMAL&&
        !native_updating&&!native_safe&&ETCH_NATIVE_STORAGE){
       native_library_initialize(muted);
       if(native_store_status==ETCH_STORE_OK){
-       ru_welcome.status=1u;native_project_browser_refresh();
+       result=1u;native_project_browser_refresh();
        native_storage_setup_armed=0u;
       }
      }
-     ru_welcome.phase=RU_WELCOME_FORMAT_RESULT;
+     /* Dedicated confirmation/error screen is latched until SEL is pressed.
+      * Status 1 means a successful initialization; 2 means no erase needed. */
+     ru_welcome_format_result(&ru_welcome,result,etch_ms);
+     first_frame=1u;
     }else if(action==RU_WELCOME_ACTION_FINISH){
      ru_crt_enabled=ru_welcome.crt;ru_band_valid=0u;
      ru_welcome_done=1u;

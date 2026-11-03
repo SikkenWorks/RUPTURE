@@ -1,11 +1,11 @@
 # RUPTURE website / GitHub Pages
 
 `index.html` is the official RUPTURE information page and WebInstaller.
-It embeds exactly the firmware in `RUPTURE-V1.59.fwsc` and must not be mixed with a different version.
+It embeds exactly the firmware in `RUPTURE-V1.60.fwsc` and must not be mixed with a different version.
 
 ## Publish to GitHub Pages
 
-1. Extract the `RUPTURE-V1.59-WEBSITE-GITHUB-PAGES.zip` contents to the **root** of the GitHub Pages repository, keeping the directories intact, **including the hidden `.nojekyll` file**. `.nojekyll` is needed so GitHub Pages serves `README.md` and `CHANGELOG.md` as raw Markdown rather than rebuilding them as Jekyll pages. (Alternatively, place all contents inside `/docs` and choose `/docs` as the Pages source.)
+1. Extract the `RUPTURE-V1.60-WEBSITE-GITHUB-PAGES.zip` contents to the **root** of the GitHub Pages repository, keeping the directories intact, **including the hidden `.nojekyll` file**. `.nojekyll` is needed so GitHub Pages serves `README.md` and `CHANGELOG.md` as raw Markdown rather than rebuilding them as Jekyll pages. (Alternatively, place all contents inside `/docs` and choose `/docs` as the Pages source.)
 2. In GitHub, go to **Settings → Pages**, choose **Deploy from a branch**, the correct branch and **/(root)** (or **/docs**), and save.
 3. Open your HTTPS Pages URL. `index.html` is the homepage instead of `README.md`. The page automatically fetches `README.md`, `CHANGELOG.md` and `CHEAT-SHEET.html` from the same directory.
 4. For firmware installation, use **desktop Chrome or Edge** with Web MIDI SysEx access. HTTPS or `localhost` is required. Do not flash from an untrusted mirror.

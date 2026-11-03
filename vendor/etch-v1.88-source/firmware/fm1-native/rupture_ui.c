@@ -831,12 +831,35 @@ static void ru_welcome_draw(const RuState *v){
   if(v->welcome_hold_pct)ru_rect(26,168,(int)v->welcome_hold_pct*188/100,9);
   ru_center("SEL / HOME CANCEL",120,195,1);
   break;
- case 7u:
-  ru_center(v->welcome_status==1u?"STORAGE FORMATTED":
-    v->welcome_status==2u?"STORAGE ALREADY READY":"FORMAT FAILED",120,116,1);
-  ru_center(v->welcome_status==3u?"NO DATA WAS ERASED":
-    "YOU CAN CONTINUE.",120,139,1);
-  ru_frame(34,185,172,26);ru_center("SEL  NEXT",120,195,1);
+ case 7u:{
+  /* Persistent outcome dialog: no auto dismiss. Success means an actual
+   * storage initialization returned OK, not merely that SAVE was held. */
+  const uint8_t good=(uint8_t)(v->welcome_status==1u);
+  const uint8_t ready=(uint8_t)(v->welcome_status==2u);
+  ru_frame(23,99,194,100);
+  if(good){
+   ru_center("FORMAT SUCCESSFUL",120,109,1);
+   /* Bold, unmistakable 1-bit check mark; no additional font or asset. */
+   ru_frame(105,126,30,30);
+   ru_line(111,139,117,145);ru_line(117,145,130,133);
+   ru_center("STORAGE READY",120,165,1);
+  }else if(ready){
+   ru_center("STORAGE ALREADY READY",120,111,1);
+   ru_center("NO FORMAT NEEDED",120,136,1);
+   ru_center("YOUR PROJECTS ARE SAFE",120,165,1);
+  }else{
+   ru_center("FORMAT FAILED",120,111,2);
+   ru_center("STORAGE NOT READY",120,143,1);
+   ru_center("NO SUCCESS CONFIRMED",120,165,1);
+  }
+  ru_frame(34,201,172,19);ru_center("SEL TO CONTINUE",120,206,1);
+  break;
+ }
+ case 10u:
+  ru_frame(25,101,190,92);
+  ru_center("FORMATTING...",120,112,1);
+  ru_center("PLEASE DO NOT POWER OFF",120,145,1);
+  ru_center("VERIFYING STORAGE",120,169,1);
   break;
  case 8u:
   ru_center("ENABLE THE CRT",120,107,1);
