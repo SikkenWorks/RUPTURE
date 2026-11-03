@@ -273,3 +273,9 @@ fi
 # V1.54: Exact original PNG pixel parity + dedicated 20-frame UI animator.
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_dam_anim.c -o /tmp/rupture_v154_dam_anim && /tmp/rupture_v154_dam_anim
 python3 tests/test_dam_sprites.py
+
+# V1.55: Native CXS PRESSURE must alter the sustained audio at all dial regions,
+# retain exact oscillator period, and survive live sweeps and extreme settings.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ tests/test_v155_cxs_pressure.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -o /tmp/rupture_v155_pressure && /tmp/rupture_v155_pressure

@@ -29,7 +29,14 @@ static void exchange(RuptureCXSQ15 *s){
   /* Density controls relative segment height. No additional oscillator layer. */
   int32_t coarse=((i&3u)<2u?1:-1)*(100-(int32_t)s->density);
   int32_t fine=(i&1u?-1:1)*(int32_t)s->density;
-  s->levels[i]=(int16_t)((coarse+fine)*164);
+  /* V1.55 PRESSURE: the former duration-only scaling was largely lost in
+   * integer rounding and inaudible in sustained notes. Sculpt the eight
+   * segment amplitudes as well, once per oscillator cycle (never per audio
+   * sample). Zero keeps the classic segment levels; 1..100 provides a progressively stronger
+   * harmonic change. No new buffers, voices or DSP loops. */
+  static const int8_t pressure_profile[8]={-10,48,-36,-62,36,-48,64,-26};
+  int32_t color=(int32_t)s->pressure*(int32_t)pressure_profile[i]*164/100;
+  s->levels[i]=(int16_t)((coarse+fine)*164+color);
   dc+=(int32_t)s->durations[i]*(int32_t)s->levels[i]/32768;
  }
  s->dc=dc;s->cycles++;

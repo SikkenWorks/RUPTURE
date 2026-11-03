@@ -206,6 +206,7 @@ static void etch_panel_commit(void){
 #include "rupture_octave.h"
 #define RU_BITS_EXTERNAL 1
 #include "rupture_ui.c"
+#include "rupture_panel_anim.h"
 #include "rupture_save_route.h"
 static uint8_t ru_crt_enabled=0u;
 static uint8_t ru_crt_active=0u; /* set per rendered page; QR has no optics */
@@ -675,6 +676,8 @@ static uint32_t ru_last_user_activity_ms=0u,ru_saver_last_frame_ms=0u;
 static uint8_t ru_saver_frame=0u,ru_saver_active=0u,ru_saver_reverse=0u;
 /* PLAY animation is display only; source bytes are stored once in ROM. */
 static RuDamAnim ru_dam_anim={0};
+static RuPanelAnim ru_panel_anim={0};
+static uint8_t ru_panel_last_page=255u;
 
 static uint32_t ru_saver_hold_until_ms=0u;
 static uint32_t ru_global_gain_changed_ms=0u,ru_global_gain_attempt_ms=0u;
@@ -2704,7 +2707,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;
  v.crt_enabled=ru_crt_enabled;v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
@@ -5095,16 +5098,26 @@ void fm1_cstart(void){
     * Closing starts as soon as every note gate has released.
     * Never repaint other pages just to animate a hidden bar. */
    uint8_t ru_dam_changed=0u;
-   if(ru_page==RU_PAGE_PLAY && !ru_saver_active && !native_safe && !native_tripped && !native_updating){
+   if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE) &&
+      !ru_saver_active && !native_safe && !native_tripped && !native_updating){
     uint8_t gates=(uint8_t)(fm1_in.notes!=0u);
     for(uint32_t vi=0;vi<ETCH_NATIVE_VOICES;vi++){
      if(native_audio.voice[vi].active && native_audio.voice[vi].held){gates=1u;break;}
     }
-    ru_dam_changed=ru_dam_update(&ru_dam_anim,etch_ms,gates,
-                                 rupture_octave_display(native_controls.octave));
+    if(ru_page==RU_PAGE_PLAY){
+     ru_dam_changed=ru_dam_update(&ru_dam_anim,etch_ms,gates,
+                                  rupture_octave_display(native_controls.octave));
+     ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=255u;
+    }else{
+     ru_dam_anim=(RuDamAnim){0};
+     if(ru_panel_last_page!=ru_page){ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=ru_page;}
+     ru_dam_changed=ru_panel_update(&ru_panel_anim,etch_ms,gates,
+       ru_page==RU_PAGE_SHAPE?2u:(uint8_t)(ru_page==RU_PAGE_ENV));
+    }
    }else{
-    /* A hidden PLAY view does not consume animation time or repaint budget. */
+    /* Hidden pages never advance frames or consume extra repaint budget. */
     ru_dam_anim=(RuDamAnim){0};
+    ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=255u;
    }
 
    /* Global master persists independently of projects. Coalesce encoder

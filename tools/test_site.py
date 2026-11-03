@@ -37,7 +37,13 @@ for part in ('id="readme-body"','id="changelog-body"','id="cheat-search"','id="c
 html=TagInspect();html.feed(s)
 from collections import Counter
 assert all(count==1 for count in Counter(html.ids).values()),[(k,v) for k,v in Counter(html.ids).items() if v>1]
-assert html.scripts==8
+# Website hardening adds one independent JavaScript guard script (V1.54 fix).
+assert html.scripts==9
+assert html.ids.count('manual-confirm')==1
+assert html.ids.count('rupture-page-interaction-guard')==1
+assert "document.addEventListener('contextmenu',block,true)" in s
+assert "document.addEventListener('selectstart',block,true)" in s
+assert 'FM1 RECOVERY WINDOWS' in s and 'README/CHANGELOG' in s
 print('PASS: release/firmware/embedded WebInstaller byte parity, hash and length')
 print('PASS: live docs + fallback snapshots, cheat entries, OTA controls, unique IDs')
 print(f'PASS: RUPTURE V{m["version"]}, {len(cheats)} cheat topics, {len(fw):,} firmware bytes, {len(s):,} webpage chars')

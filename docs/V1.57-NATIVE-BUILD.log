@@ -1,0 +1,8 @@
+PASS 19 audited upstream HAL/boot hashes verified; USB/OTA excluded from parity claims
+wrote /mnt/data/rupture_v157_work/RUPTURE-FM1-V1.57/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05/app.bin: 311916 B, headroom 269648 B
+ OK _start=0x02000120
+ETCH FM-1 app audit: /mnt/data/rupture_v157_work/RUPTURE-FM1-V1.57/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05/app.bin
+ OK  _start=0x02000120
+ app: 311916 B / 581564 B, headroom 269648 B
+ entry stub: OK
+Compiled native audio candidate. Compile-time read-only: False ; persistent writes enabled: True ; updater writes: True ; hardware verification is still required.

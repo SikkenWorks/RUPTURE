@@ -1,3 +1,7 @@
+## V1.57 SOUND SHAPE Animation
+
+SOUND SHAPE now displays the volcano eruption sprite animation. These original-style artwork frames are stored as 1-bit pixels and changed only in the existing UI loop; audio processing is untouched. Flash and recovery compatibility are checked at package level, but physical flashing must be verified on the device.
+
 # RUPTURE
 
 **Cycle Exchange Synthesis (CXS) + bandlimited SAW**  
@@ -5,6 +9,12 @@ A monophonic bass synthesizer for the M-VAVE FM1.
 **SIKKENWORKS | Born out of passion.**
 
 RUPTURE is a playable, programmable bass instrument created for a hands-on workflow on the FM1. Its selectable CXS/SAW main oscillator, two independent suboscillators, modulation, filter and effects are controlled directly from the hardware.
+
+## ENV / LFO rupture animations (V1.56)
+
+ENV and LFO each have their own original monochrome 224×30 animation in the waveform strip. The LFO view displays a top-down road cracking open into a sinkhole. Holding a key progresses through frames 01–13; releasing the last key reverses the *same* LFO opening frames back to the pristine road. The ENV view has the separate brick-wall breach, with opening frames 01–13 and closing frames 14–20. Both follow the same existing key-gate sources as the PLAY DAM animation. Changing UI pages resets the hidden animation without rendering or DSP work.
+
+The **two 20-frame sources are contained in `assets/panel-animations-v156/{lfo,env}/`**, with native 1-bit PNGs, compact sheets and GIF previews. Images were extracted once offline from the two user-approved 1448×1086 animation sheets and reduced to the exact display slot, not redrawn or recalculated at runtime. The 40 packed images add 33,600 ROM bytes. Each UI frame copies 840 bytes into the existing canvas. No additional framebuffer, samples, oscillators, audio ISR or per-sample DSP calculations were added. Animation may incur additional UI draw work; physical LCD/CPU timing is not yet validated.
 
 ## CRT / VCR LOOK (V1.53)
 
@@ -14,10 +24,16 @@ SETTINGS now has a sixth option, **CRT / VCR LOOK**. It defaults to **OFF**. Exi
 
 The original 240 × 240 monochrome Utrecht scene remains intact. After the road opens, the fracture spreads up through the street, disappears behind foreground houses, and splits the Dom Tower. Its right-hand upper half lowers by up to five pixels near the end, then rises back into alignment as the original 64-frame screensaver runs in reverse. It holds the end frame for 2.2 seconds and repeats. All rendering is in the existing UI thread, no extra full-screen frame cache or DSP is added. Hardware display timing still requires validation.
 
-## PLAY waveform dam animation (V1.49)
+## PLAY waveform DAM V3 (V1.54)
 
-The PLAY waveform bar (both CXS and SAW) now uses twelve pixel-exact 224×30 1-bit sprites, directly packed into the firmware. While a note is gated, a crack opens across the bar and water leaks in a 3-sprite loop. Low keyboard octaves leak slowly; high octaves leak quickly. Once all keys (including MIDI or sequencer notes) release, the leak stops and the crack closes. This is a **visual effect only**, not an audio effect. The images are stored as static bitmap data, copied into the already-present 1-bit display buffer. There is no realtime pixel drawing algorithm or extra DSP workload. For playback timings and exact source hashes, see `docs/DAM-SPRITES.md`.
+Both CXS and SAW PLAY waveform bars now show **20 pixel-exact 224×30 1-bit sprites** copied directly from the approved V3 PNGs, without runtime scaling or procedural art. When a note begins, the dam opens through frames 01–10; holding the note loops precisely frames **11, 12 and 13**. The flood washes across and partially covers the dashed road markings, and the last released note triggers frames 14–20 so the water recedes and the crack closes. The animation loop speed depends on octave (-2 to +5), while very short notes avoid sudden full-flood frames. All note types that already trigger the existing DAM animation are supported.
 
+The display routine still copies **840 bytes into the existing 1-bit UI canvas** per frame, exactly as it did in V1.53. The ROM sprite bank is 16,800 bytes rather than 10,080 bytes; no audio ISR or DSP source was changed, and no extra framebuffer is allocated. There may be more UI redraws during a long opening/closing animation than in V1.53; LCD/DMA timing still needs checking on a physical FM1. See `docs/DAM-V3.md` and `assets/dam-v3-frames/` for the original PNGs and tests.
+
+
+## PRESSURE correction (V1.55)
+
+On the PLAY page with CXS selected, **PRESSURE** now progressively changes the eight-segment CXS waveform shape throughout 0–100, rather than producing almost the same sustained timbre for most settings. The change is performed once per oscillator cycle and not per sample. It uses the existing oscillator and has no additional voices, buffers or project-storage changes. High settings have a stronger, more aggressive timbre and may also produce more level. CXS suboscillators share the same oscillator logic. Physical FM1 audition, clipping and worst-case DMA testing are still needed.
 
 ## Synthesis and controls
 
@@ -101,3 +117,7 @@ The complete native source, firmware build scripts, OTA packaging scripts, GPL n
 - **Inherited upstream attributions and third-party notices:** Electrosmith/DaisySP; Emilie Gillet (including Rings); Google, Pascal Gauthier and msfa (Dexed); Hügelton/Fukiai; Inter Project Authors; DotGothic16 Project Authors; Versilian Studios/VCSL; Tony Gies/klattsch; charlesvestal/X0X. These credits reflect material and notices inherited with upstream sources, not a claim that every component contributes to the RUPTURE CXS audio path.
 
 See `LICENSE`, `licenses/FELUCCA-LICENSING.txt` and the original licenses/notices under `vendor/etch-v1.88-source` for the applicable full terms, contributors and copyright notices. All relevant upstream credit files are retained in the complete source archive.
+
+## DAM V3 animated waveform (V1.54)
+
+PLAY shows the 20 original black-and-white bitmap frames in the 224×30 waveform bar. The first note opens the crack, a held note loops three flood frames with octave-sensitive speed, and the last note closes it. Water and foam run over the road markings. The UI animation never runs in the audio ISR and does not create additional audio buffers.

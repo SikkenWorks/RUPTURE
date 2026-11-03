@@ -10,6 +10,8 @@
 #include "rupture_eq2_tables.h"
 #include "rupture_dam_sprites.h"
 #include "rupture_dam_anim.h"
+#include "rupture_panel_sprites.h"
+#include "rupture_volcano_sprites.h"
 #include "rupture_crt_vcr.h"
 #define RU_W 240
 #define RU_H 240
@@ -64,7 +66,7 @@
 #define RU_PAGE_AUTOLOAD 48
 #define RU_PAGE_COUNT 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
@@ -750,7 +752,16 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_cr
   char blend[12];ru_uint(v->sub_blend,blend);ru_center(blend,120,171,1);
   ru_footer("ALGORITHM BLEND  HOME NEXT");return;
  }
- if(page==RU_PAGE_SHAPE){ru_frame(8,50,224,30);ru_center("SOUND SHAPING",120,61,1);ru_draw_knobs(v);ru_footer("ALG OSC / HOME SUB 1");return;}
+ if(page==RU_PAGE_SHAPE){
+  /* Copy the native 1-bit volcano PNG frame directly to the existing canvas.
+   * SOUND SHAPE uses the same x=8,y=50,224x30 panel as the other pages. */
+  uint8_t frame=v->panel_frame<RU_VOLCANO_FRAMES?v->panel_frame:0u;
+  for(uint32_t y=0u;y<RU_PANEL_HEIGHT;y++){
+   uint32_t dst=(RU_PANEL_Y+y)*(RU_W/8u)+(RU_PANEL_X/8u);
+   for(uint32_t b=0u;b<RU_PANEL_BYTES;b++)ru_bits[dst+b]=ru_volcano_sprites[frame][y][b];
+  }
+  ru_draw_knobs(v);ru_footer("ALG OSC / HOME SUB 1");return;
+ }
  if(page==RU_PAGE_PLAY){
   /* Copy the user's ORIGINAL 1-bit PNG frame directly into the existing
    * 240-wide 1-bit UI canvas. X=8 is byte aligned (one byte offset).
@@ -763,6 +774,18 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_cr
    for(uint32_t b=0u;b<RU_DAM_ROW_BYTES;b++)ru_bits[dst+b]=p[b];
   }
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
+ }
+ if(page==RU_PAGE_LFO || page==RU_PAGE_ENV){
+  /* 1-bit PNG sprite pixels are packed at build time; same 840-byte blit as PLAY.
+   * No per-pixel effect computation or audio-thread work. */
+  uint8_t frame=v->panel_frame<RU_PANEL_FRAMES?v->panel_frame:0u;
+  const uint8_t (*art)[RU_PANEL_HEIGHT][RU_PANEL_BYTES]=
+   page==RU_PAGE_LFO?ru_lfo_sprites:ru_env_sprites;
+  for(uint32_t y=0u;y<RU_PANEL_HEIGHT;y++){
+   uint32_t dst=(RU_PANEL_Y+y)*(RU_W/8u)+(RU_PANEL_X/8u);
+   for(uint32_t b=0u;b<RU_PANEL_BYTES;b++)ru_bits[dst+b]=art[frame][y][b];
+  }
+  ru_draw_knobs(v);ru_footer(page==RU_PAGE_LFO?"LFO / HOLD TO OPEN":"ENV / HOLD TO OPEN");return;
  }
  if(page==RU_PAGE_FOREIGN||page==RU_PAGE_FORMAT_CONFIRM){ru_center("FOREIGN DATA DETECTED",120,63,1);ru_center("FORMAT USER DATA?",120,91,1);ru_frame(18,133,98,42);ru_frame(124,133,98,42);ru_center("NO",66,150,2);ru_center("YES",173,150,2);ru_dither(v->format_yes?128:22,137,90,4,1);ru_footer("SEL CONFIRM   HOME BACK");return;}
  if(page==RU_PAGE_SAFE){

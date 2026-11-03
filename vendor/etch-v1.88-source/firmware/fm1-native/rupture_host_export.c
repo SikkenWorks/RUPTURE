@@ -25,6 +25,13 @@ if(v.page==RU_PAGE_SUB2){v.k[0]=0;v.k[1]=1;v.k[2]=54;v.k[3]=0;}
 /* View a source sprite with the actual native renderer: dam0..dam19. */
 if(argc>=4 && !strcmp(argv[3],"crt-off"))v.crt_enabled=0u;
 if(argc>=4 && !strcmp(argv[3],"crt-on"))v.crt_enabled=1u;
+if(argc>=4 && ((v.page==RU_PAGE_ENV && strncmp(argv[3],"env",3)==0) ||
+                (v.page==RU_PAGE_LFO && strncmp(argv[3],"lfo",3)==0))){
+ int frame=atoi(argv[3]+3);if(frame>=0 && frame<20)v.panel_frame=(uint8_t)frame;
+}
+if(argc>=4 && v.page==RU_PAGE_SHAPE && strncmp(argv[3],"volcano",7)==0){
+ int frame=atoi(argv[3]+7);if(frame>=0&&frame<20)v.panel_frame=(uint8_t)frame;
+}
 if(argc>=4 && v.page==RU_PAGE_PLAY && strncmp(argv[3],"dam",3)==0){
  int frame=atoi(argv[3]+3);if(frame>=0 && frame<20)v.dam_frame=(uint8_t)frame;
 }

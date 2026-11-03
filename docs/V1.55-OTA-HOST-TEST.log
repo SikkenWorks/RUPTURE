@@ -1,0 +1,11 @@
+blank stage: valid app-only update commits           ok
+recognizes bounded residual loader                   ok
+reclaims recognized stage, commits valid destination ok
+staged executable is pinned trusted app-only loader  ok
+unknown nonblank staging blocks without erasing      ok
+invalid loader inner header blocks without erase     ok
+invalid JLFS CRC blocks without erase                ok
+identical boothead accepted                          ok
+different boothead rejected                          ok
+boot guard did not erase flash                       ok
+RUPTURE V1.43 native OTA: PASS

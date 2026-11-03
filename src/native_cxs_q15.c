@@ -29,7 +29,12 @@ static void exchange(RuptureCXSQ15 *s){
   /* Density controls relative segment height. No additional oscillator layer. */
   int32_t coarse=((i&3u)<2u?1:-1)*(100-(int32_t)s->density);
   int32_t fine=(i&1u?-1:1)*(int32_t)s->density;
-  s->levels[i]=(int16_t)((coarse+fine)*164);
+  /* PRESSURE 0..100 reshapes the eight CXS cycle segments. This is
+   * evaluated only when the oscillator cycle wraps; the sample path remains
+   * unchanged. Keep the host-reference oscillator in sync with native. */
+  static const int8_t pressure_profile[8]={-10,48,-36,-62,36,-48,64,-26};
+  int32_t color=(int32_t)s->pressure*(int32_t)pressure_profile[i]*164/100;
+  s->levels[i]=(int16_t)((coarse+fine)*164+color);
   dc+=(int32_t)s->durations[i]*(int32_t)s->levels[i]/32768;
  }
  s->dc=dc;s->cycles++;

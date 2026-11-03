@@ -1,3 +1,25 @@
+# V1.57 — SOUND SHAPE Volcano Animation
+
+- Added 20 offline-converted native 224×30 1-bit PNG volcano sprites to SOUND SHAPE. The static label is replaced; oscillator controls and labels are retained.
+- Note ON progressively fractures the volcano; holding keys loops 3 lava eruption frames. On the last Note OFF the lava recedes and the crater closes.
+- Animation data lives in firmware ROM (16,800 bytes), sharing the existing UI canvas and animation state. No audio ISR, CXS, SAW, FX, oscillator or envelope DSP changes.
+- Firmware identity FM-1_968 and previously implemented OTA/stock V15 compatibility protections are preserved. Physical hardware verification is still required.
+
+# V1.56 — Dedicated ENV & LFO Rupture Animations
+
+- LFO uses the approved top-down street/sinkhole artwork; holding keys opens the hole and releasing the last key **reverses the exact opening-frame sequence** back to the intact road. ENV uses the approved independent wall-rupture sequence with its own opening and closing frames.
+- Added **40 offline-prepared 224×30 1-bit PNGs** to the source project and their 33,600 bytes of packed, read-only bitmaps to native firmware. The same byte-aligned 840-byte sprite blitter and existing 240×240 1-bit framebuffer are reused. Animation state/timers are managed exclusively by the non-realtime UI loop, never the audio interrupt. No added voices, DSP effects, audio buffers or DSP calculations.
+- Preserved V1.55 PRESSURE fix, V1.54 PLAY DAM V3 animation and shaking, Utrecht screensaver, CRT default OFF, existing project format and settings. OTA C source, trusted loader, protected 16 KiB boothead, firmware identity `FM-1_968` and cross-firmware safety behavior must remain unchanged.
+- The WebInstaller retains the independent JavaScript selection/right-click guard, repaired firmware validation, 100% transfer/reboot statuses, post-boot identity retry, and FM1 Recovery Windows link. Native pixel parity, animation timing, OTA package tests and physical FM1 status are documented in `docs/TEST-V1.56.md`.
+
+# V1.55 — CXS PRESSURE Range Fix + OTA Preservation
+
+- Fixed CXS PRESSURE appearing to change the sound only between 0 and 1. The existing cycle-exchange energy model changes segment durations only slightly after fixed-point rounding. PRESSURE now also progressively shapes the amplitude profile of the existing eight CXS waveform segments, providing real tonal variation throughout the 0–100 range.
+- All new amplitude work happens only at oscillator-cycle boundaries, never for every audio sample. No new voice, synth block, extra RAM buffer, audio interrupt, FX stage or parameter-storage field. The change intentionally affects CXS timbre, including any enabled CXS suboscillator using the shared core; SAW core is untouched.
+- Preserved DAM V3, 20 supplied sprites, shaking visual, Utrecht screensaver, CRT default OFF, settings and project formats.
+- Safety-critical: `ota.c`, `usb.c`, protected 16 KiB boot area and the trusted staged OTA-loader must remain unchanged. Native OTA regression and package comparison are required; the actual physical FM1 update and recoverability are not proven by software tests.
+- Retains the corrected installer status, manual reconnect/verification, text selection and rightclick blocking, and README/CHANGELOG + FM1 RECOVERY WINDOWS links. These fixes are now also carried forward in the site generation template.
+
 # V1.54 — DAM V3: Water Across the Road
 
 - Replaced the original 12 PLAY waveform sprites with **20 exact 1-bit 224×30 PNGs** from the user-approved DAM V3 set, including water and foam flowing visibly over the dashed road. The PNGs are copied as immutable ROM pixels, not procedurally redrawn.
