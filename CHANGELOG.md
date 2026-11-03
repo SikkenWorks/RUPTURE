@@ -1,3 +1,19 @@
+# RUPTURE V1.58 — SHAKE ANIMATION (LFO, ENV, SOUND SHAPE)
+
+- Adds a subtle, 1-2 pixel shake to existing LFO sinkhole, ENV wall rupture and SOUND SHAPE volcano 1-bit sprites.
+- ENV and LFO now continue shaking while their note gate is held, and reverse/close normally at Note OFF. Volcano's 3-frame lava loop shakes with its sprite changes.
+- A byte-packed UI-only shifter keeps the blit inexpensive, with no extra screen framebuffer, no sprite rerendering and no change to audio processing.
+- The original sprites, CXS PRESSURE fix, persistent settings, identity `FM-1_968`, cross-firmware OTA logic and stock V15 restore logic remain intact.
+- Physical FM1 audio/display and cross-firmware recovery still need hardware verification.
+
+# V1.58 (source update)
+
+- Added subtle PLAY-style shake/jitter to the **SOUND SHAPE** volcano animation.
+- Added matching shake/jitter to the **ENV** wall-breach animation.
+- Added matching shake/jitter to the **LFO** sinkhole animation.
+- Uses the existing pixel-for-pixel PNG sprite art with a tiny UI-only whole-panel offset; **no audio-engine, DSP, interrupt or OTA logic changes**.
+- OTA / V15 recovery path intentionally untouched.
+
 # V1.57 — SOUND SHAPE Volcano Animation
 
 - Added 20 offline-converted native 224×30 1-bit PNG volcano sprites to SOUND SHAPE. The static label is replaced; oscillator controls and labels are retained.

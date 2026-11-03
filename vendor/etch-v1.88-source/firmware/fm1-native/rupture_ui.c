@@ -66,7 +66,7 @@
 #define RU_PAGE_AUTOLOAD 48
 #define RU_PAGE_COUNT 49
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
@@ -148,6 +148,65 @@ static int ru_strlen(const char *s){int n=0;while(s&&s[n])n++;return n;}
 static void ru_center(const char *s,int x,int y,int scale){ru_text(s,x-(ru_strlen(s)*6*scale)/2,y,scale);}
 static void ru_uint(uint32_t v,char *s){char r[12];int n=0,i=0;do{r[n++]=(char)('0'+v%10u);v/=10u;}while(v&&n<10);while(n)s[i++]=r[--n];s[i]=0;}
 static void ru_battery(int16_t value,uint8_t usb_power){ru_frame(203,8,26,12);ru_rect(229,11,3,6);if(value<0){ru_line(206,12,224,17);}else{if(value>100)value=100;ru_rect(204,9,(value*24+50)/100,10);} if(usb_power){/* 1-bit lightning bolt to the left of the battery */ru_line(195,6,190,13);ru_line(190,13,195,13);ru_line(195,13,192,21);ru_line(192,21,199,11);ru_line(199,11,194,11);}}
+/* V1.58: pure-UI sprite jitter; never touched by the audio callback.
+ * Source pixels are unchanged; only their draw origin varies by <= 2px. */
+static void ru_panel_shake(uint8_t page,uint8_t frame,uint8_t hold_tick,int *xoff,int *yoff){
+ *xoff=0;*yoff=0;
+ if(frame==0u||frame>=19u)return;
+ switch(page){
+  case RU_PAGE_LFO:{
+   static const int8_t sx[20]={0,0,0,0,1,-1,1,-1,2,-2,1,-1,0,-1,1,0,-1,1,0,0};
+   static const int8_t sy[20]={0,0,0,0,0,1,-1,1,-1,1,-1,1,0,1,0,-1,0,0,0,0};
+   *xoff=sx[frame];*yoff=sy[frame];
+  }break;
+  case RU_PAGE_ENV:{
+   static const int8_t sx[20]={0,0,0,1,-1,1,-1,2,-2,1,-1,1,0,-1,1,0,-1,0,0,0};
+   static const int8_t sy[20]={0,0,0,0,1,-1,1,-1,1,-1,0,1,-1,0,1,0,0,0,0,0};
+   *xoff=sx[frame];*yoff=sy[frame];
+  }break;
+  case RU_PAGE_SHAPE:{
+   static const int8_t sx[20]={0,0,0,1,-1,1,-1,2,-2,1,-1,2,-2,1,-1,1,0,-1,0,0};
+   static const int8_t sy[20]={0,0,0,-1,1,-1,1,-1,1,-2,1,-1,1,-1,1,0,-1,0,0,0};
+   *xoff=sx[frame];*yoff=sy[frame];
+  }break;
+  default:break;
+ }
+ /* In ENV/LFO the collapse stays at frame 12 while a note is held.
+  * A 3-state UI tick adds visible ongoing movement without new audio work. */
+ if(hold_tick && (page==RU_PAGE_ENV || page==RU_PAGE_LFO) && frame==12u){
+  *xoff=hold_tick==1u?1:-1;*yoff=hold_tick==1u?-1:1;
+ }
+}
+/* Fast packed 1-bit shift. Reuses the existing 240x240 UI canvas.
+ * No 6,720-pixel set-loop, no extra framebuffer or dynamic allocation.
+ * Row 50..79 is dedicated to the sprite panel and can be cleared entirely. */
+static void ru_panel_blit_shaken(const uint8_t src[RU_PANEL_HEIGHT][RU_PANEL_BYTES],int xoff,int yoff){
+ int x=(int)RU_PANEL_X+xoff;
+ unsigned base=(unsigned)x>>3,shift=(unsigned)x&7u;
+ for(int sy=0;sy<(int)RU_PANEL_HEIGHT;sy++){
+  int dy=(int)RU_PANEL_Y+yoff+sy;
+  if(dy<(int)RU_PANEL_Y||dy>=(int)(RU_PANEL_Y+RU_PANEL_HEIGHT))continue;
+  uint8_t *out=&ru_bits[(uint32_t)dy*(RU_W/8u)];
+  for(int i=0;i<(int)(RU_W/8u);i++)out[i]=0u;
+  if(!shift){
+   for(unsigned i=0;i<RU_PANEL_BYTES;i++)out[base+i]=src[sy][i];
+  }else{
+   for(unsigned i=0;i<RU_PANEL_BYTES;i++){
+    uint8_t v=src[sy][i];
+    out[base+i]|=(uint8_t)(v>>shift);
+    if(base+i+1u<(RU_W/8u))out[base+i+1u]|=(uint8_t)(v<<(8u-shift));
+   }
+  }
+ }
+ /* Rows outside the moved source are empty, too. */
+ for(int y=RU_PANEL_Y;y<(int)(RU_PANEL_Y+RU_PANEL_HEIGHT);y++){
+  int sy=y-(int)RU_PANEL_Y-yoff;
+  if(sy<0||sy>=(int)RU_PANEL_HEIGHT){
+   uint8_t *out=&ru_bits[(uint32_t)y*(RU_W/8u)];
+   for(int i=0;i<(int)(RU_W/8u);i++)out[i]=0u;
+  }
+ }
+}
 /* Dedicated heavyweight 8x9 pixel wordmark, not the generic menu font.
  * Every pixel is binary: no grayscale and no antialiasing. */
 static void ru_wordmark(void){
@@ -753,13 +812,11 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_cr
   ru_footer("ALGORITHM BLEND  HOME NEXT");return;
  }
  if(page==RU_PAGE_SHAPE){
-  /* Copy the native 1-bit volcano PNG frame directly to the existing canvas.
-   * SOUND SHAPE uses the same x=8,y=50,224x30 panel as the other pages. */
-  uint8_t frame=v->panel_frame<RU_VOLCANO_FRAMES?v->panel_frame:0u;
-  for(uint32_t y=0u;y<RU_PANEL_HEIGHT;y++){
-   uint32_t dst=(RU_PANEL_Y+y)*(RU_W/8u)+(RU_PANEL_X/8u);
-   for(uint32_t b=0u;b<RU_PANEL_BYTES;b++)ru_bits[dst+b]=ru_volcano_sprites[frame][y][b];
-  }
+  /* SOUND SHAPE keeps the original pixel-for-pixel volcano PNG art, but the
+   * whole panel can shake by a few pixels for eruption impact. UI-only. */
+  uint8_t frame=v->panel_frame<RU_VOLCANO_FRAMES?v->panel_frame:0u;int xoff=0,yoff=0;
+  ru_panel_shake(page,frame,v->panel_shake,&xoff,&yoff);
+  ru_panel_blit_shaken(ru_volcano_sprites[frame],xoff,yoff);
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SUB 1");return;
  }
  if(page==RU_PAGE_PLAY){
@@ -776,15 +833,13 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->saver_active){ru_cr
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
  }
  if(page==RU_PAGE_LFO || page==RU_PAGE_ENV){
-  /* 1-bit PNG sprite pixels are packed at build time; same 840-byte blit as PLAY.
-   * No per-pixel effect computation or audio-thread work. */
-  uint8_t frame=v->panel_frame<RU_PANEL_FRAMES?v->panel_frame:0u;
+  /* LFO and ENV keep their original packed PNG sprites. A tiny page-specific
+   * shake offset adds impact without changing the audio/DSP engine. */
+  uint8_t frame=v->panel_frame<RU_PANEL_FRAMES?v->panel_frame:0u;int xoff=0,yoff=0;
   const uint8_t (*art)[RU_PANEL_HEIGHT][RU_PANEL_BYTES]=
    page==RU_PAGE_LFO?ru_lfo_sprites:ru_env_sprites;
-  for(uint32_t y=0u;y<RU_PANEL_HEIGHT;y++){
-   uint32_t dst=(RU_PANEL_Y+y)*(RU_W/8u)+(RU_PANEL_X/8u);
-   for(uint32_t b=0u;b<RU_PANEL_BYTES;b++)ru_bits[dst+b]=art[frame][y][b];
-  }
+  ru_panel_shake(page,frame,v->panel_shake,&xoff,&yoff);
+  ru_panel_blit_shaken(art[frame],xoff,yoff);
   ru_draw_knobs(v);ru_footer(page==RU_PAGE_LFO?"LFO / HOLD TO OPEN":"ENV / HOLD TO OPEN");return;
  }
  if(page==RU_PAGE_FOREIGN||page==RU_PAGE_FORMAT_CONFIRM){ru_center("FOREIGN DATA DETECTED",120,63,1);ru_center("FORMAT USER DATA?",120,91,1);ru_frame(18,133,98,42);ru_frame(124,133,98,42);ru_center("NO",66,150,2);ru_center("YES",173,150,2);ru_dither(v->format_yes?128:22,137,90,4,1);ru_footer("SEL CONFIRM   HOME BACK");return;}

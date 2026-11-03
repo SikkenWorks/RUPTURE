@@ -2707,7 +2707,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;
  v.crt_enabled=ru_crt_enabled;v.saver_enabled=ru_screensaver_enabled;v.saver_delay_index=ru_saver_delay_index;v.saver_options_selected=ru_saver_options_selected;v.manager_project=ru_manager_project;v.manager_seq=ru_manager_seq;
  v.manager_action=ru_manager_action;v.manager_confirm=ru_manager_confirmation;v.manager_status=ru_manager_status;
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;

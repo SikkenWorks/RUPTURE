@@ -7,24 +7,27 @@
 #ifndef RUPTURE_PANEL_ANIM_H
 #define RUPTURE_PANEL_ANIM_H
 #include <stdint.h>
-typedef struct {uint32_t next_ms;uint8_t frame;uint8_t phase;} RuPanelAnim;
+typedef struct {uint32_t next_ms;uint8_t frame;uint8_t phase;uint8_t shake;} RuPanelAnim;
 enum {RU_PANEL_IDLE=0u,RU_PANEL_OPEN=1u,RU_PANEL_HOLD=2u,RU_PANEL_CLOSE=3u};
 static uint8_t ru_panel_update(RuPanelAnim *a,uint32_t now,uint8_t gates,uint8_t mode){
- uint8_t prev=a->frame;
+ uint8_t prev=a->frame,prev_shake=a->shake;
  if(gates){
   if(a->phase==RU_PANEL_IDLE){a->phase=RU_PANEL_OPEN;a->frame=1u;a->next_ms=now+80u;}
   else if(a->phase==RU_PANEL_CLOSE){a->phase=RU_PANEL_OPEN;if(mode==2u)a->frame=1u;a->next_ms=now+80u;}
+  else if(mode!=2u && a->phase==RU_PANEL_HOLD && (int32_t)(now-a->next_ms)>=0){
+   a->shake=(uint8_t)((a->shake+1u)%3u);a->next_ms=now+110u;
+  }
   else if(mode==2u && a->phase==RU_PANEL_HOLD && (int32_t)(now-a->next_ms)>=0){
    a->frame=a->frame>=13u?11u:(uint8_t)(a->frame+1u);a->next_ms=now+95u;
   }
   else if(a->phase==RU_PANEL_OPEN && (int32_t)(now-a->next_ms)>=0){
    if(a->frame<(mode==2u?10u:12u)){++a->frame;a->next_ms=now+80u;}
    else if(mode==2u){a->phase=RU_PANEL_HOLD;a->frame=11u;a->next_ms=now+95u;}
-   else{a->phase=RU_PANEL_HOLD;a->next_ms=0u;}
+   else{a->phase=RU_PANEL_HOLD;a->shake=0u;a->next_ms=now+110u;}
   }
  }else{
   if(a->phase==RU_PANEL_OPEN || a->phase==RU_PANEL_HOLD){
-   a->phase=RU_PANEL_CLOSE;
+   a->phase=RU_PANEL_CLOSE;a->shake=0u;
    if(mode!=0u){
     /* No abrupt jump into a fully collapsed wall after a short key press. */
     a->frame=(uint8_t)(mode==2u ?
@@ -43,6 +46,6 @@ static uint8_t ru_panel_update(RuPanelAnim *a,uint32_t now,uint8_t gates,uint8_t
    }
   }
  }
- return prev!=a->frame;
+ return prev!=a->frame||prev_shake!=a->shake;
 }
 #endif
