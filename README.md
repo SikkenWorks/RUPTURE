@@ -1,7 +1,3 @@
-## V1.57 SOUND SHAPE Animation
-
-SOUND SHAPE now displays the volcano eruption sprite animation. These original-style artwork frames are stored as 1-bit pixels and changed only in the existing UI loop; audio processing is untouched. Flash and recovery compatibility are checked at package level, but physical flashing must be verified on the device.
-
 # RUPTURE
 
 **Cycle Exchange Synthesis (CXS) + bandlimited SAW**  
@@ -9,31 +5,6 @@ A monophonic bass synthesizer for the M-VAVE FM1.
 **SIKKENWORKS | Born out of passion.**
 
 RUPTURE is a playable, programmable bass instrument created for a hands-on workflow on the FM1. Its selectable CXS/SAW main oscillator, two independent suboscillators, modulation, filter and effects are controlled directly from the hardware.
-
-## ENV / LFO rupture animations (V1.56)
-
-ENV and LFO each have their own original monochrome 224×30 animation in the waveform strip. The LFO view displays a top-down road cracking open into a sinkhole. Holding a key progresses through frames 01–13; releasing the last key reverses the *same* LFO opening frames back to the pristine road. The ENV view has the separate brick-wall breach, with opening frames 01–13 and closing frames 14–20. Both follow the same existing key-gate sources as the PLAY DAM animation. Changing UI pages resets the hidden animation without rendering or DSP work.
-
-The **two 20-frame sources are contained in `assets/panel-animations-v156/{lfo,env}/`**, with native 1-bit PNGs, compact sheets and GIF previews. Images were extracted once offline from the two user-approved 1448×1086 animation sheets and reduced to the exact display slot, not redrawn or recalculated at runtime. The 40 packed images add 33,600 ROM bytes. Each UI frame copies 840 bytes into the existing canvas. No additional framebuffer, samples, oscillators, audio ISR or per-sample DSP calculations were added. Animation may incur additional UI draw work; physical LCD/CPU timing is not yet validated.
-
-## CRT / VCR LOOK (V1.53)
-
-SETTINGS now has a sixth option, **CRT / VCR LOOK**. It defaults to **OFF**. Existing explicitly saved ON/OFF preferences remain unchanged after updating; select OFF in SETTINGS once if you previously enabled it. Use **SELECT** to highlight it, then press **SEL** to toggle ON/OFF. The setting is stored globally and survives reboot, project changes and project saves. When enabled, all UI pages are displayed with mild two-axis barrel curvature and faint neutral-grey phosphor scanlines. Original 1-bit UI artwork and glyphs remain unmodified; the CRT effect is added when transferring RGB565 pixels to the LCD. This is a **display-only** effect, processed after the existing native 1-bit renderer, never inside the audio engine. It requires no new framebuffer; the additional UI CPU time needs real FM1 verification. The REPORT A BUG QR screen deliberately remains unfiltered for camera scanning. Turning it OFF returns to the exact original 1-bit pixels without curvature or dimming.
-
-## Utrecht screensaver expansion (V1.50)
-
-The original 240 × 240 monochrome Utrecht scene remains intact. After the road opens, the fracture spreads up through the street, disappears behind foreground houses, and splits the Dom Tower. Its right-hand upper half lowers by up to five pixels near the end, then rises back into alignment as the original 64-frame screensaver runs in reverse. It holds the end frame for 2.2 seconds and repeats. All rendering is in the existing UI thread, no extra full-screen frame cache or DSP is added. Hardware display timing still requires validation.
-
-## PLAY waveform DAM V3 (V1.54)
-
-Both CXS and SAW PLAY waveform bars now show **20 pixel-exact 224×30 1-bit sprites** copied directly from the approved V3 PNGs, without runtime scaling or procedural art. When a note begins, the dam opens through frames 01–10; holding the note loops precisely frames **11, 12 and 13**. The flood washes across and partially covers the dashed road markings, and the last released note triggers frames 14–20 so the water recedes and the crack closes. The animation loop speed depends on octave (-2 to +5), while very short notes avoid sudden full-flood frames. All note types that already trigger the existing DAM animation are supported.
-
-The display routine still copies **840 bytes into the existing 1-bit UI canvas** per frame, exactly as it did in V1.53. The ROM sprite bank is 16,800 bytes rather than 10,080 bytes; no audio ISR or DSP source was changed, and no extra framebuffer is allocated. There may be more UI redraws during a long opening/closing animation than in V1.53; LCD/DMA timing still needs checking on a physical FM1. See `docs/DAM-V3.md` and `assets/dam-v3-frames/` for the original PNGs and tests.
-
-
-## PRESSURE correction (V1.55)
-
-On the PLAY page with CXS selected, **PRESSURE** now progressively changes the eight-segment CXS waveform shape throughout 0–100, rather than producing almost the same sustained timbre for most settings. The change is performed once per oscillator cycle and not per sample. It uses the existing oscillator and has no additional voices, buffers or project-storage changes. High settings have a stronger, more aggressive timbre and may also produce more level. CXS suboscillators share the same oscillator logic. Physical FM1 audition, clipping and worst-case DMA testing are still needed.
 
 ## Synthesis and controls
 
