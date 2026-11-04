@@ -51,18 +51,25 @@ struct etch_native_fx {
   * Compact control state preserves the already-full fixed audio POOL. */
  uint16_t delay_samples,rate_step,tap1,tap2,tap3;
  uint8_t applied_valid;
+ /* One existing alignment byte; no audio SRAM increase. */
+ uint8_t comp_attack_step;
  uint32_t ring_phase,ring_increment;
  int32_t ring_mix_smooth,eq_gain_smooth[3];
  int32_t eq_lp_low,eq_lp_high,eq_lp_hpf;
- uint16_t eq_hpf_alpha;
 #ifdef RUPTURE_BUILD
+ /* RUPTURE has no legacy EQ highpass; reuse this inactive field. */
+ uint16_t comp_threshold_cached;
  struct rupture_eq2_state eq2;
  uint8_t eq2_enabled;
+#else
+ uint16_t eq_hpf_alpha;
 #endif
  uint32_t trem_phase,phaser_phase,flanger_phase,trem_step,phaser_step,flanger_step;
  int32_t trem_mix_smooth,phaser_mix_smooth,flanger_mix_smooth,decim_mix_smooth,folder_mix_smooth;
  int32_t comp_env,comp_gain,comp_target;
  uint8_t comp_tick;
+ /* Reuse existing 2 alignment bytes after comp_tick. */
+ uint8_t comp_release_step,comp_ratio_cached;
  int32_t phaser_z[4],phaser_feedback_state,flanger_feedback_state;
  int16_t flanger_line[1024];uint16_t flanger_pos;
  int32_t decim_held,folder_tone_state,folder_baseline;

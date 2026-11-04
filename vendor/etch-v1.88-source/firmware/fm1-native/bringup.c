@@ -8,6 +8,14 @@
 #include "hal/fm1_sys.h"
 #include "hal/fm1_irq.h"
 #include "hal/fm1_guard.h"
+/* V1.76: Override ONLY RUPTURE's intermediate LED scan duty cycle.
+ * Preserves byte-identical Felucca HAL and its audit/OTA baseline.
+ * 909Hz matrix scan -> 455Hz (MID) / 303Hz (MID LO), not 114/76Hz.
+ * No extra timer interrupts or DSP/USB work. */
+#ifdef RUPTURE_BUILD
+#define FM1_LED_MID_N 2u
+#define FM1_LED_MID_N_LO 3u
+#endif
 #include "hal/fm1_input.h"
 #ifdef RUPTURE_BUILD
 #include "hal/fm1_uart.h"
@@ -208,6 +216,8 @@ static void etch_panel_commit(void){
 #include "rupture_ui.c"
 #include "rupture_panel_anim.h"
 #include "rupture_lcd_budget.h"
+#include "rupture_seq_entry.h"
+#include "rupture_seq_redraw.h"
 #include "rupture_encoder_feel.h"
 #include "rupture_welcome.h"
 #include "rupture_save_route.h"
@@ -334,6 +344,12 @@ void fm1_timer5_irq(void){
 /* Mode is shared by main-loop waveform publication and the renderer. Keep
  * the declaration ahead of audio_target.c because it is included here. */
 static uint8_t native_mono_mode=1u;
+#ifdef RUPTURE_BUILD
+#include "rupture_metronome.h"
+extern volatile uint8_t ru_metronome_enabled,ru_metronome_volume;
+#include "rupture_countin.h"
+extern volatile struct RuCountIn ru_countin;
+#endif
 #include "audio_target.c"
 _Static_assert(HALF_FRAMES == ETCH_NATIVE_FRAMES, "USB ring must match DMA half frames");
 #include "native_factory.h"
@@ -541,6 +557,11 @@ static void etch_boot_splash(void){
 #include "native_panel_capture.h"
 #include "native_seq_ui.h"
 #include "native_patch_swap.h"
+#ifdef RUPTURE_BUILD
+#include "rupture_seq_live.h"
+#include "rupture_seq_quant.h"
+#include "rupture_countin_bridge.h"
+#endif
 #include "native_preset_browser.h"
 
 static uint8_t native_page,native_mod_mode,native_mod_ratio,native_filter_type;
@@ -640,8 +661,17 @@ static uint8_t native_seqnotes[64] __attribute__((section(".noinit")));
 static uint8_t native_motion_recording,native_motion_playing;
 static uint32_t native_motion_last_record_ms;
 static uint8_t native_seq_recording;
+#ifdef RUPTURE_BUILD
+/* Purely visual. Count-in quarter beats are generated in the audio ISR. */
+static uint8_t ru_countin_last_beat=255u,ru_countin_pulse=0u;
+static uint32_t ru_countin_prekeys; /* key-down edges near final downbeat, before ISR launch */
+static uint32_t ru_countin_pulse_at=0u;
+#endif
 /* Cleared on every REC arm; no startup dependency. Reuse NOINIT RAM region. */
 static uint8_t native_seq_rec_touched[ETCH_SEQ_STEPS];
+#ifdef RUPTURE_BUILD
+static struct RuLiveCapture ru_live_capture; /* control thread only, session RAM */
+#endif
 /* Captured trigger instances for the simulator's hold-key + SELECT extension.
  * The held note remains attached to its origin step during cursor motion. */
 static uint32_t native_seq_entry_mask;
@@ -824,6 +854,8 @@ static uint32_t ru_splash_start_ms;
 static uint8_t ru_splash_done,ru_splash_started;
 static int16_t ru_visual_q8[4];
 static uint8_t ru_visual_page=255u,ru_visual_moving,ru_anim_dirty;
+static uint32_t ru_visual_last_ms=0u;
+static uint16_t ru_seq_last_painted_playhead=0xffffu; /* LCD only, never audio clock */
 
 
 /* UART DMA is independent of USB: physically received TRS bytes feed the
@@ -1164,7 +1196,9 @@ static void native_seq_led_refresh(void){
   native_seq_led_dim(14u+k,(dim&bit)!=0);
   native_seq_led_mid(14u+k,(mid&bit)!=0);
  }
- for(uint8_t b=2u;b<14u;b++)fm1_led_key(b,b==13u?native_seq_recording:etch_led_function(b));
+ for(uint8_t b=2u;b<14u;b++)fm1_led_key(b,
+   b==13u?native_seq_recording:
+   b==11u&&ru_countin.active?ru_countin_pulse:etch_led_function(b));
  #ifdef RUPTURE_BUILD
  fm1_led_key(0u,rupture_octave_led(0u,native_controls.octave,fm1_in.buttons));
  fm1_led_key(1u,rupture_octave_led(1u,native_controls.octave,fm1_in.buttons));
@@ -2729,14 +2763,23 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);
  v.welcome_phase=ru_welcome.phase;v.welcome_choice=ru_welcome.choice;
+ v.welcome_lesson=ru_welcome.lesson;v.welcome_overlay=ru_welcome.overlay;
  v.welcome_crt=ru_welcome.crt;v.welcome_status=ru_welcome.status;
  v.welcome_store_ready=(uint8_t)(native_store_status==ETCH_STORE_OK);
  v.welcome_hold_pct=(uint8_t)(ru_welcome.phase==RU_WELCOME_ERASE&&ru_welcome.save_hold_since?
   (uint32_t)(etch_ms-ru_welcome.save_hold_since)>=3000u?100u:
   (uint32_t)(etch_ms-ru_welcome.save_hold_since)*100u/3000u:0u);
- if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped)v.page=RU_PAGE_WELCOME;
+ if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped){
+  if(ru_welcome.phase==RU_WELCOME_TOUR && ru_welcome.lesson<RU_TUTORIAL_COUNT){
+   /* Preview original screens, but never enter their input handlers. */
+   v.page=ru_tutorial_lessons[ru_welcome.lesson].page;
+   v.saver_active=0u;v.panel_frame=12u;v.dam_frame=11u;
+   v.panel_hold_frame=RU_HOLD_FRAMES-1u;v.panel_hold_active=1u;
+   v.panel_shake=0u;
+  }else v.page=RU_PAGE_WELCOME;
+ }
  v.crt_enabled=ru_crt_enabled;
  v.knob_focus=ru_knob_focused;
  v.knob_focus_visible=(uint8_t)(ru_knob_focus_page==v.page &&
@@ -2774,10 +2817,16 @@ static void rupture_native_screen(void){
  for(uint8_t i=0u;i<13u;i++)v.edit_name[i]=ru_edit_name[i];
  v.seq_status=ru_seq_feedback;v.project_status=ru_project_feedback;
  v.seq_present=(uint8_t)(native_project_cfg.patterns.lengths[RU_SEQ_BANK_BASE+ru_seq_slot-1u]!=0u);
- if(ru_page==RU_PAGE_MENU)v.selected=ru_menu;
+ if(v.page==RU_PAGE_MENU)v.selected=ru_menu;
+ uint8_t ru_preview_fx=(uint8_t)(ru_welcome.phase==RU_WELCOME_TOUR && ru_welcome.lesson<RU_TUTORIAL_COUNT?
+  ru_tutorial_lessons[ru_welcome.lesson].fx:ru_fx_selected);
+ if(ru_welcome.phase==RU_WELCOME_TOUR)v.fx_selected=ru_preview_fx;
  v.root=native_harmony.root;v.mode=native_harmony.mode;v.keylock=native_harmony.keylock;
  v.filter=native_filter_type;v.master=rupture_master_pct;
- v.seq_playing=native_seq_run;v.help_page=ru_help_chapter;v.help_scroll=ru_help_scroll;v.octave=rupture_octave_display(native_controls.octave);
+ v.seq_playing=native_seq_run;v.seq_recording=native_seq_recording;
+ v.seq_countin=ru_countin.active;v.seq_countin_beat=ru_countin.beats;
+ v.seq_countin_pulse=ru_countin_pulse;
+ v.help_page=ru_help_chapter;v.help_scroll=ru_help_scroll;v.octave=rupture_octave_display(native_controls.octave);
  v.macro[0]=ru_pressure;v.macro[1]=ru_balance;v.macro[2]=ru_memory;v.macro[3]=ru_density;
  v.k[0]=ru_pressure;v.k[1]=ru_balance;v.k[2]=ru_memory;v.k[3]=ru_density;
  if(v.page==RU_PAGE_SHAPE){v.k[0]=ru_weight;v.k[1]=ru_edge;v.k[2]=ru_bite;v.k[3]=ru_punch;}
@@ -2798,7 +2847,7 @@ static void rupture_native_screen(void){
   v.seq_playhead=etch_seq_actual_step(native_seq_run,native_audio.perf_last_seq,
      native_audio.perf_played,native_audio.perf_current_step,native_seq_length,native_seq_step);
   v.seq_length=native_seq_length;
-  v.seq_bpm=native_tempo;
+  v.seq_bpm=native_tempo;v.metronome_volume=ru_metronome_volume;
   v.seq_note_count=native_pattern.steps[native_seq_step].count;
   v.seq_sustain=v.seq_note_count?native_pattern.steps[native_seq_step].notes[0].length:0u;
   v.seq_first_note=v.seq_note_count?native_pattern.steps[native_seq_step].notes[0].note:255u;
@@ -2840,14 +2889,14 @@ static void rupture_native_screen(void){
   v.eq_on=(uint8_t)(native_fx_settings.eq_low!=16384u||native_fx_settings.eq_mid!=16384u||native_fx_settings.eq_high!=16384u||native_fx_settings.eq_hpf);
   break;
  case RU_PAGE_FX:
-  v.fx_on=(uint8_t)(((ru_fx_selected==0u?native_reverb:(ru_fx_selected==1u?native_delay:(ru_fx_selected==2u?native_chorus:native_drive)))>0u) && !(native_fx_bypass_mask & ETCH_FXB_BIT(ru_fx_selected==0u?ETCH_FXB_REVERB:ru_fx_selected==1u?ETCH_FXB_DELAY:ru_fx_selected==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE)));
-  if(ru_fx_selected==0u) {v.k[0]=ru_reverb_type;v.k[1]=(uint16_t)(native_fx_settings.reverb_decay*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.reverb_size*100u/32767u);v.k[3]=(uint16_t)(native_reverb*100u/32767u);}
-  else if(ru_fx_selected==1u){v.k[0]=(uint16_t)(native_fx_settings.delay_time*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.delay_feedback*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_delay*100u/32767u);}
-  else if(ru_fx_selected==2u){v.k[0]=(uint16_t)(native_fx_settings.chorus_rate*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.chorus_depth*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_chorus*100u/32767u);}
-  else if(ru_fx_selected==3u){v.k[0]=(uint16_t)(native_drive*100u/32767u);v.k[1]=(uint16_t)(native_cutoff*100u/8192u);v.k[2]=(uint16_t)(native_resonance*100u/32767u);v.k[3]=native_filter_type;}
-  else if(ru_fx_selected==4u){v.k[0]=(uint16_t)(native_fx_settings.comp_threshold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.comp_ratio*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.comp_attack*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.comp_release*100u/32767u);v.fx_on=(uint8_t)(native_fx_settings.comp_ratio>0u && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_COMP)));}
-  else if(ru_fx_selected==5u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_tilt[j];v.fx_on=ru_tilt_enabled;}
-  else if(ru_fx_selected==6u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_fuzz[j];v.fx_on=ru_fuzz_enabled;}
+  v.fx_on=(uint8_t)(((ru_preview_fx==0u?native_reverb:(ru_preview_fx==1u?native_delay:(ru_preview_fx==2u?native_chorus:native_drive)))>0u) && !(native_fx_bypass_mask & ETCH_FXB_BIT(ru_preview_fx==0u?ETCH_FXB_REVERB:ru_preview_fx==1u?ETCH_FXB_DELAY:ru_preview_fx==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE)));
+  if(ru_preview_fx==0u) {v.k[0]=ru_reverb_type;v.k[1]=(uint16_t)(native_fx_settings.reverb_decay*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.reverb_size*100u/32767u);v.k[3]=(uint16_t)(native_reverb*100u/32767u);}
+  else if(ru_preview_fx==1u){v.k[0]=(uint16_t)(native_fx_settings.delay_time*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.delay_feedback*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_delay*100u/32767u);}
+  else if(ru_preview_fx==2u){v.k[0]=(uint16_t)(native_fx_settings.chorus_rate*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.chorus_depth*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_chorus*100u/32767u);}
+  else if(ru_preview_fx==3u){v.k[0]=(uint16_t)(native_drive*100u/32767u);v.k[1]=(uint16_t)(native_cutoff*100u/8192u);v.k[2]=(uint16_t)(native_resonance*100u/32767u);v.k[3]=native_filter_type;}
+  else if(ru_preview_fx==4u){v.k[0]=(uint16_t)(native_fx_settings.comp_threshold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.comp_ratio*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.comp_attack*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.comp_release*100u/32767u);v.fx_on=(uint8_t)(native_fx_settings.comp_ratio>0u && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_COMP)));}
+  else if(ru_preview_fx==5u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_tilt[j];v.fx_on=ru_tilt_enabled;}
+  else if(ru_preview_fx==6u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_fuzz[j];v.fx_on=ru_fuzz_enabled;}
   else {for(uint8_t j=0;j<4u;j++)v.k[j]=ru_sand[j];v.fx_on=ru_sand_enabled;}
   break;
  case RU_PAGE_PROJECTS:v.k[0]=ru_project_slot;break;
@@ -2893,19 +2942,39 @@ static void rupture_native_screen(void){
  case RU_PAGE_NOTE_MEMORY:v.k[0]=ru_note_priority;v.k[1]=ru_note_legato;v.k[2]=ru_note_glide_ms;v.k[3]=ru_note_bend;break;
  default:break;
  }
- /* Values always reflect live parameters; only the marker is interpolated.
-    Easing: ~30% of remaining travel per rendered frame, 1/256 unit
-    final snap. Page transitions start at the target to avoid ghost motion. */
+ if(ru_welcome.phase==RU_WELCOME_TOUR && ru_welcome.lesson<RU_TUTORIAL_COUNT){
+  const RuTutorialLesson *lesson=&ru_tutorial_lessons[ru_welcome.lesson];
+  v.selected=lesson->selected;
+  if(v.page==RU_PAGE_SETTINGS)v.settings_open=lesson->settings_open;
+  if(v.page==RU_PAGE_NAME){
+   for(uint8_t q=0;q<12u;q++)v.edit_name[q]="NEW PATCH   "[q];
+   v.edit_name[12]=0u;
+  }
+ }
+ /* V1.69: time-based knob easing. V1.68 moved a fixed fraction on each
+  * *paint*, so a delayed LCD made K1-K4 feel slower during held notes.
+  * Now movement depends on elapsed time, not on how many frames painted.
+  * Text always shows the real parameter instantly. DSP is untouched. */
  if(v.page!=ru_visual_page){
   ru_visual_page=v.page;
+  ru_visual_last_ms=etch_ms;
   for(uint8_t i=0;i<4u;i++)ru_visual_q8[i]=(int16_t)(ru_knob_normal(&v,i)*256u);
  }
+ uint32_t ru_visual_dt=(uint32_t)(etch_ms-ru_visual_last_ms);
+ ru_visual_last_ms=etch_ms;
+ if(ru_visual_dt<16u)ru_visual_dt=16u;
+ if(ru_visual_dt>150u)ru_visual_dt=150u;
+ /* ~1/3 travel in 25ms; missed frames catch up without jumping beyond
+  * the target. One cheap division per entire LCD repaint, never audio. */
+ const int32_t ru_visual_alpha=(int32_t)(ru_visual_dt*256u/(ru_visual_dt+50u));
  ru_visual_moving=0u;v.animate=1u;
  for(uint8_t i=0;i<4u;i++){
   int32_t goal=(int32_t)ru_knob_normal(&v,i)*256;
   int32_t cur=ru_visual_q8[i],diff=goal-cur;
   if(diff>-200&&diff<200)cur=goal;
-  else {cur+=diff/3;if(cur==ru_visual_q8[i])cur+=(diff>0?1:-1);ru_visual_moving=1u;}
+  else {cur+=(diff*ru_visual_alpha)/256;
+   if(cur==ru_visual_q8[i])cur+=(diff>0?1:-1);
+   ru_visual_moving=1u;}
   ru_visual_q8[i]=(int16_t)cur;
   v.knob_visual[i]=(uint8_t)((cur+128)/256);
  }
@@ -4332,9 +4401,11 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   else if(ru_page==RU_PAGE_SUB2)ru_nav_to(RU_PAGE_PLAY);
   else{ru_page=(ru_prev==ru_page)?RU_PAGE_PLAY:ru_prev;first_frame=1;}
  }ru_home_since=0;ru_home_used=0;}
- if(buttons&(1u<<11)){if(!ru_seq_since)ru_seq_since=etch_ms?etch_ms:1u;
-  if(!ru_seq_used&&(uint32_t)(etch_ms-ru_seq_since)>=650u){ru_nav_to(RU_PAGE_SEQ_SLOTS);ru_selected=0u;ru_seq_used=1;}}
- else if(ru_seq_since){if(!ru_seq_used){ru_nav_to(RU_PAGE_SEQ);native_seq_step=0u;ru_seq_velocity=110u;}ru_seq_since=0;ru_seq_used=0;}
+ /* SEQ long press no longer opens SEQ SLOTS. A tap/hold both open the
+  * sequencer when released, except SEQ+PRESETS movement consumes the press. */
+ if(buttons&(1u<<11)){if(!ru_seq_since)ru_seq_since=etch_ms?etch_ms:1u;}
+ else if(ru_seq_since){if(!ru_seq_used){ru_nav_to(RU_PAGE_SEQ);native_seq_step=0u;ru_seq_velocity=110u;}
+  ru_seq_since=0u;ru_seq_used=0u;}
  if(pressed&(1u<<7)){ru_nav_to(RU_PAGE_GLO);ru_selected=0;}
  if(pressed&(1u<<4))ru_nav_to(RU_PAGE_ENV);
  if(pressed&(1u<<5))ru_nav_to(RU_PAGE_LFO);
@@ -4349,13 +4420,54 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   }else{ru_nav_to(RU_PAGE_EQ);ru_eq_tab=0u;}
  } /* EDIT = CHANNEL EQ */
  if(pressed&(1u<<10))ru_nav_to(RU_PAGE_ARP);
- if(pressed&(1u<<12)){native_seq_run=!native_seq_run;if(!native_seq_run)native_seq_recording=0u;first_frame=1;}
- if((pressed&(1u<<13)) && ru_page==RU_PAGE_SEQ){
-  /* Physical REC is bit 13. Bit 9 is SAVE, not REC. */
-  native_seq_recording^=1u;
-  if(native_seq_recording){native_seq_run=1u;for(uint16_t st=0;st<ETCH_SEQ_STEPS;st++)native_seq_rec_touched[st]=0u;}
+ if(pressed&(1u<<12)){
+  if(ru_countin.active){
+   /* PLAY a second time cancels the count-in, without starting transport. */
+   fm1_irq_off();ru_countin_cancel(&ru_countin);fm1_irq_enable_all();
+   ru_countin_prekeys=0u;
+   native_seq_run=0u;native_seq_recording=0u;ru_metronome_enabled=0u;
+  }else if(native_seq_recording && !native_seq_run){
+   /* REC was armed while stopped: two complete bars BEFORE step 1.
+    * Sequencer, pattern locks and note capture remain inactive until the
+    * ISR completes eight quarter notes on the next bar boundary. */
+   ru_live_reset(&ru_live_capture);
+   ru_countin_prekeys=0u;
+   ru_metronome_enabled=1u;
+   fm1_irq_off();
+   native_audio.perf_played=0u;native_audio.perf_current_step=0u;
+   ru_countin_begin(&ru_countin);
+   fm1_irq_enable_all();
+  }else{
+   native_seq_run=!native_seq_run;
+   if(!native_seq_run){
+    if(ru_live_finish(&native_pattern,&ru_live_capture))ru_mark_dirty();
+    native_seq_recording=0u;ru_metronome_enabled=0u;
+    fm1_irq_off();ru_countin_cancel(&ru_countin);fm1_irq_enable_all();
+   }
+  }
   first_frame=1u;
  }
+ if((pressed&(1u<<13)) && ru_page==RU_PAGE_SEQ){
+  /* REC never changes transport. When already playing it immediately
+   * enables/disables overdubbing, as on V1.74. When stopped it only arms.
+   * PLAY later starts the sample-clocked two-bar count-in. */
+  native_seq_recording^=1u;
+  if(native_seq_recording){
+   ru_live_reset(&ru_live_capture);
+   for(uint16_t st=0;st<ETCH_SEQ_STEPS;st++)native_seq_rec_touched[st]=0u;
+  }else{
+   if(ru_live_finish(&native_pattern,&ru_live_capture))ru_mark_dirty();
+   fm1_irq_off();ru_countin_cancel(&ru_countin);fm1_irq_enable_all();
+  }
+  ru_metronome_enabled=(uint8_t)(native_seq_recording && native_seq_run);
+  first_frame=1u;
+ }
+ /* In live REC ALGORITHM is dedicated to metronome volume, on any normal
+  * page. Consume it BEFORE sequencer HOLD, sound shaping or menu routing.
+  * Outside REC, ALGORITHM is passed through untouched. PRESETS stays BPM. */
+ if(!native_updating && !native_safe &&
+    ru_metronome_record_algorithm(&ru_metronome_volume,&alg,
+            native_seq_recording,(uint8_t)(native_seq_run||ru_countin.active||native_seq_recording)))first_frame=1u;
  /* Physical SAVE opens the PROJECTS browser from every ordinary screen.
   * SEQ/SEQ SLOTS retain the separate sequence save flow. The NAME editor
   * keeps SAVE-to-commit; OTA/recovery views cannot be interrupted.
@@ -4389,12 +4501,19 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(entry_page==RU_PAGE_NAME && (pressed&(1u<<9))){if(ru_manager_name)ru_manager_commit_name();else ru_commit_name();}
  }
  else if(ru_page==RU_PAGE_GLO){
-  if(select){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+select,0,5);first_frame=1u;}
+  if(select){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+select,0,6);first_frame=1u;}
   if(pressed&(1u<<3)){
+   if(ru_selected==6u){
+    /* Existing FM1s can replay the tour without resetting the welcome
+     * flag, reformatting storage or writing the global flash journal. */
+    ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_TOUR;
+    ru_welcome.replay=1u;ru_welcome.overlay=1u;first_frame=1u;
+   }else{
    ru_nav_to(ru_selected==0u?RU_PAGE_SETTINGS:ru_selected==1u?RU_PAGE_SYS_INFO:
              ru_selected==2u?RU_PAGE_HELP:ru_selected==3u?RU_PAGE_DIAG:
              ru_selected==4u?RU_PAGE_ABOUT:RU_PAGE_BUG_REPORT);
    ru_settings_open=0u;if(ru_page==RU_PAGE_ABOUT)ru_about_scroll=0u;
+   }
   }
  }
  else if(ru_page==RU_PAGE_SYS_INFO){
@@ -4610,6 +4729,19 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   }
  }
  else if(ru_page==RU_PAGE_SEQ){
+  /* During armed/count-in the piano must remain a PLAYABLE synth, not a
+   * step editor. Once the ISR starts step 1, force_seq also gates capture
+   * before the next 25ms UI publication updates native_seq_run. */
+  const uint8_t ru_live_running=(uint8_t)(native_seq_run||ru_countin.force_seq);
+  if(native_seq_recording && ru_live_running && !native_updating && !native_safe){
+   uint16_t now=etch_seq_actual_step(ru_live_running,native_audio.perf_last_seq,
+      native_audio.perf_played,native_audio.perf_current_step,native_seq_length,native_seq_step);
+   /* ISR keeps reading the active pointer; only one note length is updated
+    * at a time. Match the existing editing IRQ guard. */
+   fm1_irq_off();uint8_t extended=ru_live_advance(&native_pattern,&ru_live_capture,
+                           now,native_seq_length,fm1_in.notes);fm1_irq_enable_all();
+   if(extended){ru_mark_dirty();first_frame=1u;}
+  }
   if(alg && !native_updating && !native_safe){
    /* Duration grows only through empty steps, never over a later trigger.
     * Note length is already in native pattern storage, no additional notes. */
@@ -4621,24 +4753,76 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
      Only NEW keyboard note-ons edit the selected step; held keys don't repeat.
      The pattern has 256 native steps but RUPTURE exposes 4..128. */
   if(select){native_seq_step=(uint16_t)ui_bound((int32_t)native_seq_step+select,0,(int32_t)native_seq_length-1);first_frame=1u;}
-  uint32_t new_keys=new_note_keys&0x07ffffffu;
-  if(new_keys && !native_updating && !native_safe){
+  /* SEL clears the entire selected step (all triggers, HOLDs and locks)
+   * while stopped. Directed HOLD references to its triggers are also safely
+   * removed. During playback/REC, step deletion is disabled. */
+  if((pressed&(1u<<3)) && !native_seq_run && !native_seq_recording &&
+     !native_updating && !native_safe){
    fm1_irq_off();
-   const uint16_t step=(native_seq_run && native_seq_recording)?
-     etch_seq_actual_step(native_seq_run,native_audio.perf_last_seq,native_audio.perf_played,
+   const uint8_t removed=ru_seq_clear_step(&native_pattern,native_seq_step);
+   fm1_irq_enable_all();
+   native_edit_feedback=removed?1u:3u;
+   if(removed)ru_mark_dirty();
+   first_frame=1u;
+  }
+  uint32_t new_keys=new_note_keys&0x07ffffffu;
+  if(native_seq_recording && ru_countin.active && new_keys){
+   /* Record only the LAST 50ms of the final count-in beat as a
+    * non-destructive pre-roll latch. TIMER4 records the actual physical
+    * key contact before the UI scans it, so LCD/scan latency is absorbed. */
+   const uint32_t tick_now=fm1_ticks();
+   fm1_irq_off();
+   const uint8_t count_beat=ru_countin.beats;
+   const uint32_t to_start=ru_countin.to_next;
+   fm1_irq_enable_all();
+   for(uint8_t k=0u;k<27u;k++)if(new_keys&(1u<<k)){
+    uint32_t age=ru_quant_age_samples(tick_now-fm1_in.note_t0[k]);
+    if(ru_countin_qualifies_prepress(count_beat,to_start,age))
+     ru_countin_prekeys|=1u<<k;
+   }
+  }
+  if(native_seq_recording && ru_live_running && ru_countin.first_step_guard &&
+     native_audio.perf_played && native_audio.perf_current_step==0u){
+   /* Consume the latched note at the first playable downbeat, provided
+    * it is still held. It must not be lost merely because the UI handled
+    * the note edge in the final 25ms before the audio transition. */
+   new_keys|=ru_countin_prekeys&fm1_in.notes;
+   ru_countin_prekeys=0u;
+  }
+  if(new_keys && !(native_seq_recording && !ru_live_running) &&
+     !native_updating && !native_safe){
+   /* Snapshot the exact sample-clock grid phase while masking the audio
+    * IRQ. TIMER4's first-contact timestamp compensates for the 25ms UI loop,
+    * key debouncing and LCD update load. The captured step is rounded to
+    * the NEAREST boundary, not always floored to the current step. */
+   const uint32_t capture_ticks=fm1_ticks();
+   fm1_irq_off();
+   const uint16_t audible_step=(ru_live_running && native_seq_recording)?
+     etch_seq_actual_step(ru_live_running,native_audio.perf_last_seq,native_audio.perf_played,
                           native_audio.perf_current_step,native_seq_length,native_seq_step):native_seq_step;
+   const uint32_t remain=native_audio.perf_clock;
+   const uint8_t rec_bpm=(native_clock_follow && native_audio.clock_bpm)?native_audio.clock_bpm:native_controls.tempo;
+   const uint8_t rec_rate=native_controls.seq_rate,rec_swing=native_controls.seq_swing;
    for(uint8_t k=0u;k<27u;k++)if(new_keys&(1u<<k)){
     int32_t pitch=53+(int32_t)k+12*(int32_t)native_controls.octave;
     if(pitch>=0 && pitch<=127){
-     if(native_seq_recording && native_seq_run){
+     uint16_t step=audible_step;
+     if(native_seq_recording && ru_live_running && native_audio.perf_played){
+      uint32_t age=ru_quant_age_samples(capture_ticks-fm1_in.note_t0[k]);
+      step=ru_quantize_rec_step(audible_step,native_seq_length,remain,age,rec_bpm,rec_rate,rec_swing);
+      step=ru_countin_clamp_first_step(step,audible_step,native_seq_length,ru_countin.first_step_guard);
+     }
+     if(native_seq_recording && ru_live_running){
       native_edit_feedback=etch_seq_parity_note_exists(&native_pattern,step,(uint8_t)pitch)?1u:
         (etch_seq_put(&native_pattern,step,(uint8_t)pitch,ru_seq_velocity,1u)?1u:0u);
+      if(native_edit_feedback)ru_live_note_on_quantized(&ru_live_capture,k,step,(uint8_t)pitch,native_seq_length,audible_step);
      }else{
-      native_edit_feedback=etch_seq_toggle(&native_pattern,step,(uint8_t)pitch,ru_seq_velocity,1u);
+      native_edit_feedback=ru_seq_key_toggle(&native_pattern,step,(uint8_t)pitch,ru_seq_velocity);
      }
     }
    }
-   fm1_irq_enable_all();first_frame=1u;ru_mark_dirty();
+   fm1_irq_enable_all();first_frame=1u;
+   if(native_edit_feedback)ru_mark_dirty();
   }
  }
  else if(ru_page==RU_PAGE_PLAY && select){ru_nav_to(RU_PAGE_MENU);ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,10);}
@@ -4859,9 +5043,22 @@ void fm1_cstart(void){
    rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;ru_crt_enabled=crt;
   }
  }
- if(!safe && !native_keyboard_mode && !ru_welcome_done){
-  ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
-  ru_welcome.crt=ru_crt_enabled;
+ if(!safe && !native_keyboard_mode){
+  if(!ru_welcome_done){
+   /* True first run retains the complete setup wizard. */
+   ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
+   ru_welcome.crt=ru_crt_enabled;
+  }else{
+   /* Prior firmware stored welcome_done=1, so upgrading silently skipped
+    * the Welcome page. Show a short, read-only boot welcome every restart,
+    * without re-asking to format/backup or modifying persistent settings. */
+   RuState welcome_preview={0};welcome_preview.page=RU_PAGE_WELCOME;
+   welcome_preview.welcome_phase=RU_WELCOME_RETURN;
+   welcome_preview.crt_enabled=ru_crt_enabled;
+   ru_crt_active=ru_crt_enabled;ru_render(&welcome_preview);ru_commit();
+   for(uint32_t ms=0u;ms<1100u;ms+=25u){fm1_wdt_feed();fm1_delay_ms(25u);}
+   first_frame=1u;
+  }
  }
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
 #endif
@@ -5133,7 +5330,10 @@ void fm1_cstart(void){
     * after YES and 3 seconds of physical SAVE hold. No erase on cold boot. */
    if(ru_welcome.phase && !native_updating && !native_safe && !native_tripped){
     uint8_t old_phase=ru_welcome.phase,old_choice=ru_welcome.choice;
-    uint8_t action=ru_welcome_step(&ru_welcome,select?select:dm,pressed,buttons,etch_ms);
+    uint8_t old_lesson=ru_welcome.lesson,old_overlay=ru_welcome.overlay;
+    if(ru_welcome.phase==RU_WELCOME_TOUR && alg)ru_welcome.overlay^=1u;
+    uint8_t action=ru_welcome_step(&ru_welcome,
+      ru_welcome.phase==RU_WELCOME_TOUR?select:(select?select:dm),pressed,buttons,etch_ms);
     if(action==RU_WELCOME_ACTION_FORMAT){
      /* Render an actual busy page BEFORE invoking blocking flash IO. Never
       * claim success until the existing bounded store writer returns OK. */
@@ -5155,7 +5355,7 @@ void fm1_cstart(void){
       * Status 1 means a successful initialization; 2 means no erase needed. */
      ru_welcome_format_result(&ru_welcome,result,etch_ms);
      first_frame=1u;
-    }else if(action==RU_WELCOME_ACTION_FINISH){
+    }else if(action==RU_WELCOME_ACTION_FINISH && !ru_welcome.replay){
      ru_crt_enabled=ru_welcome.crt;ru_band_valid=0u;
      ru_welcome_done=1u;
      if(native_store_status==ETCH_STORE_OK){
@@ -5164,7 +5364,8 @@ void fm1_cstart(void){
      }
     }
     if(first_frame||pressed||select||dm||action||old_phase!=ru_welcome.phase||
-       old_choice!=ru_welcome.choice||
+       old_choice!=ru_welcome.choice||old_lesson!=ru_welcome.lesson||
+       old_overlay!=ru_welcome.overlay||alg||
        (ru_welcome.phase==RU_WELCOME_ERASE && (buttons&(1u<<9)) &&
         (uint32_t)(etch_ms-last_ui_paint_ms)>=120u)){
      screen();last_ui_paint_ms=etch_ms;
@@ -5282,6 +5483,48 @@ void fm1_cstart(void){
     }
    }
    if(!ru_saver_active)ru_handle_input(buttons,&pressed,select,alg,dm,dd,up,down,(fm1_in.notes&~last_seq_notes));
+   /* The audio ISR starts step 1 at the exact eighth-beat END. The UI
+    * acknowledges it on its next pass without restarting the sequencer. */
+   /* Cancel an interrupted/corrupt/externally stopped armed count-in.
+    * Never allow a pending audio ISR force-seq to survive REC OFF or OTA. */
+   if((ru_countin.active||ru_countin.ready||ru_countin.force_seq||ru_countin.first_step_guard) &&
+      (!native_seq_recording||native_updating||native_safe||native_tripped)){
+    fm1_irq_off();ru_countin_cancel(&ru_countin);fm1_irq_enable_all();
+    ru_countin_prekeys=0u;
+    first_frame=1u;
+   }
+   if(ru_countin.ready){
+    fm1_irq_off();
+    if(native_seq_recording && ru_countin.force_seq){
+     native_seq_run=1u;native_controls.seq_run=1u;
+    }
+    ru_countin.ready=0u;
+    ru_countin.force_seq=0u; /* UI now owns transport, no permanently forced PLAY */
+    fm1_irq_enable_all();
+    first_frame=1u;
+   }
+   if(ru_countin.first_step_guard && native_audio.perf_played &&
+      native_audio.perf_current_step!=0u){
+    fm1_irq_off();ru_countin.first_step_guard=0u;fm1_irq_enable_all();
+    ru_countin_prekeys=0u;
+   }
+   if(ru_countin.active){
+    uint8_t beat=ru_countin.beats;
+    if(beat!=ru_countin_last_beat){
+     ru_countin_last_beat=beat;ru_countin_pulse=1u;
+     ru_countin_pulse_at=etch_ms;first_frame=1u;
+    }else if(ru_countin_pulse && (uint32_t)(etch_ms-ru_countin_pulse_at)>=135u){
+     ru_countin_pulse=0u;first_frame=1u;
+    }
+   }else if(ru_countin_last_beat!=255u){
+    ru_countin_last_beat=255u;ru_countin_pulse=0u;first_frame=1u;
+   }
+   if(ru_countin.active || ru_countin_last_beat!=255u)native_seq_led_refresh();
+   /* PRESETS remains BPM; ALGORITHM is metronome level while armed/REC.
+    * Metronome shares its original PCM voice with the silent count-in. */
+   ru_metronome_enabled=(uint8_t)(native_seq_recording &&
+      (native_seq_run||ru_countin.active||ru_countin.force_seq) &&
+      !native_updating && !native_safe && !native_tripped);
    /* 25 ms main-loop service only: no MIDI, DSP, ISR, storage or OTA changes.
     * A note from hardware, USB MIDI, ARP or sequencer can hold the crack open.
     * Closing starts as soon as every note gate has released.
@@ -5343,12 +5586,25 @@ void fm1_cstart(void){
     * which looked like a slow animation despite correct note-gate logic.
     * Frame timing and display cadence are now independent. All screen work
     * stays in the main loop, leaving the ISR, OTA and flash untouched. */
+   /* The LED matrix already follows the audio engine's current step.
+    * A changed PLAYHEAD is also a time-critical visual event: otherwise
+    * the idle LCD budget can freeze the REC cursor for 350-750 ms.
+    * Compare against the LAST PAINTED step so deferred events survive.
+    * Never change the audio clock or LED timing to fix an LCD lag. */
+   const uint16_t ru_audio_playhead=etch_seq_actual_step(native_seq_run,
+       native_audio.perf_last_seq,native_audio.perf_played,
+       native_audio.perf_current_step,native_seq_length,native_seq_step);
+   const uint8_t ru_playhead_pending=ru_seq_playhead_needs_paint(
+       (uint8_t)(ru_page==RU_PAGE_SEQ),native_seq_run,ru_saver_active,
+       ru_audio_playhead,ru_seq_last_painted_playhead);
    if(ru_lcd_should_paint(etch_ms,last_ui_paint_ms,
         (uint8_t)(first_frame||pressed||select||alg||dm||dd||up||down||notes_changed),
-        (uint8_t)(!ru_saver_active && (ru_anim_dirty||ru_splash_active())),
+        (uint8_t)(!ru_saver_active && (ru_anim_dirty||ru_splash_active()||ru_playhead_pending)),
         (uint8_t)(!ru_saver_active && ru_visual_moving),
         native_ui_pressure,native_missed_streak)){
      screen();last_ui_paint_ms=etch_ms;ru_anim_dirty=0u;
+     ru_seq_last_painted_playhead=(uint16_t)(ru_page==RU_PAGE_SEQ && native_seq_run?
+         ru_audio_playhead:0xffffu);
    }
    continue;
 #endif
@@ -5384,15 +5640,33 @@ void fm1_cstart(void){
 
    /* V1.20: PRESETS rotary is ignored outside the named PRESETS browser.
     * SAVE editors already use K1 (dm) to choose a destination slot. */
-   /* Reuse the freed PRESETS encoder as global BPM, except in preset
-    * browser, save-name workflows and diagnostic capture. */
-   if(preset && native_page!=ETCH_UI_PRESETS &&
-      native_page!=ETCH_UI_NAME && native_page!=ETCH_UI_PROJECT_SAVE && !native_updating){
+   /* Hold physical SEQ and turn PRESETS to rotate the WHOLE current
+    * sequencer pattern (all note events, note durations, HOLDs and locks).
+    * Copy into the existing inactive patch bank; atomically publish its
+    * pointer with a short interrupt mask. Normal PRESETS stays BPM. */
+   if(preset && (buttons&(1u<<11)) && !native_updating && !native_safe &&
+      !native_tripped && !ru_welcome.phase && native_seq_length>1u){
+    if(ru_live_finish(&native_pattern,&ru_live_capture))ru_mark_dirty();
+    struct etch_native_pattern *staged=etch_patch_staging(&native_patch_swap);
+    if(ru_seq_rotate(&native_pattern,staged,native_seq_length,preset)){
+     fm1_irq_off();etch_patch_commit(&native_patch_swap);
+     native_controls.pattern=&native_pattern;fm1_irq_enable_all();
+     ru_seq_used=1u;ru_mark_dirty();first_frame=1u;
+    }
+    preset=0; /* SEQ chord must NEVER change the BPM */
+   }
+   /* PRESETS adjusts global BPM continuously, including during live REC;
+    * the preexisting browser/name exceptions remain unchanged. */
+   if(preset && !native_updating &&
+      ((native_seq_recording && native_seq_run) ||
+       (native_page!=ETCH_UI_PRESETS && native_page!=ETCH_UI_NAME &&
+        native_page!=ETCH_UI_PROJECT_SAVE))){
     uint8_t bpm=(uint8_t)etch_v130_bpm(native_tempo,preset);
     if(bpm!=native_tempo){native_tempo=bpm;native_project_cfg.tempo=bpm;
      native_bpm_overlay_until=etch_ms+1500u;first_frame=1u;}
    }
-   if(preset && !native_draw && native_page==ETCH_UI_PRESETS){
+   if(preset && !(native_seq_recording && native_seq_run) &&
+      !native_draw && native_page==ETCH_UI_PRESETS){
     uint32_t valid=0;
     for(uint8_t k=0;k<ETCH_PATCH_SLOTS;k++)if(native_library.patches[k].valid)valid|=1u<<k;
     uint8_t next=etch_presets_next_valid(native_presets_cursor,preset,valid);

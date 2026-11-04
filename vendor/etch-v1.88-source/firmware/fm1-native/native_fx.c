@@ -459,14 +459,14 @@ static int16_t fx_v102_process(struct etch_native_fx *s,int16_t sample,const str
     !s->decim_mix_smooth && !s->folder_mix_smooth){
   if(c->comp_ratio){
    int32_t mag=x<0?-x:x;
-   int32_t atk=2+(32767u-qclamp(c->comp_attack))/512u;
-   int32_t rel=1+(32767u-qclamp(c->comp_release))/2048u;
+   int32_t atk=s->comp_attack_step;
+   int32_t rel=s->comp_release_step;
    int32_t step=mag>s->comp_env?atk:rel;
    s->comp_env+=((mag-s->comp_env)*step)/32768;
    if(++s->comp_tick>=16){
     s->comp_tick=0;
-    int32_t thr=2000+(32767u-qclamp(c->comp_threshold))*25000u/32767u;
-    int32_t ratio=1+qclamp(c->comp_ratio)*11u/32767u;
+    int32_t thr=s->comp_threshold_cached;
+    int32_t ratio=s->comp_ratio_cached;
     int32_t target=32767;
     if(s->comp_env>thr){
      int32_t limited=thr+(s->comp_env-thr)/ratio;
@@ -492,14 +492,24 @@ static int16_t fx_v102_process(struct etch_native_fx *s,int16_t sample,const str
   * gain. Ratio 1:1 (zero control) provides exact bypass. */
  if(c->comp_ratio){
   int32_t mag=x<0?-x:x;
+#ifdef RUPTURE_BUILD
+  int32_t atk=s->comp_attack_step;
+  int32_t rel=s->comp_release_step;
+#else
   int32_t atk=2+(32767u-qclamp(c->comp_attack))/512u;
   int32_t rel=1+(32767u-qclamp(c->comp_release))/2048u;
+#endif
   int32_t step=mag>s->comp_env?atk:rel;
   s->comp_env+=((mag-s->comp_env)*step)/32768;
   if(++s->comp_tick>=16){
    s->comp_tick=0;
+#ifdef RUPTURE_BUILD
+   int32_t thr=s->comp_threshold_cached;
+   int32_t ratio=s->comp_ratio_cached;
+#else
    int32_t thr=2000+(32767u-qclamp(c->comp_threshold))*25000u/32767u;
    int32_t ratio=1+qclamp(c->comp_ratio)*11u/32767u;
+#endif
    int32_t target=32767;
    if(s->comp_env>thr){
     int32_t limited=thr+(s->comp_env-thr)/ratio;
@@ -778,11 +788,25 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
     s->applied.reverb_size!=cfg->reverb_size||s->applied.reverb_decay!=cfg->reverb_decay||
     s->applied.routing!=cfg->routing||
     s->applied.ring_rate!=cfg->ring_rate||s->applied.eq_hpf!=cfg->eq_hpf||
+    /* Avoid checking inactive compressor coefficients at the sample rate.
+     * The ratio transition itself still invalidates all cached values. */
+    s->applied.comp_ratio!=cfg->comp_ratio||
+    (cfg->comp_ratio &&
+     (s->applied.comp_attack!=cfg->comp_attack||s->applied.comp_release!=cfg->comp_release||
+      s->applied.comp_threshold!=cfg->comp_threshold))||
     s->applied.trem_rate!=cfg->trem_rate||s->applied.phaser_rate!=cfg->phaser_rate||
     s->applied.flanger_rate!=cfg->flanger_rate||s->applied.tape_wow!=cfg->tape_wow||
     s->applied.tape_flutter!=cfg->tape_flutter||
     s->applied.vibrato_rate!=cfg->vibrato_rate||s->applied.rotary_rate!=cfg->rotary_rate){
   s->applied=*cfg;s->applied_valid=1;
+  /* Identical V1.68 integer rounding. Recompute only on parameter changes,
+   * not at the 44.1 kHz sample rate. Includes live control automation. */
+#ifdef RUPTURE_BUILD
+  s->comp_attack_step=(uint8_t)(2u+(32767u-qclamp(cfg->comp_attack))/512u);
+  s->comp_release_step=(uint8_t)(1u+(32767u-qclamp(cfg->comp_release))/2048u);
+  s->comp_threshold_cached=(uint16_t)(2000u+(32767u-qclamp(cfg->comp_threshold))*25000u/32767u);
+  s->comp_ratio_cached=(uint8_t)(1u+qclamp(cfg->comp_ratio)*11u/32767u);
+#endif
   /* 1..1600Hz, gentle resolution around low rates. */
   uint64_t r=qclamp(cfg->ring_rate);
   uint32_t hz=1u+(uint32_t)((r*r*1599u)/(32767u*32767u));
@@ -795,9 +819,7 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   /* 0.13..1.3 Hz and 3..12 Hz @44.1k, independent modulator clocks. */
   s->tape_wow_step=12659u+(uint32_t)qclamp(cfg->tape_wow)*113700u/32767u;
   s->tape_flutter_step=292153u+(uint32_t)qclamp(cfg->tape_flutter)*876457u/32767u;
-  #ifdef RUPTURE_BUILD
- s->eq_hpf_alpha=0u; /* RUPTURE K4 HIGH AIR has no cutoff filter */
-#else
+ #ifndef RUPTURE_BUILD
  s->eq_hpf_alpha=(uint16_t)(((uint32_t)qclamp(cfg->eq_hpf)*1700u)/32767u);
 #endif
   s->rate_step=1u+(uint32_t)qclamp(cfg->chorus_rate)*9u/32768u;

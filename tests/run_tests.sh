@@ -287,3 +287,24 @@ python3 tests/test_dam_sprites.py
 # V1.63: real 240x240 UI rendering and RAM-only undo gesture policy.
 "$cc" -std=c11 -O2 tests/test_v163_edit_safety.c -o /tmp/rupture_v163_edit_safety
 /tmp/rupture_v163_edit_safety
+
+# V1.68: step 1/zero-index note removal, directed HOLD cleanup,
+# unmodified other steps/locks, audio-led to LCD playhead synchronization.
+"$cc" -std=c11 -O2 tests/test_v168_seq_entry_playhead.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ -o /tmp/rupture_v168_seq_entry && /tmp/rupture_v168_seq_entry
+"$cc" -std=c11 -O2 tests/test_v168_seq_renderer.c -lm \
+ -o /tmp/rupture_v168_seq_render && /tmp/rupture_v168_seq_render
+
+# V1.74: complete live sustain, lossless 256-compatible circular rotation,
+# separate stored first-run wizard vs returning welcome, control docs.
+"$cc" -std=c11 -O2 -w tests/test_v174_seq_shift_sustain.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c -o /tmp/rupture_v174_seq && /tmp/rupture_v174_seq
+"$cc" -std=c11 -O2 -w tests/test_v174_welcome.c -lm -o /tmp/rupture_v174_welcome && /tmp/rupture_v174_welcome
+python3 tests/test_v173_mapping_docs.py
+
+# V1.76: real first downbeat after countdown, timestamp-aware nearest-step
+# quantization, lossless sustain with future/past snapped notes, LED scan
+# frequency, native OTA/storage/HAL compatibility.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v176_countin_bridge.c -o /tmp/rupture_v176_first && /tmp/rupture_v176_first
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation tests/test_v176_quant_led.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c -o /tmp/rupture_v176_quant && /tmp/rupture_v176_quant
+python3 tests/test_v176_source_contract.py

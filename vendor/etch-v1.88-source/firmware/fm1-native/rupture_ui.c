@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "rupture_help_cards.h"
+#include "rupture_welcome.h"
 #include "rupture_bug_qr.h"
 #include "rupture_utrecht_art.h"
 #include "rupture_eq2.h"
@@ -12,6 +13,7 @@
 #include "rupture_dam_anim.h"
 #include "rupture_panel_sprites.h"
 #include "rupture_volcano_sprites.h"
+#include "rupture_hold_sprites.h"
 #include "rupture_crt_vcr.h"
 #define RU_W 240
 #define RU_H 240
@@ -67,13 +69,15 @@
 #define RU_PAGE_WELCOME 49
 #define RU_PAGE_SYS_INFO 50
 #define RU_PAGE_COUNT 51
+#include "rupture_tutorial.h"
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
  uint8_t system_storage_ok,system_storage_empty,system_usb,system_projects_used,system_battery_valid,system_audio_fault;
  uint8_t welcome_phase,welcome_choice,welcome_crt,welcome_status,welcome_hold_pct,welcome_store_ready;
+ uint8_t welcome_lesson,welcome_overlay;
  uint8_t manager_project,manager_seq,manager_action,manager_confirm,manager_status;
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
@@ -381,7 +385,16 @@ static const int8_t ru_needle_xy[101][2]={
  {11,10},
  {11,11}
 };
-static void ru_knob(int x,int y,uint32_t v){for(int yy=-22;yy<=22;yy++)for(int xx=-22;xx<=22;xx++){int r2=xx*xx+yy*yy;if((r2>=400&&r2<=484)|| (r2>=272&&r2<=300&&((xx+yy)&1)==0))ru_set(x+xx,y+yy);}if(v>100u)v=100u;int px=ru_needle_xy[v][0],py=ru_needle_xy[v][1];ru_line(x,y,x+px,y+py);ru_rect(x-1,y-1,3,3);}
+#include "rupture_knob_ring_pixels.h"
+static void ru_knob(int x,int y,uint32_t v){
+ /* 332 exact visible ring pixels, not 2,025 radius tests per knob/frame.
+  * Needle and central pin remain bit-for-bit V1.68 originals. */
+ for(uint32_t i=0;i<RUPTURE_KNOB_RING_COUNT;i++)
+  ru_set(x+rupture_knob_ring_pixels[i][0],y+rupture_knob_ring_pixels[i][1]);
+ if(v>100u)v=100u;
+ int px=ru_needle_xy[v][0],py=ru_needle_xy[v][1];
+ ru_line(x,y,x+px,y+py);ru_rect(x-1,y-1,3,3);
+}
 /* One common feedback geometry for every drawn rotary control. Markers are
  * alongside the knob body; never on top of the 1-bit label/value glyphs. */
 static void ru_knob_focus_marker(const RuState *v,int x,int y,uint8_t control){
@@ -558,7 +571,9 @@ static void ru_seq_screen(const RuState *v){
  char a[12],b[12];
  ru_text("LEN",13,52,1);ru_uint(v->seq_length,a);ru_text(a,40,52,1);
  ru_text("BPM",113,52,1);ru_uint(v->seq_bpm,b);ru_text(b,145,52,1);
- ru_text(v->seq_playing?"PLAY":"EDIT",198,52,1);
+ ru_text(v->seq_countin?"COUNT":(v->seq_recording?(v->seq_playing?"REC":"ARM"):(v->seq_playing?"PLAY":"EDIT")),191,52,1);
+ if(v->seq_recording){char level[12];ru_uint(v->metronome_volume,level);
+  ru_text("M:",196,61,1);ru_text(level,208,61,1);}
  uint16_t display=v->seq_playing?v->seq_playhead:v->seq_current_step;
  uint16_t first=(uint16_t)(display&~15u);
  int visible=v->seq_length<16u?(int)v->seq_length:16;
@@ -591,7 +606,21 @@ static void ru_seq_screen(const RuState *v){
   ru_center(names[i],x,202,1);
   ru_uint(v->k[i],a);ru_center(a,x,213,1);
  }
- ru_footer("ALG HOLD   SAVE SEQUENCES");
+ /* Count-in has its own clear status. Temporarily blank the central
+  * sequencer grid, without touching note-data, DSP or the main screen.
+  * A sample-clocked pulse lights the whole grid border each quarter beat. */
+ if(v->seq_countin){
+  for(int yy=74;yy<117;yy++)for(int bx=2;bx<28;bx++)
+   ru_bits[yy*(RU_W/8)+bx]=0u;
+  ru_frame(16,73,208,44);
+  ru_center(v->seq_countin_beat<=4u?"COUNT IN  BAR 1/2":"COUNT IN  BAR 2/2",120,81,1);
+  char beat_label[12];ru_uint((uint32_t)(((v->seq_countin_beat?v->seq_countin_beat:1u)-1u)%4u+1u),beat_label);
+  ru_center("BEAT",101,100,1);ru_text(beat_label,130,100,1);
+  if(v->seq_countin_pulse)ru_frame(11,69,218,53);
+ }
+ ru_footer(v->seq_countin?"TWO BAR COUNT-IN / PLAY CANCEL":
+   (v->seq_recording&&!v->seq_playing?"REC ARMED / PLAY TO START":
+    (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+PRESETS SHIFT / SAVE SEQUENCES")));
 }
 /* V1.20: ROM 1-bit tear animation, 240x240 with no extra screen memory.
  * A single immutable final artwork is exposed through a moving jagged slit,
@@ -826,6 +855,12 @@ static void ru_welcome_draw(const RuState *v){
  ru_center("RUPTURE",120,66,2);
  ru_rect(18,88,204,1);
  switch(v->welcome_phase){
+ case RU_WELCOME_RETURN:
+  ru_center("WELCOME BACK!",120,108,1);
+  ru_center("PROJECTS AND SETTINGS",120,135,1);
+  ru_center("ARE UNCHANGED",120,149,1);
+  ru_center("READY TO PLAY",120,184,1);
+  break;
  case 1u:
   ru_center("THANK YOU FOR USING",120,102,1);
   ru_center("RUPTURE ON YOUR",120,116,1);
@@ -898,6 +933,12 @@ static void ru_welcome_draw(const RuState *v){
   ru_center("ENABLE THE CRT",120,107,1);
   ru_center("SCREEN FILTER?",120,120,1);
   ru_center("DEFAULT IS OFF",120,135,1);
+  goto choices;
+ case RU_WELCOME_TOUR_ASK:
+  ru_center("VIEW QUICK TUTORIAL?",120,105,1);
+  ru_center("EXPLORE RUPTURE SCREENS",120,124,1);
+  ru_center("AND ALL KNOB FUNCTIONS",120,139,1);
+  ru_center("NO CHANGES WILL BE SAVED",120,152,1);
   goto choices;
  case 9u:
   ru_center("SETUP COMPLETE",120,106,1);
@@ -974,13 +1015,22 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
  }
  if(page==RU_PAGE_LFO || page==RU_PAGE_ENV){
-  /* LFO and ENV keep their original packed PNG sprites. A tiny page-specific
-   * shake offset adds impact without changing the audio/DSP engine. */
+  /* V1.72: original opening/closing PNGs remain untouched. During Note
+   * HOLD, ENV plays eight smoke-and-rubble settling PNGs ONCE, then keeps
+   * only the 1px wall tremble; LFO loops its own falling-debris sprites.
+   * All work is in the UI thread; no audio callback, allocations or DSP. */
   uint8_t frame=v->panel_frame<RU_PANEL_FRAMES?v->panel_frame:0u;int xoff=0,yoff=0;
   const uint8_t (*art)[RU_PANEL_HEIGHT][RU_PANEL_BYTES]=
    page==RU_PAGE_LFO?ru_lfo_sprites:ru_env_sprites;
-  ru_panel_shake(page,frame,v->panel_shake,&xoff,&yoff);
-  ru_panel_blit_shaken(art[frame],xoff,yoff);
+  const uint8_t (*source)[RU_PANEL_BYTES]=art[frame];
+  if(frame==12u && v->panel_hold_active){
+   uint8_t hold=v->panel_hold_frame<RU_HOLD_FRAMES?v->panel_hold_frame:0u;
+   source=page==RU_PAGE_LFO?ru_lfo_hold_sprites[hold]:ru_env_hold_sprites[hold];
+   /* Final ENV aftermath is static artwork, but not a frozen panel:
+    * only the already existing 1px packed-bitmap offset keeps ticking. */
+   ru_panel_shake(page,frame,v->panel_shake,&xoff,&yoff);
+  }else ru_panel_shake(page,frame,v->panel_shake,&xoff,&yoff);
+  ru_panel_blit_shaken(source,xoff,yoff);
   ru_draw_knobs(v);ru_footer(page==RU_PAGE_LFO?"LFO / HOLD TO OPEN":"ENV / HOLD TO OPEN");return;
  }
  if(page==RU_PAGE_FOREIGN||page==RU_PAGE_FORMAT_CONFIRM){ru_center("FOREIGN DATA DETECTED",120,63,1);ru_center("FORMAT USER DATA?",120,91,1);ru_frame(18,133,98,42);ru_frame(124,133,98,42);ru_center("NO",66,150,2);ru_center("YES",173,150,2);ru_dither(v->format_yes?128:22,137,90,4,1);ru_footer("SEL CONFIRM   HOME BACK");return;}
@@ -1045,7 +1095,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.67","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.76","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){
@@ -1166,12 +1216,12 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("SELECT NO/YES  SEL CONFIRM");return;
  }
  if(page==RU_PAGE_GLO){
-  static const char *const cards[]={"SETTINGS","SYSTEM INFO","HELP","AUDIO DIAGNOSTICS","ABOUT","REPORT A BUG"};
-  for(int i=0;i<6;i++){
-   int y=45+i*29;ru_frame(12,y,216,27);
-   if(v->selected==(uint8_t)i){ru_dither(15,y+2,210,3,1);ru_rect(16,y+7,3,13);}
-   ru_text(cards[i],28,y+9,1);
-   if(v->selected==(uint8_t)i)ru_text(">",207,y+9,1);
+  static const char *const cards[]={"SETTINGS","SYSTEM INFO","HELP","AUDIO DIAGNOSTICS","ABOUT","REPORT A BUG","QUICK TOUR"};
+  for(int i=0;i<7;i++){
+   int y=45+i*25;ru_frame(12,y,216,23);
+   if(v->selected==(uint8_t)i){ru_dither(15,y+2,210,3,1);ru_rect(16,y+5,3,12);}
+   ru_text(cards[i],28,y+8,1);
+   if(v->selected==(uint8_t)i)ru_text(">",207,y+8,1);
   }
   ru_footer("SELECT CARD  SEL OPEN");return;}
  if(page==RU_PAGE_PROJECTS||page==RU_PAGE_SEQ_SLOTS){
@@ -1286,6 +1336,44 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
 /* V1.52: keep the original 1-bit source pixel-identical. CRT optics are
  * applied only during RGB565 LCD transfer, preserving every text stroke.
  * Report-a-bug QR bypasses both lens warp and scanline dimming. */
+/* Read-only tour composites an actual normal RUPTURE page with a compact
+ * text band. ALGORITHM toggles the band so the full screen can be inspected.
+ * The tutorial does not call any knob, save, MIDI, audio or OTA functions. */
+static void ru_tour_overlay(const RuState *v){
+ if(v->welcome_lesson>=RU_TUTORIAL_COUNT)return;
+ const RuTutorialLesson *lesson=&ru_tutorial_lessons[v->welcome_lesson];
+ if(!v->welcome_overlay){
+  /* Keep just one subtle marker on full-screen mode. */
+  for(int y=228;y<240;y++)for(int x=8;x<233;x++)ru_clr(x,y);
+  ru_rect(7,226,226,1);ru_center("SEL NEXT  ALG TEXT  HOME EXIT",120,231,1);
+  return;
+ }
+ /* The upper knob row and its label/value remain visible. Turn ALG once
+  * to inspect the bottom knobs and complete screen without the band. */
+ /* Start below the first row's value text (y=141..147). The old
+  * overlay began at y=145 and clipped its last two font rows. */
+ for(int y=150;y<240;y++)for(int x=7;x<233;x++)ru_clr(x,y);
+ ru_frame(7,150,226,90);
+ char counter[24]="TOUR ",left[12],right[12];
+ ru_uint((uint32_t)v->welcome_lesson+1u,left);ru_uint(RU_TUTORIAL_COUNT,right);
+ int z=5;for(int i=0;left[i]&&z<20;i++)counter[z++]=left[i];
+ counter[z++]='/';for(int i=0;right[i]&&z<22;i++)counter[z++]=right[i];counter[z]=0;
+ ru_text(counter,14,153,1);
+ ru_text("ALG: FULL VIEW",119,153,1);
+ ru_text(lesson->route,12,165,1);
+ int y=175,found=0;
+ /* Four SEQUENCER rows plus its REC-only ALGORITHM instruction must all
+  * fit above the unmodified footer. 8px font allows an 8px line pitch. */
+ const int line_pitch=lesson->page==RU_PAGE_SEQ?8:11;
+ for(int i=0;i<4;i++)if(lesson->knobs[i]){
+  ru_text(lesson->knobs[i],12,y,1);y+=line_pitch;found++;
+ }
+ if(!found){ru_text("NO K1-K4 CONTROLS HERE",12,177,1);y=192;}
+ if(y<=208)ru_text(lesson->tip,12,y+2,1);
+ ru_rect(9,226,222,1);ru_center("SEL NEXT  SELECT BACK  HOME EXIT",120,231,1);
+}
 static void ru_render(const RuState *v){
  ru_render_raw(v);
+ if(v->welcome_phase==RU_WELCOME_TOUR && v->page!=RU_PAGE_WELCOME)
+  ru_tour_overlay(v);
 }

@@ -1,0 +1,14 @@
+{
+  "release": "V1.71",
+  "base": "V1.70",
+  "unchanged_native_c_h_s": 164,
+  "modified_native": [
+    "vendor/etch-v1.88-source/firmware/fm1-native/bringup.c",
+    "vendor/etch-v1.88-source/firmware/fm1-native/rupture_ui.c",
+    "vendor/etch-v1.88-source/firmware/fm1-native/rupture_welcome.h"
+  ],
+  "protected_boothead_sha256": "a65e0e1a2fad1db943c00b529b45553c524257146145db61b69628cefcf2b2c9",
+  "ota_loader_sha256": "d71d1b7c12adede951605e758a3580dacccedc427d49e1fceaf51decccc68a4b",
+  "firmware_sha256": "6c764271ac93b04e8261f08e473056cb6ef3f3f76731ed4bdf8e2d0454e24671",
+  "physical_fm1_tested": false
+}

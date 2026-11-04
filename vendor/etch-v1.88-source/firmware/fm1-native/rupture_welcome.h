@@ -7,13 +7,17 @@ enum {RU_WELCOME_OFF=0u,RU_WELCOME_INTRO=1u,RU_WELCOME_BACKUP=2u,
  RU_WELCOME_PROCEED=3u,RU_WELCOME_SAD=4u,RU_WELCOME_FORMAT=5u,
  RU_WELCOME_ERASE=6u,RU_WELCOME_FORMAT_RESULT=7u,
  RU_WELCOME_CRT=8u,RU_WELCOME_READY=9u,
- RU_WELCOME_FORMATTING=10u};
+ RU_WELCOME_FORMATTING=10u,
+ RU_WELCOME_TOUR_ASK=11u,RU_WELCOME_TOUR=12u,
+ RU_WELCOME_RETURN=13u};
+#define RU_TUTORIAL_COUNT 43u
 enum {RU_WELCOME_ACTION_NONE=0u,RU_WELCOME_ACTION_FORMAT=1u,
  RU_WELCOME_ACTION_FINISH=2u};
 typedef struct {
  uint32_t save_hold_since;
  uint32_t result_since_ms; /* keep actual success/error on screen until acknowledged */
  uint8_t phase,choice,crt,status; /* status 0 none,1 formatted,2 already ready,3 failed */
+ uint8_t lesson,overlay,replay; /* tour is UI-only; no storage writes */
 } RuWelcome;
 static uint8_t ru_welcome_step(RuWelcome *w,int32_t turn,uint32_t pressed,
  uint32_t held,uint32_t now){
@@ -32,6 +36,28 @@ static uint8_t ru_welcome_step(RuWelcome *w,int32_t turn,uint32_t pressed,
   return RU_WELCOME_ACTION_NONE;
  }
  if(w->phase==RU_WELCOME_FORMATTING)return RU_WELCOME_ACTION_NONE;
+ if(w->phase==RU_WELCOME_TOUR){
+  /* SELECT steps backward/forward, SEL advances, HOME skips the tour.
+   * SAVE, note entry, knob edits and project operations are intercepted. */
+  if(pressed&(1u<<8)){w->phase=RU_WELCOME_OFF;return RU_WELCOME_ACTION_FINISH;}
+  if(turn<0){if(w->lesson)w->lesson--;}
+  else if(turn>0){if(w->lesson+1u<RU_TUTORIAL_COUNT)w->lesson++;}
+  if(pressed&(1u<<3)){
+   if(w->lesson+1u>=RU_TUTORIAL_COUNT){w->phase=RU_WELCOME_OFF;return RU_WELCOME_ACTION_FINISH;}
+   w->lesson++;
+  }
+  return RU_WELCOME_ACTION_NONE;
+ }
+ if(w->phase==RU_WELCOME_TOUR_ASK){
+  if(turn>0)w->choice=1u;
+  else if(turn<0)w->choice=0u;
+  if(pressed&(1u<<8)){w->phase=RU_WELCOME_OFF;return RU_WELCOME_ACTION_FINISH;}
+  if(pressed&(1u<<3)){
+   if(w->choice){w->phase=RU_WELCOME_TOUR;w->lesson=0u;w->overlay=1u;}
+   else {w->phase=RU_WELCOME_OFF;return RU_WELCOME_ACTION_FINISH;}
+  }
+  return RU_WELCOME_ACTION_NONE;
+ }
  if(w->phase==RU_WELCOME_BACKUP||w->phase==RU_WELCOME_PROCEED||w->phase==RU_WELCOME_FORMAT||w->phase==RU_WELCOME_CRT){
   if(turn>0)w->choice=1u;
   else if(turn<0)w->choice=0u;
@@ -52,7 +78,7 @@ static uint8_t ru_welcome_step(RuWelcome *w,int32_t turn,uint32_t pressed,
   if((uint32_t)(now-w->result_since_ms)<1500u)return RU_WELCOME_ACTION_NONE;
   w->phase=RU_WELCOME_CRT;w->choice=w->crt;break;
  case RU_WELCOME_CRT:w->crt=w->choice;w->phase=RU_WELCOME_READY;break;
- case RU_WELCOME_READY:w->phase=RU_WELCOME_OFF;return RU_WELCOME_ACTION_FINISH;
+ case RU_WELCOME_READY:w->phase=RU_WELCOME_TOUR_ASK;w->choice=0u;break;
  default:break;
  }
  return RU_WELCOME_ACTION_NONE;

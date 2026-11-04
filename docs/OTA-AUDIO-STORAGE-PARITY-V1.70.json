@@ -1,0 +1,27 @@
+{
+  "base": "RUPTURE V1.69",
+  "release": "RUPTURE V1.70",
+  "unchanged_audio_ota_storage_files": {
+    "audio_core.c": "55f84e7e5f0640e776c4cbac3869dfe85495d1b3a58faee657afc5e32ebb8810",
+    "audio_target.c": "57dc6d4915823017445ea77a78744045d4e80d913d3bd6d02a266b9f2a30702c",
+    "native_fx.c": "5792774eac78f9c9c0d41fa3faf08fad1a078d9693dfb80f6ba7180ea7eef6de",
+    "native_cxs_q15.c": "8625829401e27711263b2a66dd18cd6180b2b590752f49214b9d036389a851c1",
+    "native_performance.c": "1b9b5b361b015062fc24834be82ee859e75f4872137df4a427c3ccebf62c1565",
+    "native_project_codec.c": "7071116cfb9f20c3c142532ff9f1aea5c37fabb2abac6e6b720a9679f5e2423c",
+    "native_panel_midi.c": "ebb9179f16409648c961c6b5b5af349147eb22d308346a6d2f5dc2235a38cb9b",
+    "native_performance_midi.c": "8a40c5aec6538190012d8ab0f2a73cfd67edd3e72eca91a378ddc46add5b18a6",
+    "native_seq_ui.c": "fddc45ef356acbf85415f61b799381b2eda5c4c947fc506dd346c66cdfbc124b",
+    "native_wave_fx.c": "5ce8a233c26bed39dc0e45d812802075e76fb7d53c67f40bfc4d70aab66c2294",
+    "native_pattern_bank.c": "271b62652ace0f63f06f38df3811151ef34fdcc46a345801dcf6d1b4a771b0d4",
+    "native_factory.c": "7d417701b90be87775a89f8d1b42599c842eefed5071239ae02d82f9ab2e1154",
+    "native_digest.c": "00719924709983caeb80aed873b29f37974541e689088787836864d53cedca17",
+    "wave_store.c": "c7a7a8574d2e1cb93872fe9c5683bc6461552326b1b80d73b6ec5fe03366fb0a",
+    "rupture_eq2.c": "1b356c5be475204eb1019bffea9cd219fba82478617d83d324137daf18cc1c84",
+    "hal/fm1_flash.h": "2fe7de1edcf7409991380bc132f0e14b8a3ca89f024f28d73adcca534315751e",
+    "hal/fm1_usb.h": "12b9b31bde0dbb15fa15379a215eaec11e882bd33c18f4b250fa9e3a47c202f0",
+    "hal/fm1_input.h": "7c3239642816e7cfe75a93518cb7a2d5880d722901d4e9bf88cb7f25bc2d6090",
+    "hal/fm1_irq.h": "0b2191dd30b5b992782bc334ec542e1027947124be469e9270962f5ce9e857a8",
+    "hal/fm1_isr.S": "2aad84e24a51c79b187ef3faf9d1bae108b1389bf78659f6b02dbbd95d8a7d7b"
+  },
+  "source_art_unchanged_count": 60
+}

@@ -9,9 +9,10 @@
 static inline uint16_t ru_lcd_animation_period(uint8_t pressure,uint8_t missed){
  /* Only smooth knob interpolation and the splash require a rate budget.
   * This value must NEVER be applied to individual sprite changes. */
- if(missed>=3u||pressure>=20u)return 180u;
- if(missed||pressure>=9u)return 100u;
- return 50u;
+ (void)pressure; /* High max DSP percent is not a DMA underrun. */
+ if(missed>=3u)return 100u; /* Actual repeated lateness: protect audio. */
+ if(missed)return 50u;
+ return 25u; /* 40 FPS target for knob easing at healthy DMA. */
 }
 static inline uint16_t ru_lcd_idle_period(uint8_t pressure,uint8_t missed){
  if(missed>=3u||pressure>=20u)return 750u;
@@ -30,8 +31,9 @@ static inline uint8_t ru_lcd_should_paint(uint32_t now,uint32_t last,
  if(animation_changed){
   /* Never confuse animation with idle redraw. Real repeated DMA misses
    * still impose the original protective cap to avoid audio dropouts. */
-  const uint16_t period=missed>=3u?180u:
-    (missed>=1u||pressure>=20u)?75u:pressure>=9u?50u:25u;
+  /* A high DSP MAX is historical and alone must not slow graphics.
+   * Throttle only when actual DMA deadline misses persist. */
+  const uint16_t period=missed>=3u?100u:missed?50u:25u;
   if(elapsed>=period)return 1u;
  }
  if(visual_moving && elapsed>=ru_lcd_animation_period(pressure,missed))return 1u;

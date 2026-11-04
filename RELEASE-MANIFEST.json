@@ -1,14 +1,14 @@
 {
-  "version": "1.67",
+  "version": "1.76",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.67.fwsc",
+  "firmware_file": "RUPTURE-V1.76.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "e5c1dd4c06076bd78c91b1cf1b0730573eed2b85eccc75d8e6d35ade0f14c2bf",
-  "app_bytes": 319496,
-  "app_sha256": "561af927557885b17108e9bfe935dfd578489419769263deb97c83cbda814f00",
-  "native_screens": 71,
+  "firmware_sha256": "8cb7b8bb7369a84398a0e2bcd265c18d4c43a4ba858a57395388f2fe31a80536",
+  "app_bytes": 345868,
+  "app_sha256": "8033eef3b34e147ad7a4e857f6ee8facefcde2c0bc437dbd401140780bd290f7",
+  "native_screens": 125,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
   "auto_save_min_interval_ms": 60000,
@@ -303,5 +303,6 @@
     "hardware_verified": false
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
-  "release_ready": false
+  "release_ready": false,
+  "release_note": "V1.76: nearest-grid live note quantization with key timestamps/swing; downbeat note handoff after two-bar count-in; faster half-bright LED multiplex scan; preserved trusted OTA and storage."
 }

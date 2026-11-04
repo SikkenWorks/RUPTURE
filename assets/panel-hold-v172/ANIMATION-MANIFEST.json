@@ -1,0 +1,20 @@
+{
+  "version": "1.72",
+  "size": [
+    224,
+    30
+  ],
+  "frames": 8,
+  "ENV": "one-way smoke/pebble settling, last frame static (wall shake from UI blitter)",
+  "LFO": "unchanged V1.70 sprites",
+  "sha256": [
+    "fdad2d7fe133911a7e590949af3652f5f37683db693d6eb7389d8f00e4e45fe0",
+    "18e2d347a324b409a0e8f5ab683e343e2b6e468df0e7344c9a425685d9cdf3cd",
+    "c4cc28cffb7eb769b15485f4139e146505ba703d6635bffc2b3e39b514ba4212",
+    "ea3377ef8a5742c4e3f7a744e79788f8273dc92c1047add65b75dac87e4bebb1",
+    "278e1d5a438996a4be4ad23ffca1407ec30813ca29589a0d48ab1ae0320dddcd",
+    "320efd9a022213bddf4f68329068b792e47f84e8faef3b23b1fee8cfc3f5424e",
+    "18552d0d72db85711c61b7c11913e6721328ceff444d6814e017c9ad98159dc9",
+    "87831fc36c352d0842f6b985c96c0e207e3232e541025d85051dffa41f62c53e"
+  ]
+}

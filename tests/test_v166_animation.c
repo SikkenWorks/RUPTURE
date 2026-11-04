@@ -59,8 +59,10 @@ static void test_panel(uint8_t mode,uint8_t page){
 }
 static void test_latched_frame(void){
  uint8_t pending=0;uint32_t last_paint=0;uint32_t paint=0;
- // Simulate an animation frame arriving just below the actual DMA
- // guard (180ms). It MUST still be eligible when that guard expires.
+ // V1.69 intentionally shortened the real-DMA-miss guard to 100ms.
+ // An animation frame arriving earlier stays pending, then gets painted
+ // at the first permitted 25ms service tick. Historical 180ms assert was
+ // for the older V1.66 rate limiter and is no longer a valid expectation.
  for(uint32_t t=0;t<=400;t+=25){
   uint8_t new_frame=(t==25);
   if(new_frame)pending=1;
@@ -68,7 +70,7 @@ static void test_latched_frame(void){
    pending=0;last_paint=t;paint++;
   }
  }
- assert(paint>=1&&last_paint>=180&&!pending);
+ assert(paint>=1&&last_paint>=100u&&!pending);
  assert(!ru_lcd_should_paint(5,0,0,0,0,0,0));
  assert(ru_lcd_should_paint(25,0,0,1,0,0,0));
 }

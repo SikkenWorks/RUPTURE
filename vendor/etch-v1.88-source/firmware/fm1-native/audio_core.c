@@ -1,5 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "audio_core.h"
+
+#ifdef RUPTURE_BUILD
+#include "rupture_metronome.h"
+/* Two single-byte published settings; metronome state belongs to audio ISR
+ * only. Stored outside the saturated FM1 DSP pool. */
+volatile uint8_t ru_metronome_enabled=0u;
+volatile uint8_t ru_metronome_volume=65u;
+static struct RuMetroClick ru_metronome_click;
+#include "rupture_countin.h"
+volatile struct RuCountIn ru_countin={0};
+#endif
 #ifdef RUPTURE_BUILD
 #include "rupture_mono_policy.h"
 #endif
@@ -705,6 +716,9 @@ static uint8_t perf_tick(struct etch_native_audio *s,const struct etch_native_co
   uint16_t step=s->perf_step;
   s->perf_current_step=(uint8_t)step;
   s->perf_played=1u;
+#ifdef RUPTURE_BUILD
+  ru_metronome_step(&ru_metronome_click,step,c->seq_rate,ru_metronome_enabled);
+#endif
   if(c->pattern){
    const struct etch_seq_step *entry=&c->pattern->steps[step];
    s->seq_lock_mask=entry->lock_mask&63u;
@@ -902,6 +916,14 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
  for(uint32_t f=0;f<frames;f++){
   if(s->clock_samples<1000000u)++s->clock_samples;
   if(s->clock_samples>44100u&&s->clock_running){s->clock_running=0;}
+#ifdef RUPTURE_BUILD
+  /* Run the two-bar count-in on the very same PCM clock as the sequencer.
+   * No sequencer triggers/locks/voices occur until the ninth beat boundary.
+   * force_seq holds transport across a UI control-block publication, so
+   * the first recorded step can never be delayed by the LCD/UI frame. */
+  if(ru_countin.active)ru_countin_sample(&ru_countin,&ru_metronome_click,c->tempo);
+  if(ru_countin.force_seq){perf_control.seq_run=1u;perf_control.clock_follow=0u;}
+#endif
   uint8_t rates_changed=perf_tick(s,&perf_control,keys);
   if(rates_changed)native_rates(s,c,increments,modincrements);
   /* V1.76 ORGANIC drift: 32-sample control-rate smoothstep between
@@ -1433,6 +1455,15 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   uint32_t effective_gain=(uint32_t)((gain*(uint32_t)s->idle_gain+16383u)/32767u);
   l=(int16_t)clamp15(((int32_t)l*(int32_t)effective_gain)/32768);
   r=(int16_t)clamp15(((int32_t)r*(int32_t)effective_gain)/32768);
+#ifdef RUPTURE_BUILD
+  /* The metronome is outside the monophonic voice allocator, synth ADSR,
+   * idle gate, FX and patch changes. It can sound even on a rest step. */
+  if(ru_metronome_enabled){
+   int32_t click=ru_metronome_sample(&ru_metronome_click,1u,ru_metronome_volume);
+   if(click){l=(int16_t)clamp15((int32_t)l+click);
+             r=(int16_t)clamp15((int32_t)r+click);}
+  }else ru_metronome_click.sounding=0u;
+#endif
   if(stereo){out[f*2]=l;out[f*2+1]=r;}else out[f]=l;
  }
 }

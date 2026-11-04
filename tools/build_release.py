@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild RUPTURE release artifacts from the verified manifest and native app.
 
-The existing updater and protected bootheader are byte-identical to V1.36;
+The existing updater and protected bootheader are byte-identical to verified V1.71;
 this script only packages the already compiled/validated release and site.
 """
 from pathlib import Path

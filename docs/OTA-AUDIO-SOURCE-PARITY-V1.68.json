@@ -1,0 +1,16 @@
+{
+  "current_version": "1.68",
+  "reference_version": "1.67",
+  "reference": "RUPTURE-FM1-V1.67-FULL-SOURCE-FWSC.zip",
+  "unchanged_files": 161,
+  "modified_files": [
+    "vendor/etch-v1.88-source/firmware/fm1-native/bringup.c",
+    "vendor/etch-v1.88-source/firmware/fm1-native/rupture_ui.c"
+  ],
+  "added_files": [
+    "vendor/etch-v1.88-source/firmware/fm1-native/rupture_seq_entry.h",
+    "vendor/etch-v1.88-source/firmware/fm1-native/rupture_seq_redraw.h"
+  ],
+  "removed_files": [],
+  "ota_and_audio_sources_unchanged": true
+}

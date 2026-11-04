@@ -14,12 +14,14 @@ int main(void){
  no(&w);ok(&w);assert(w.phase==RU_WELCOME_SAD); /* explicit NO :( branch */
  ok(&w);assert(w.phase==RU_WELCOME_CRT);
  yes(&w);ok(&w);assert(w.phase==RU_WELCOME_READY&&w.crt==1u);
+ assert(ok(&w)==0&&w.phase==RU_WELCOME_TOUR_ASK);
  assert(ok(&w)==RU_WELCOME_ACTION_FINISH&&w.phase==RU_WELCOME_OFF);
  /* Backup YES and format NO: always continue, no erase action. */
  w=(RuWelcome){.phase=RU_WELCOME_INTRO};ok(&w);yes(&w);ok(&w);
  assert(w.phase==RU_WELCOME_FORMAT);no(&w);ok(&w);
  assert(w.phase==RU_WELCOME_CRT);no(&w);ok(&w);
  assert(w.phase==RU_WELCOME_READY&&w.crt==0u);
+ assert(ok(&w)==0&&w.phase==RU_WELCOME_TOUR_ASK);
  assert(ok(&w)==RU_WELCOME_ACTION_FINISH);
  /* Select YES format, require uninterrupted SAVE hold for three seconds. */
  w=(RuWelcome){.phase=RU_WELCOME_FORMAT};yes(&w);ok(&w);

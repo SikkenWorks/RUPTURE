@@ -1,3 +1,75 @@
+# RUPTURE V1.76 — Recording Quantization, First Downbeat & Steady LEDs
+
+- **Recording quantization:** note-ons snap to the nearest step rather than the delayed main-loop cursor. RUPTURE uses the hardware note-contact timestamp and current audio sample-clock phase, including tempo/swing and the wrap between first/last steps. Sustain tracks quantized note-on origins and does not count a future step before it starts.
+- **Count-in downbeat capture:** the ISR-to-UI transition now reads the live audio step even before the UI publishes transport ON; it no longer substitutes the unrelated edit cursor. A key pressed within the last 50 ms before step 1 can be captured on the first step once it remains held. The first-step guard prevents the timestamp from wrapping a valid downbeat hit back to the previous sequence's last step.
+- **Count-in transport latch:** after the UI acknowledges the start, the ISR's temporary force-PLAY flag is released, so later PLAY/STOP controls remain effective.
+- **Intermediate LED brightness:** the existing 11-column LED multiplex scan uses 1-in-2 cycles (~455 Hz), or 1-in-3 in DIM LO (~303 Hz), rather than 1-in-8 (~114 Hz) / 1-in-12 (~76 Hz). No extra timer interrupt, LCD draw, audio callback, PWM timer or new buffer is added. Felucca HAL and boot are unchanged; RUPTURE sets compile-time overrides.
+- Preserves V1.75 two-bar count-in, REC/PLAY behavior, independent click, sustain, pattern shift, step clear, ENV graphics, storage codec, protected 16-KiB boot header and exact trusted OTA loader. Native/host verification only; physical LED perception, key feel, timing and device recovery still require tests.
+
+# RUPTURE V1.75 — Armed REC & Sample-Accurate Two-Bar Count-In
+
+- Pressing REC on a stopped sequencer now ARMS live recording without starting playback. Press PLAY after REC to hear two bars of quarter-note clicks. The grid and physical SEQ key flash with the sample-clocked ticks; playback and recording begin together on step 1 after exactly eight beats.
+- When the sequencer is already playing, REC still toggles live recording immediately, with no count-in. REC or PLAY during an active count-in cancels it; the synth can be played during countdown without capturing notes.
+- The original independent PCM metronome mixes outside the monophonic synth. PRESETS still controls BPM; ALGORITHM changes metronome volume while armed/recording. Transport changes do not allocate voices, write flash or change the project format.
+- Updated 43-page Quick Tour sequencer lesson, 13 HELP cards, cheat sheet and README. Protected bootheader and trusted OTA loader from V1.71 are retained; hardware validation remains necessary.
+
+# RUPTURE V1.74 — Live Sustain, SEQ Shift & Welcome Overlay
+
+- **Live sustain recording:** detect key holds and releases against the sequencer audio playhead; record their length inside the existing note data without creating new triggers or discarding HOLD/lock lanes. Every take is session-local until the user saves.
+- **SEQ long press:** removed the shortcut that opened the sequence library. **SAVE** on SEQUENCER still opens the eight sequence slots.
+- **SEQ + PRESETS:** while physically holding SEQ, turning PRESETS shifts the entire current sequence left or right one step per detent, wrapping around. It preserves note durations, local HOLD events, explicit HOLD origin references, parameter locks, and other pattern settings. The dormant pattern buffer is filled outside the audio interrupt; only the final pattern pointer is swapped atomically. PRESETS still controls BPM when SEQ is not held.
+- **Welcome-overlay:** found that previously completed onboarding is intentionally skipped using persisted `welcome_done`. Returning users now see a short, *read-only*, non-destructive WELCOME screen at normal boot (the complete setup wizard remains only for first-time users). No flash format or forced setup.
+- Quick Tour SEQUENCER lesson, HELP cards, README, cheat sheet and GitHub Pages documentation updated. METRONOME control stays ALGORITHM during REC; OTA and bootheader retained.
+- Host tests / native build results are documented separately. Hardware behaviour remains unverified.
+
+# RUPTURE V1.73 — PRESETS BPM & ALGORITHM Live-REC Click Volume
+
+- During active live sequencer recording, **PRESETS keeps its existing global BPM role**, with no special REC exception. Changes affect sequencer tempo and the beat-synchronised metronome together.
+- **ALGORITHM controls metronome volume (0–100) only while live recording**. Encoder events are consumed before normal sequencer HOLD and other page controls; outside live recording the original ALGORITHM mappings are unchanged.
+- Updated the native SEQUENCER footer, Quick Tour SEQUENCER lesson (including space for its instruction), onboard HELP with a dedicated LIVE REC CLICK card, README, cheat sheet and website embedded documentation.
+- No changes to the separate metronome PCM mixer, monophonic synth DSP, existing ENV PNGs/animation, sequencer step-clear logic, project/sequence storage, OTA logic, protected bootheader or OTA loader. Physical FM1 testing remains required.
+
+# RUPTURE V1.72 — ENV Settling, Live REC Metronome & Full Step Clear
+
+- ENV: introduced eight reworked, pixel-exact 224×30 monochrome PNG smoke/debris settling frames derived from the original wall. The smoke/falling pieces disappear after the eighth frame. The wall maintains its subtle, UI-only 1-pixel tremble throughout Note HOLD, and the original Note OFF closing frames remain unchanged. PLAY/LFO/SOUND SHAPE sprites and all existing opening/closing frames are untouched.
+- Live REC: a quarter-note metronome follows the actual native sequencer's BPM/step triggers. It is rendered as a separate short audio click **after** the mono synth's voice, effects and idle gate. It never allocates, steals, silences or retriggers synth voices. It runs only in live recording, including during sequencer rests. PRESETS controls its independent 0–100 session volume while recording. Ordinary PLAY has no click.
+- Sequencer: pressing SEL while stopped clears the whole selected step, all triggers, local HOLDs and six parameter locks, and safely detaches the directed HOLD links from other steps that reference the cleared triggers. Unlike V1.71, it does not delete only the first note. Step clear is blocked during transport/REC. No project format migration or storage-region changes.
+- Added bounded host tests for metronome independence/tempo subdivision, full-step clearing, original asset parity, settling, sustained vibration and release behavior. Native FM1 builds and exact firmware OTA-container checks are required before any hardware claim; physical FM1 installation remains unverified.
+- OTA: no modifications to native OTA handler, bootloader/header, update protocol, firmware identity (`FM-1_968`), flash layout, recovery or persistent data codec.
+
+# RUPTURE V1.71 — Optional On-Device Quick Tutorial
+
+- After the original first-run CRT/storage setup, added an opt-in **VIEW QUICK TUTORIAL?** YES/NO question. NO immediately completes setup; YES enters 43 read-only real-screen previews. No setup data is written until the existing first-run finish path, and no flash format can be triggered in the tutorial.
+- Each lesson shows the existing native 240×240 1-bit screen, the actual route into that page, and descriptions of functional K1–K4 encoders. All eight FX receive separate chapters. Non-editable screens explain their purpose without inventing knob functions.
+- Compact bottom overlay: **SEL** next, **SELECT** previous/next, **ALGORITHM** full-screen text toggle, **HOME** skip/exit. No parameter, patch, sequencer, storage, MIDI or OTA actions are executed by tutorial navigation.
+- Added **GLO → QUICK TOUR** so existing installations can replay the walkthrough; replay explicitly avoids altering the welcome setting or writing the global settings journal.
+- The four animated scene renderers, knob focus/easing and DSP remain unchanged. The protected bootheader, trusted OTA loader, V15 return path and OTA behavior remain subject to native regression testing. Physical FM1 and V15 tests are still required.
+
+# RUPTURE V1.70 — ENV Smoke Settling & LFO Falling Dirt
+
+- **ENV:** after the original wall-break opening animation, eight new original 224×30 monochrome hold frames make the airborne dust drift down and disperse. The last frame is pinned, motionless, for as long as a note remains held. Note OFF still uses the original ENV closing frames 13–19; short taps also close safely.
+- **LFO:** after the original sinkhole opens, eight new original 224×30 monochrome frames show small rocks continually falling into the dark hole. They loop throughout Note HOLD. Note OFF retains the original reverse sequence down to the intact road.
+- Added 16 pure 1-bit PNG source sprites, loop previews and a reproducible generator. The source graphics are packed into read-only native firmware ROM; no particle calculation, extra framebuffer, work in the audio ISR or new DSP overhead.
+- The 20 original sprites of each existing panel animation (PLAY, ENV, LFO, SOUND SHAPE) remain byte-identical. The original HOLD animation of PLAY and SOUND SHAPE is also unchanged. The LFO shake continues during falling dirt; ENV shake ceases once dust has fully settled.
+- Added actual native renderer and scheduler regression tests for settling, endless loops, immediate release, short taps and the on-screen sprite bytes. OTA/recovery identity and trusted loader are unchanged; a physical FM1 and V15 recovery test remain required.
+
+# RUPTURE V1.69 — Exact PCM DSP & Smooth Knob Animations
+
+- Precomputed compressor attack, release, threshold and ratio coefficients are refreshed on parameter changes rather than calculated for every PCM sample. The compressor transfer function, envelope rate, feedback and gain remain identical to V1.68. Existing idle bytes in the native FX state are reused; FX state footprint is unchanged.
+- Replaced the four-knob 45×45 per-pixel geometry scan with exactly the same 332 foreground pixels per rotary outline. The entire 240×240 native framebuffer is pixel-identical to V1.68 across 42 non-versioned screen fixtures, including FX, EQ and knob focus.
+- Knob animation targets **40 FPS** (25 ms main-loop service) when DMA deadlines are healthy, independently of the historical DSP MAX. Time-based needle easing stays responsive when some LCD frames are late. Presses and parameter text remain immediate.
+- PLAY, ENV, LFO, SOUND SHAPE loops and shake retain their original progression. Only actual repeated DMA deadline misses trigger the existing audio-first backoff (50/100 ms), never just a high historical DSP MAX.
+- Tests: 800,000 stereo PCM frames with live compressor automation match V1.68 sample hashes, and 12 additional FX scenarios and 42 native framebuffers match exactly. Physical FM1 CPU load, sustained LCD FPS, audio deadlines and cross-firmware/V15 recovery still require hands-on testing.
+- The trusted OTA loader, protected 16 KB bootheader and firmware identity `FM-1_968` are preserved.
+
+# RUPTURE V1.68 — Sequencer Step 1 & REC Playhead Fix
+
+- **Step 1 note removal:** the RUPTURE sequencer key-toggle can now delete a trigger at zero-based step 0 even when older directed HOLD links reference it. Exactly those dependent links are detached, while unrelated triggers, independent legacy HOLD lanes and parameter locks remain unchanged. The same behavior applies to all 128 visible steps.
+- **Explicit stopped-step delete:** press **SEL** in the stopped SEQUENCER to remove the displayed note on the selected step. This is also available on STEP 1; no delete is performed by SEL during live recording. Tapping the same note key retains its normal toggle behavior when the transport is stopped.
+- **REC playhead animation:** the visible sequencer cursor now requests an LCD repaint when the audio engine advances a step; a deferred frame remains pending until painted. The high-load LCD safety cap is retained. Sequencer LEDs, audio clocks, MIDI, DSP and flash persistence code are unchanged.
+- **Clear recording state:** the SEQUENCER header shows REC instead of PLAY while recording. The native SYSTEM INFO version now reads V1.68.
+- OTA and recovery packaging retain the byte-identical 16 KiB protected bootheader and trusted OTA loader. Physical FM1 verification is still required.
+
 # RUPTURE V1.67 — Consistent Knob Focus
 
 - Fixed the actual issue: K1–K4 focus is now recorded for **every editable rotary page**, including all eight FX choices. The internal FX-page forwarding can no longer hide the focus indication.
