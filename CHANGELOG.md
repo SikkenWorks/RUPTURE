@@ -1,3 +1,53 @@
+# RUPTURE V1.82 — First-Boot Welcome Restore
+
+- Replaced the legacy-only `welcome_done` boot decision with a CRC-checked V1.82-specific completion marker in the existing device settings journal. Legacy V1.81 completion is now treated as requiring the V1.82 wizard once; normal subsequent boots skip it.
+- Complete Welcome, backup confirmation, safe optional format choice, CRT preference and optional 43-screen Quick Tour are restored on first V1.82 startup. Valid project storage is not erased by the wizard, and format remains an explicit user action.
+- New settings records preserve existing volume, autosave, screensaver, autoload-project and CRT controls; legacy records remain readable. No new flash partition or storage payload format.
+- Limitation: an V1.82 → V15 → *same V1.82* round-trip cannot always be distinguished from a restart if V15 preserves the journal. Reinstalling exactly the same firmware cannot be guaranteed to force the wizard automatically.
+- Host regression covers legacy marker migration, restart, two project records, torn writes and previous journal compaction. FM1 first-boot hardware behavior is not yet verified. Original OTA code, trusted loader, protected header, synth and reverb processing remain unchanged.
+
+# RUPTURE V1.81 — Rapid-Note Headroom & LCD DMA Coalescing
+
+- **Fast-note mono DSP:** compute pitch increments and organic/LIVING control state only for RUPTURE's single active mono voice, rather than eight unused ETCH polyphonic slots. MIDI note-on, note-off, legato, step gates and all sound processors remain unchanged.
+- **Timed mono gates:** do not rewrite the held-note stack on each audio sample when no sequence note expired. On a genuine gate expiration compact the stack exactly as before, at the same sample.
+- **LCD contention:** rapid key presses previously marked every frame as an urgent SPI LCD update, bypassing UI pressure throttling. Coalesce only visual updates during detected note bursts to at most ~13 fps (~10 fps under audio pressure). User interface actions retain priority; no change to audio/MIDI event handling, modulation, or sample rate. Animation frames are skipped only as redundant intermediate displays, not removed from assets.
+- **Reverbs:** SPRING, ROOM and HALL DSP files and audio algorithms untouched. Project storage, bootheader and OTA loader untouched.
+- **Host verification:** byte-identical PCM output in a 512,000-frame rapid MIDI/step-gate/sustain/FX scenario, host note-burst UI budget tests, native FM1 crossbuild. Physical DMA LATE/GUARD and DSP cycle budget still need confirmation; cannot guarantee zero hardware underruns from host tests.
+
+# RUPTURE V1.80 — ROOM / SPRING Rebuild & Fixed-Point DSP
+
+- **ROOM:** replaced the shallow single-ring reflections with four independently delayed, damped lines in an energy-distributing Householder FDN. SIZE alters line lengths; DECAY controls loop feedback. A fully wet ROOM return no longer relies on low-level taps from an unrelated reverb design.
+- **SPRING:** replaced sign-alternating feedback with two differently sized cross-coupled delay loops and cascaded short allpass dispersers, including loop-dependent re-dispersion. Damping and restrained spectral shaping target a more usable spring-like tail rather than the previous brittle metallic sound.
+- **HALL:** preserved the existing algorithm and its native PCM behavior. The three engines share the same established 4,096-sample tank and 64-sample diffuser; just one engine processes each frame. K1 TYPE, K2 DECAY, K3 SIZE and K4 MIX remain unchanged. Project format / default legacy-HALL migration unchanged.
+- **CPU work:** replaced redundant 64-bit Q15 calculations in phaser, tremolo, auto-wah, tape and decimator with *exact* bounded 32-bit products. Removed per-sample SIZE/DECAY-to-gain conversions from ROOM/SPRING: coefficients are cached at the parameter-change boundary. No new oscillator, FX instance, reverb PCM buffer or UI ISR.
+- **Validation:** native FM1 crossbuild, 2-million-frame topology switching and bounds test, SIZE/DECAY response tests, high-gain SUB+FX stress for all three reverb engines, Hall sample-for-sample golden comparison, and native package/hash checks. Original OTA source, protected bootheader and trusted loader preserved.
+- **Caveat:** ROOM uses a more capable delay network and can be slightly more expensive. Hardware DSP MAX, live DMA LATE/GUARD behavior and subjective realism still require actual FM1 measurements and listening. Never claim guaranteed zero underruns without physical testing.
+- See `docs/TEST-V1.80.md` for results and limitations. Includes original synthesized stereo WAV comparisons in `demos/`.
+
+# RUPTURE V1.79 — CPU Headroom / SUB DRIFT / DMA Safety
+
+- Optimized both suboscillator Q16 pitch increments using a **sample-exact** saturating 32-bit partial-product fast path. Continuous per-sample drift, phase, detune, octave, note timing and waveform remain identical to V1.78 (700,000+ tests and identical long-run PCM hash).
+- Optimized eleven additional global FX dry/wet interpolations and both channels of the three independent reverbs using mathematically exact Q15 32-bit operations. An out-of-range guard retains original 64-bit precision when necessary. Full all-effects PCM output matches the V1.78 engine byte-for-byte in stress scenarios, including reverb switches.
+- Coalesced **knob-only LCD redraws** under recent measured audio wall-time pressure (50/75/100ms limits, plus nonessential art capped at 20fps). The knob parameters continue publishing at normal input speed; urgent navigation, metronome, notes, screen state and OTA are not delayed. This targets SUB + DRIFT edits under heavy CPU/DMA pressure without reducing audio DSP quality.
+- No DSP buffer/FX topology/project codec/sequence/OTA changes. Hardware DMA LATE and GUARD must be measured on the actual FM1; no zero-underrun guarantee before hardware soak testing.
+- See `docs/TEST-V1.79.md` for exact PCM parity, native tests, integrity and remaining physical validation.
+
+# RUPTURE V1.78 — Three Independent Reverb Engines
+
+- Replaced the previous single shared reverb algorithm with three **different real DSP topologies**: SPRING (dispersive allpass + inharmonic sign-alternating feedback), HALL (Schroeder diffusion + filtered multi-tap late-feedback tank), ROOM (sparse specular early reflections + short damped feedback comb).
+- K1 selects the algorithm without overwriting the user's SIZE or DECAY; K2 = DECAY, K3 = SIZE, K4 = true 0–100% dry/wet. At full wet there is no direct oscillator feed. Only one algorithm runs per sample.
+- The three engines use the existing 4096-sample reverb ring, 64-sample diffuser and filter states; no new SRAM, effect instances, per-voice work or external dependencies. Actual FM1 DSP/DMA performance remains subject to physical measurement.
+- The selected engine is now saved for project-global and per-preset FX by using two previously-unused bits of the existing 1-byte routing field, retaining the PJT34 record length and CRC. Legacy routing values 0/1 decode as HALL and remain loadable. Older RUPTURE releases may reject **newly saved** projects with SPRING or ROOM, so make backups before downgrading.
+- The 16-KiB protected bootheader, trusted OTA loader, OTA native code, device identity and all other synthesizer and sequencer modules are preserved.
+- See `docs/TEST-V1.78.md` for host DSP, storage, throughput and firmware verification. Not physically verified on FM1.
+
+# RUPTURE V1.77 — Navigation, Warm SAW & Usable Reverb
+
+- SELECT on a normal screen with no assigned SELECT behavior now opens the identical scrolling screen list used on PLAY. Dedicated SELECT functions for FX, SEQ, project/sequence slots, help, settings and safe dialogs remain unchanged; no interception during OTA/recovery/welcome.
+- SAW oscillator timbre: the original one-pole low-state and bandlimited SAW are retained. Rebalanced BRIGHT response puts a warmer filtered bass core in the lower/middle travel, while EDGE and SOUND SHAPE are less prone to premature hard clipping. No extra oscillator, delay line, wavetable or filter state. The original CXS oscillator code is untouched.
+- Reverb: SPRING, HALL and ROOM tonal presets use more distinct SIZE/DECAY values and expanded existing tap spacing. A much more audible five-tap wet return, with stable 0% dry / 100% wet endpoints, fixes the perceived volume-drop-only behavior. The existing single 4096-sample tank, five reads and stereo return path remain in place; no per-voice reverb or larger buffers. These are character presets within the same algorithm, not separate physical spring and hall simulations.
+- Builds and host regression/measurement results are in `docs/TEST-RESULTS-V1.77.md`. No project storage-layout change, firmware identity change, bootheader change or trusted OTA loader change. Hardware listening/CPU/DMA verification is still required.
+
 # RUPTURE V1.76 — Recording Quantization, First Downbeat & Steady LEDs
 
 - **Recording quantization:** note-ons snap to the nearest step rather than the delayed main-loop cursor. RUPTURE uses the hardware note-contact timestamp and current audio sample-clock phase, including tempo/swing and the wrap between first/last steps. Sustain tracks quantized note-on origins and does not count a future step before it starts.

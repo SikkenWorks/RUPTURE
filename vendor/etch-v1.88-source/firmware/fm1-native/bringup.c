@@ -216,6 +216,7 @@ static void etch_panel_commit(void){
 #include "rupture_ui.c"
 #include "rupture_panel_anim.h"
 #include "rupture_lcd_budget.h"
+#include "rupture_note_paint_budget.h"
 #include "rupture_seq_entry.h"
 #include "rupture_seq_redraw.h"
 #include "rupture_encoder_feel.h"
@@ -1090,7 +1091,7 @@ static void native_project_restore(void){
  native_motion_recording=0;native_motion_playing=0;
  native_harmony=native_project_cfg.harmony;
  native_mono_mode=(uint8_t)(native_project_cfg.mono_mode!=0);
- if(native_project_cfg.source_version>=3)native_fx_settings=native_project_cfg.global_fx;
+ if(native_project_cfg.source_version>=3)native_fx_settings=native_project_cfg.global_fx;ru_reverb_type=etch_fx_reverb_type(&native_fx_settings);
 #ifdef RUPTURE_BUILD
  ru_fx_restore_from_project();
 #endif
@@ -1488,7 +1489,7 @@ static void native_patch_blend_apply(int32_t *m,int32_t *d){
  uint8_t fx_slot=pct<50u?native_blend_a:native_blend_b;
  for(uint32_t w=0;w<3;w++)if(native_project_cfg.patch_fx_valid&(1u<<fx_slot))
   native_editor.fx[w]=native_project_cfg.patch_fx[fx_slot][w];
- native_fx_settings=native_project_cfg.preset_fx[fx_slot];
+ native_fx_settings=native_project_cfg.preset_fx[fx_slot];ru_reverb_type=etch_fx_reverb_type(&native_fx_settings);
  *m=native_blend_u16(a->morph,b->morph,pct);
  *d=native_blend_u16(a->depth,b->depth,pct);
  native_env_ms[0]=native_blend_u16(a->attack_ms,b->attack_ms,pct);
@@ -1615,7 +1616,7 @@ static uint8_t etch_manager_apply(void){
   for(uint32_t j=0;j<128u;j++)native_editor.points[w][j]=v->points[w][j];
   native_editor.fx[w]=v->wave_fx[w];
  }
- native_fx_settings=v->global_fx;
+ native_fx_settings=v->global_fx;ru_reverb_type=etch_fx_reverb_type(&native_fx_settings);
  native_preset_dsp.slot[native_patch_slot]=v->dsp;
  native_project_cfg.organic=v->dsp.organic;
  native_project_cfg.living=v->dsp.living;
@@ -1671,11 +1672,11 @@ static void native_patch_load(uint8_t pattern_prepared){
    if(native_project_cfg.patch_fx_valid&(1u<<native_patch_slot))
     native_editor.fx[w]=native_project_cfg.patch_fx[native_patch_slot][w];
   }
-  native_fx_settings=native_project_cfg.preset_fx[native_patch_slot];
+  native_fx_settings=native_project_cfg.preset_fx[native_patch_slot];ru_reverb_type=etch_fx_reverb_type(&native_fx_settings);
  }else{
   /* PJT12 and older: the preset still references its original wave slots.
    * Global FX fall back to the legacy project's shared FX. */
-  native_fx_settings=native_project_cfg.global_fx;
+  native_fx_settings=native_project_cfg.global_fx;ru_reverb_type=etch_fx_reverb_type(&native_fx_settings);
   /* Legacy/factory preset without an independent FX snapshot: do not
    * inherit a Wave C sculpting effect or FX modulation from the project.
    * User-saved PJT17 snapshots above retain their explicit settings. */
@@ -1817,12 +1818,12 @@ static void parameters(void){
  else if(native_page==ETCH_UI_FX_CHORUS){
   names[0]="MIX";names[1]="RATE";names[2]="DEPTH";names[3]="ROUTE";
   values[0]=native_chorus*100u/32767u;values[1]=native_fx_settings.chorus_rate*100u/32767u;
-  values[2]=native_fx_settings.chorus_depth*100u/32767u;values[3]=native_fx_settings.routing;
+  values[2]=native_fx_settings.chorus_depth*100u/32767u;values[3]=etch_fx_route(&native_fx_settings);
  }
  else if(native_page==ETCH_UI_FX_DELAY){
   names[0]="MIX";names[1]="TIME";names[2]="FBACK";names[3]="ROUTE";
   values[0]=native_delay*100u/32767u;values[1]=native_fx_settings.delay_time*100u/32767u;
-  values[2]=native_fx_settings.delay_feedback*100u/32767u;values[3]=native_fx_settings.routing;
+  values[2]=native_fx_settings.delay_feedback*100u/32767u;values[3]=etch_fx_route(&native_fx_settings);
  }
  else if(native_page==ETCH_UI_FX_RING){
   names[0]="MIX";names[1]="RATE HZ";names[2]="SHAPE";names[3]="BIAS";
@@ -1908,7 +1909,7 @@ static void parameters(void){
  else if(native_page==ETCH_UI_FX_REVERB){
   names[0]="MIX";names[1]="SIZE";names[2]="DECAY";names[3]="ROUTE";
   values[0]=native_reverb*100u/32767u;values[1]=native_fx_settings.reverb_size*100u/32767u;
-  values[2]=native_fx_settings.reverb_decay*100u/32767u;values[3]=native_fx_settings.routing;
+  values[2]=native_fx_settings.reverb_decay*100u/32767u;values[3]=etch_fx_route(&native_fx_settings);
  }
  else if(native_page==4){names[0]="DRIVE";names[1]="CHORUS";names[2]="DELAY";names[3]="REVERB";values[0]=native_drive*100u/32767u;values[1]=native_chorus*100u/32767u;values[2]=native_delay*100u/32767u;values[3]=native_reverb*100u/32767u;}
  else if(native_page==16){names[0]="C RATE";names[1]="C DEPTH";names[2]="D TIME";names[3]="D FB";
@@ -1916,7 +1917,7 @@ static void parameters(void){
   values[2]=native_fx_settings.delay_time*100u/32767u;values[3]=native_fx_settings.delay_feedback*100u/32767u;}
  else if(native_page==17){names[0]="R SIZE";names[1]="R DECAY";names[2]="ROUTE";names[3]="D WET";
   values[0]=native_fx_settings.reverb_size*100u/32767u;values[1]=native_fx_settings.reverb_decay*100u/32767u;
-  values[2]=native_fx_settings.routing;values[3]=native_delay*100u/32767u;}
+  values[2]=etch_fx_route(&native_fx_settings);values[3]=native_delay*100u/32767u;}
  else if(native_page==5){names[0]="MODE";names[1]="RATE";names[2]="OCT";
   names[3]=native_arp_mode==7u?"NEW RIFF":"BPM";
   values[0]=native_arp_mode;values[1]=native_arp_rate;values[2]=native_arp_octaves;
@@ -2891,8 +2892,8 @@ static void rupture_native_screen(void){
  case RU_PAGE_FX:
   v.fx_on=(uint8_t)(((ru_preview_fx==0u?native_reverb:(ru_preview_fx==1u?native_delay:(ru_preview_fx==2u?native_chorus:native_drive)))>0u) && !(native_fx_bypass_mask & ETCH_FXB_BIT(ru_preview_fx==0u?ETCH_FXB_REVERB:ru_preview_fx==1u?ETCH_FXB_DELAY:ru_preview_fx==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE)));
   if(ru_preview_fx==0u) {v.k[0]=ru_reverb_type;v.k[1]=(uint16_t)(native_fx_settings.reverb_decay*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.reverb_size*100u/32767u);v.k[3]=(uint16_t)(native_reverb*100u/32767u);}
-  else if(ru_preview_fx==1u){v.k[0]=(uint16_t)(native_fx_settings.delay_time*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.delay_feedback*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_delay*100u/32767u);}
-  else if(ru_preview_fx==2u){v.k[0]=(uint16_t)(native_fx_settings.chorus_rate*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.chorus_depth*100u/32767u);v.k[2]=native_fx_settings.routing;v.k[3]=(uint16_t)(native_chorus*100u/32767u);}
+  else if(ru_preview_fx==1u){v.k[0]=(uint16_t)(native_fx_settings.delay_time*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.delay_feedback*100u/32767u);v.k[2]=etch_fx_route(&native_fx_settings);v.k[3]=(uint16_t)(native_delay*100u/32767u);}
+  else if(ru_preview_fx==2u){v.k[0]=(uint16_t)(native_fx_settings.chorus_rate*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.chorus_depth*100u/32767u);v.k[2]=etch_fx_route(&native_fx_settings);v.k[3]=(uint16_t)(native_chorus*100u/32767u);}
   else if(ru_preview_fx==3u){v.k[0]=(uint16_t)(native_drive*100u/32767u);v.k[1]=(uint16_t)(native_cutoff*100u/8192u);v.k[2]=(uint16_t)(native_resonance*100u/32767u);v.k[3]=native_filter_type;}
   else if(ru_preview_fx==4u){v.k[0]=(uint16_t)(native_fx_settings.comp_threshold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.comp_ratio*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.comp_attack*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.comp_release*100u/32767u);v.fx_on=(uint8_t)(native_fx_settings.comp_ratio>0u && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_COMP)));}
   else if(ru_preview_fx==5u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_tilt[j];v.fx_on=ru_tilt_enabled;}
@@ -2906,11 +2907,11 @@ static void rupture_native_screen(void){
   v.k[3]=(uint16_t)(native_reverb*100u/32767u);break;
  case RU_PAGE_DELAY:v.k[0]=(uint16_t)(native_fx_settings.delay_time*100u/32767u);
   v.k[1]=(uint16_t)(native_fx_settings.delay_feedback*100u/32767u);
-  v.k[2]=native_fx_settings.routing;
+  v.k[2]=etch_fx_route(&native_fx_settings);
   v.k[3]=(uint16_t)(native_delay*100u/32767u);break;
  case RU_PAGE_CHORUS:v.k[0]=(uint16_t)(native_fx_settings.chorus_rate*100u/32767u);
   v.k[1]=(uint16_t)(native_fx_settings.chorus_depth*100u/32767u);
-  v.k[2]=native_fx_settings.routing;
+  v.k[2]=etch_fx_route(&native_fx_settings);
   v.k[3]=(uint16_t)(native_chorus*100u/32767u);break;
  case RU_PAGE_COMP:v.k[0]=(uint16_t)(native_fx_settings.comp_threshold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.comp_ratio*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.comp_attack*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.comp_release*100u/32767u);break;
  case RU_PAGE_FOLDER:v.k[0]=(uint16_t)(native_fx_settings.folder_fold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.folder_symmetry*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.folder_tone*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.folder_mix*100u/32767u);break;
@@ -4174,10 +4175,9 @@ static void ru_adjust(uint8_t control,int32_t amount){
    uint8_t new_type=(uint8_t)ui_bound((int32_t)ru_reverb_type+amount,0,2);
    if(new_type!=ru_reverb_type){
     ru_reverb_type=new_type;
-    /* Three distinct working tonal presets of the existing stable reverb
-     * architecture, NOT separate physical spring-tank emulations. */
-    native_fx_settings.reverb_size=(uint16_t)(new_type==0u?10500u:new_type==1u?31500u:19500u);
-    native_fx_settings.reverb_decay=(uint16_t)(new_type==0u?12500u:new_type==1u?28000u:17500u);
+    /* Choose a genuinely separate global topology. Retain the user's own
+     * DECAY and SIZE values when switching engines. */
+    etch_fx_set_reverb_type(&native_fx_settings,new_type);
    }
   }
   if(control==1u)native_fx_settings.reverb_decay=etch_encoder_pct(native_fx_settings.reverb_decay,amount);
@@ -4187,13 +4187,13 @@ static void ru_adjust(uint8_t control,int32_t amount){
  else if(ru_page==RU_PAGE_DELAY){
   if(control==0u)native_fx_settings.delay_time=etch_encoder_pct(native_fx_settings.delay_time,amount);
   if(control==1u)native_fx_settings.delay_feedback=etch_encoder_pct(native_fx_settings.delay_feedback,amount);
-  if(control==2u)native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+amount,0,1);
+  if(control==2u)etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+amount,0,1));
   if(control==3u)native_delay=etch_encoder_pct(native_delay,amount);
  }
  else if(ru_page==RU_PAGE_CHORUS){
   if(control==0u)native_fx_settings.chorus_rate=etch_encoder_pct(native_fx_settings.chorus_rate,amount);
   if(control==1u)native_fx_settings.chorus_depth=etch_encoder_pct(native_fx_settings.chorus_depth,amount);
-  if(control==2u)native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+amount,0,1);
+  if(control==2u)etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+amount,0,1));
   if(control==3u)native_chorus=etch_encoder_pct(native_chorus,amount);
  }
  else if(ru_page==RU_PAGE_COMP){
@@ -4835,7 +4835,16 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(select){ru_project_slot=(uint8_t)ui_bound((int32_t)ru_project_slot+(select>0?1:-1),1,12);ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;}
   if(alg){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+(alg>0?1:-1),0,2);ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;alg=0;}
  }
- else if(select){ru_focus=(uint8_t)ui_bound((int32_t)ru_focus+(select>0?1:-1),0,3);first_frame=1;}
+ else if(select && ru_page!=RU_PAGE_SAFE && ru_page!=RU_PAGE_UPDATE &&
+         ru_page!=RU_PAGE_LOADING && ru_page!=RU_PAGE_WELCOME &&
+         ru_page!=RU_PAGE_FOREIGN && ru_page!=RU_PAGE_BUG_REPORT){
+  /* V1.77: The former focus variable was never consumed by the UI.
+   * On pages with NO SELECT mapping, open the exact PLAY screen list.
+   * Earlier page handlers own SELECT for SEQ, FX, menus and editors.
+   * Never preempt OTA, recovery or first-run dialogs. */
+  ru_nav_to(RU_PAGE_MENU);
+  ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,10);
+ }
  if(ru_page!=RU_PAGE_HELP&&ru_page!=RU_PAGE_GLO&&ru_page!=RU_PAGE_NAME &&
     ru_page!=RU_PAGE_STORAGE&&ru_page!=RU_PAGE_STORAGE_PROJECTS&&
     ru_page!=RU_PAGE_STORAGE_ACTIONS&&ru_page!=RU_PAGE_STORAGE_SEQUENCES&&
@@ -5037,15 +5046,16 @@ void fm1_cstart(void){
  /* A completed global-volume log overrides per-preset legacy settings.
   * Read-only on boot. Default 100 on an older record without the log. */
  if(native_store_status==ETCH_STORE_OK){
-  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u,crt=0u,welcome_done=0u;
-  if(etch_store_user_settings_welcome_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice,&crt,&welcome_done)==ETCH_STORE_OK){
-   ru_welcome_done=welcome_done;
+  uint8_t remembered=100u,enabled=0u,saver=1u,seconds_index=1u,boot_choice=0u,crt=0u,welcome_done=0u,current_wizard=0u;
+  if(etch_store_user_settings_welcome_version_load(&native_store_io,&remembered,&enabled,&saver,&seconds_index,&boot_choice,&crt,&welcome_done,&current_wizard)==ETCH_STORE_OK){
+   /* A legacy setup flag must not suppress the new-version first-run tour. */
+   ru_welcome_done=(uint8_t)(welcome_done&&current_wizard);
    rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;ru_crt_enabled=crt;
   }
  }
  if(!safe && !native_keyboard_mode){
   if(!ru_welcome_done){
-   /* True first run retains the complete setup wizard. */
+   /* First boot on this firmware version: run the non-destructive setup wizard. */
    ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
    ru_welcome.crt=ru_crt_enabled;
   }else{
@@ -5088,6 +5098,9 @@ void fm1_cstart(void){
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
  if(!muted&&!native_keyboard_mode&&etch_recovery_may_run_audio(native_recovery_reason)){fm1_irq_off();native_start();fm1_irq_enable_all();}
  uint32_t last=0,held=0,previous_buttons=fm1_in.buttons,last_seq_notes=fm1_in.notes,last_ui_paint_ms=0,last_wave_compile_ms=0;
+#ifdef RUPTURE_BUILD
+ struct ru_note_paint_budget ru_note_paint={0};
+#endif
  struct etch_home_shortcuts native_shortcuts={0};
  uint32_t native_audio_rearm_held=0, native_auto_fault_at=0,last_gain_sample_ms=0;
  uint8_t native_auto_restarts=0, native_last_tripped=0;
@@ -5299,6 +5312,9 @@ void fm1_cstart(void){
    }
 #endif
    uint8_t notes_changed=(uint8_t)(fm1_in.notes!=last_seq_notes);
+#ifdef RUPTURE_BUILD
+   if(notes_changed)ru_note_paint_changed(&ru_note_paint,etch_ms);
+#endif
    native_seq_entry_mask&=fm1_in.notes;
    if(native_seq_run)native_seq_entry_mask=0u;
    /* Read-only panel instrumentation: explicitly collect the physical
@@ -5597,12 +5613,29 @@ void fm1_cstart(void){
    const uint8_t ru_playhead_pending=ru_seq_playhead_needs_paint(
        (uint8_t)(ru_page==RU_PAGE_SEQ),native_seq_run,ru_saver_active,
        ru_audio_playhead,ru_seq_last_painted_playhead);
+   /* Encoders are ALWAYS applied to the synth on this service tick.
+    * Only redundant LCD repaints are batched under recent measured audio
+    * pressure; do not defer the parameter, DMA samples, or MIDI events. */
+   static uint8_t ru_knob_repaint_pending=0u;
+   if(dm||dd||up||down)ru_knob_repaint_pending=1u;
+   uint8_t ru_knob_paint=(uint8_t)(ru_knob_repaint_pending &&
+       ru_lcd_knob_paint_due(etch_ms,last_ui_paint_ms,
+                             native_ui_pressure,native_missed_streak));
+   /* V1.81: rapid note edges used to FORCE a full SPI redraw every 25ms
+    * even when the audio half was close to its DMA deadline. Keep every
+    * note instant in the synth; coalesce ONLY visual work. User commands,
+    * menus, fault status and explicit knob gestures keep priority. */
+   uint8_t ru_ui_command=(uint8_t)(first_frame||pressed||select||alg||ru_knob_paint);
    if(ru_lcd_should_paint(etch_ms,last_ui_paint_ms,
-        (uint8_t)(first_frame||pressed||select||alg||dm||dd||up||down||notes_changed),
+        (uint8_t)(ru_ui_command||notes_changed),
         (uint8_t)(!ru_saver_active && (ru_anim_dirty||ru_splash_active()||ru_playhead_pending)),
         (uint8_t)(!ru_saver_active && ru_visual_moving),
-        native_ui_pressure,native_missed_streak)){
+        native_ui_pressure,native_missed_streak) &&
+      ru_note_paint_allow(&ru_note_paint,etch_ms,last_ui_paint_ms,
+        ru_ui_command,native_ui_pressure)){
      screen();last_ui_paint_ms=etch_ms;ru_anim_dirty=0u;
+     ru_note_paint_committed(&ru_note_paint);
+     ru_knob_repaint_pending=0u;
      ru_seq_last_painted_playhead=(uint16_t)(ru_page==RU_PAGE_SEQ && native_seq_run?
          ru_audio_playhead:0xffffu);
    }
@@ -6156,13 +6189,13 @@ void fm1_cstart(void){
      native_chorus=(uint16_t)etch_encoder_pct(native_chorus,dm);
      native_fx_settings.chorus_rate=(uint16_t)etch_encoder_pct(native_fx_settings.chorus_rate,dd);
      native_fx_settings.chorus_depth=(uint16_t)etch_encoder_pct(native_fx_settings.chorus_depth,up);
-     native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+down,0,1);
+     etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+down,0,1));
     }
     else if(native_page==ETCH_UI_FX_DELAY){
      native_delay=(uint16_t)etch_encoder_pct(native_delay,dm);
      native_fx_settings.delay_time=(uint16_t)etch_encoder_pct(native_fx_settings.delay_time,dd);
      native_fx_settings.delay_feedback=(uint16_t)etch_encoder_pct(native_fx_settings.delay_feedback,up);
-     native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+down,0,1);
+     etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+down,0,1));
     }
     else if(native_page==ETCH_UI_FX_RING){
      native_fx_settings.ring_mix=(uint16_t)etch_encoder_pct(native_fx_settings.ring_mix,dm);
@@ -6246,7 +6279,7 @@ void fm1_cstart(void){
      native_reverb=(uint16_t)etch_encoder_pct(native_reverb,dm);
      native_fx_settings.reverb_size=(uint16_t)etch_encoder_pct(native_fx_settings.reverb_size,dd);
      native_fx_settings.reverb_decay=(uint16_t)etch_encoder_pct(native_fx_settings.reverb_decay,up);
-     native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+down,0,1);
+     etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+down,0,1));
     }
     else if(native_page==ETCH_UI_ENV){native_env_ms[0]=(uint16_t)etch_encoder_unit(native_env_ms[0],dm,0,10000);native_env_ms[1]=(uint16_t)etch_encoder_unit(native_env_ms[1],dd,0,10000);native_sustain=(uint16_t)etch_encoder_pct(native_sustain,up);native_env_ms[2]=(uint16_t)etch_encoder_unit(native_env_ms[2],down,0,10000);}
     else if(native_page==2){
@@ -6271,7 +6304,7 @@ void fm1_cstart(void){
     else if(native_page==17){
      native_fx_settings.reverb_size=(uint16_t)etch_encoder_pct(native_fx_settings.reverb_size,dm);
      native_fx_settings.reverb_decay=(uint16_t)etch_encoder_pct(native_fx_settings.reverb_decay,dd);
-     native_fx_settings.routing=(uint8_t)ui_bound((int32_t)native_fx_settings.routing+up,0,1);
+     etch_fx_set_route(&native_fx_settings,(uint8_t)ui_bound((int32_t)etch_fx_route(&native_fx_settings)+up,0,1));
      native_delay=(uint16_t)etch_encoder_pct(native_delay,down);
     }
     else if(native_page==5){native_arp_mode=(uint8_t)ui_bound((int32_t)native_arp_mode+dm,0,7);

@@ -10,7 +10,11 @@
 #define ETCH_DELAY_SIZE 16384u
 #define ETCH_CHORUS_SIZE 2048u
 #define ETCH_REVERB_SIZE 4096u
-/* Values are Q15 (0..32767); routing: 0 serial, 1 parallel. */
+/* V1.78: routing bits 0=serial/parallel, bits 1..2=reverb topology.
+ * Old projects (0/1) decode as HALL, preserving their original default.
+ * Type code: 0=HALL, 1=SPRING, 2=ROOM; code 3 is invalid.
+ * This is the existing 1-byte setting, not an added field. Older firmwares
+ * cannot necessarily open projects saved with the new type bits set. */
 struct etch_fx_settings {
  uint16_t chorus_rate,chorus_depth,delay_time,delay_feedback,reverb_size,reverb_decay;
  uint8_t routing;
@@ -43,6 +47,24 @@ struct etch_fx_settings {
  uint16_t pre[2][2];
  uint16_t c_fx;
 };
+/* Public UI order: 0 SPRING, 1 HALL, 2 ROOM. */
+static inline uint8_t etch_fx_reverb_type(const struct etch_fx_settings *s){
+ uint8_t code=(uint8_t)((s->routing>>1)&3u);
+ return code==1u?0u:code==2u?2u:1u;
+}
+static inline void etch_fx_set_reverb_type(struct etch_fx_settings *s,uint8_t type){
+ uint8_t code=type==0u?1u:type==2u?2u:0u;
+ s->routing=(uint8_t)((s->routing&1u)|(code<<1));
+}
+static inline uint8_t etch_fx_route(const struct etch_fx_settings *s){
+ return (uint8_t)(s->routing&1u);
+}
+static inline void etch_fx_set_route(struct etch_fx_settings *s,uint8_t route){
+ s->routing=(uint8_t)((s->routing&~1u)|(route&1u));
+}
+static inline uint8_t etch_fx_valid_route_and_type(uint8_t packed){
+ return (uint8_t)(packed<=5u && ((packed>>1)&3u)!=3u);
+}
 struct etch_native_fx {
  int16_t delay[ETCH_DELAY_SIZE],chorus[ETCH_CHORUS_SIZE],reverb[ETCH_REVERB_SIZE];
  uint32_t delay_pos,chorus_pos,reverb_pos,chorus_phase;
@@ -95,6 +117,14 @@ struct etch_native_fx {
  int32_t space_damp_state;
  uint16_t chorus_span,space_damp_alpha;
  int32_t reverb_mix_smooth;
+ /* V1.80: fixed-cost 4-line room FDN / dual-waveguide spring.
+  * 4096 existing reverb samples are reused: NO new PCM buffers.
+  * Counters and damp states (36 bytes) are per-global-FX, not per voice. */
+ uint16_t reverb_line_cursor[4];
+ int32_t reverb_line_damp[4];
+ int32_t spring_input_lowpass;
+ uint16_t reverb_room_line4,reverb_room_feedback,reverb_spring_feedback;
+
  /* RUPTURE V1.14: zero-allocation, per-effect bypass ramps. */
  int32_t chorus_mix_smooth,delay_mix_smooth;
  /* RUPTURE V1.15: low-cost dual detector transient DSP. No audio buffers. */

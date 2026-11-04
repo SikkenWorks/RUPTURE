@@ -1,13 +1,13 @@
 {
-  "version": "1.76",
+  "version": "1.82",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.76.fwsc",
+  "firmware_file": "RUPTURE-V1.82.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "8cb7b8bb7369a84398a0e2bcd265c18d4c43a4ba858a57395388f2fe31a80536",
-  "app_bytes": 345868,
-  "app_sha256": "8033eef3b34e147ad7a4e857f6ee8facefcde2c0bc437dbd401140780bd290f7",
+  "firmware_sha256": "b70a895668649a075f565445a436642e80ff388511e8bd2480a78a28d22c2cff",
+  "app_bytes": 347984,
+  "app_sha256": "d82bbdd45efeafa99666d495529774bfe2e93d2806bfe495a514fd6b95c97bdf",
   "native_screens": 125,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -58,7 +58,11 @@
     "If the user skips formatting with unavailable/foreign storage, the completion flag cannot be written safely. The wizard may therefore return at the next boot.",
     "CRT preference and first-run completion reside in the existing CRC-protected global settings NOR journal. Physical cold-boot and storage-format testing remains necessary.",
     "V1.60 first-run format confirmation has host tests; physical FM1 storage formatting and display remain unverified.",
-    "V1.63 one-gesture UNDO is intentionally limited to simple single-byte knob controls (PLAY, SHAPE, SUB, TILT, FUZZ, SANDPAPER); it does not support sequence, composite filter, or project-wide undo. Physical controls and project-load safety require FM1 hardware validation."
+    "V1.63 one-gesture UNDO is intentionally limited to simple single-byte knob controls (PLAY, SHAPE, SUB, TILT, FUZZ, SANDPAPER); it does not support sequence, composite filter, or project-wide undo. Physical controls and project-load safety require FM1 hardware validation.",
+    "V1.79: 32-bit DSP optimizations and LCD batching pass host PCM and native-build checks; device-specific DSP %, DMA LATE, GUARD and crackle-free live performance are not yet hardware verified.",
+    "V1.80: ROOM and SPRING use distinct more sophisticated global delay networks; credibility on speakers and hardware DMA deadlines is not certified. ROOM may increase CPU vs V1.79 despite fixed-point optimizations. Do not use as live/studio guaranteed stable without testing on FM1.",
+    "V1.81 host PCM tests prove parity but not FM1 real-time worst-case cycle budget; rapid LCD transfers are reduced; physical DMA LATE/GUARD stability remains unverified.",
+    "V1.82 and stock V15 round-trip to the exact same V1.82 cannot always be detected if stock preserves the setup marker; FM1 hardware verification required."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -304,5 +308,18 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "V1.76: nearest-grid live note quantization with key timestamps/swing; downbeat note handoff after two-bar count-in; faster half-bright LED multiplex scan; preserved trusted OTA and storage."
+  "release_note": "V1.82: Welcome first-boot per-version status and non-destructive migration. DSP/OTA/FX unchanged.",
+  "headroom_qualification": "PCM-exact native candidate; actual FM1 89% DSP, DMA LATE 28, GUARD 23 must be remeasured after installation. No all-load stability guarantee until a full hardware soak passes.",
+  "v180": {
+    "reverb_engines": [
+      "Spring: coupled delay lines + dispersive feedback",
+      "Hall: PCM-identical prior diffuse tank",
+      "Room: 4-line damped FDN"
+    ],
+    "existing_reverb_sample_buffer": 4096,
+    "new_pcm_buffers": 0,
+    "fixed_point_exact_other_effects": true,
+    "hardware_dma_late_guard_confirmed_zero": false,
+    "stress_tests": "host/native only; physical audio and CPU unverified"
+  }
 }

@@ -187,17 +187,23 @@ static int select_project_read_region(const struct etch_store_io *io);
 #define RU_BOOT_CRT_OFF_MAGIC 0x5a00u
 #define RU_WELCOME_CRT_ON_MAGIC 0x5c00u
 #define RU_WELCOME_CRT_OFF_MAGIC 0x5e00u
+#define RU_WELCOME_V182_ON_MAGIC 0x6000u
+#define RU_WELCOME_V182_OFF_MAGIC 0x6200u
 #define RU_BOOT_MAGIC 0x5800u /* boot project 0=NEW, 1..12 stored project; CRC protected */ /* idx 0..7, low bits ON + AUTO SAVE */
+static uint8_t ru_is_v182_magic(uint16_t m){return (m>=RU_WELCOME_V182_ON_MAGIC&&m<RU_WELCOME_V182_ON_MAGIC+13u*32u)||
+ (m>=RU_WELCOME_V182_OFF_MAGIC&&m<RU_WELCOME_V182_OFF_MAGIC+13u*32u);}
 static uint8_t ru_is_timed(uint16_t magic){return magic>=RU_SAVER_TIMED_MAGIC&&magic<RU_SAVER_TIMED_MAGIC+32u;}
 static uint8_t ru_is_crt_off_magic(uint16_t m){return (m>=RU_BOOT_CRT_OFF_MAGIC&&m<RU_BOOT_CRT_OFF_MAGIC+13u*32u)||
- (m>=RU_WELCOME_CRT_OFF_MAGIC&&m<RU_WELCOME_CRT_OFF_MAGIC+13u*32u);}
+ (m>=RU_WELCOME_CRT_OFF_MAGIC&&m<RU_WELCOME_CRT_OFF_MAGIC+13u*32u)||
+ (m>=RU_WELCOME_V182_OFF_MAGIC&&m<RU_WELCOME_V182_OFF_MAGIC+13u*32u);}
 static uint8_t ru_is_welcome_done_magic(uint16_t m){return (m>=RU_WELCOME_CRT_ON_MAGIC&&m<RU_WELCOME_CRT_ON_MAGIC+13u*32u)||
- (m>=RU_WELCOME_CRT_OFF_MAGIC&&m<RU_WELCOME_CRT_OFF_MAGIC+13u*32u);}
+ (m>=RU_WELCOME_CRT_OFF_MAGIC&&m<RU_WELCOME_CRT_OFF_MAGIC+13u*32u)||ru_is_v182_magic(m);}
 static uint8_t ru_is_boot_magic(uint16_t m){return (m>=RU_BOOT_MAGIC&&m<RU_BOOT_MAGIC+13u*32u)||
- (m>=RU_WELCOME_CRT_ON_MAGIC&&m<RU_WELCOME_CRT_ON_MAGIC+13u*32u)||ru_is_crt_off_magic(m);}
+ (m>=RU_WELCOME_CRT_ON_MAGIC&&m<RU_WELCOME_CRT_ON_MAGIC+13u*32u)||ru_is_crt_off_magic(m)||ru_is_v182_magic(m);}
 static uint16_t ru_boot_payload(uint16_t m){
  return (uint16_t)(m-(ru_is_welcome_done_magic(m)?
- (ru_is_crt_off_magic(m)?RU_WELCOME_CRT_OFF_MAGIC:RU_WELCOME_CRT_ON_MAGIC):
+ (ru_is_v182_magic(m)?(ru_is_crt_off_magic(m)?RU_WELCOME_V182_OFF_MAGIC:RU_WELCOME_V182_ON_MAGIC):
+ (ru_is_crt_off_magic(m)?RU_WELCOME_CRT_OFF_MAGIC:RU_WELCOME_CRT_ON_MAGIC)):
  (ru_is_crt_off_magic(m)?RU_BOOT_CRT_OFF_MAGIC:RU_BOOT_MAGIC)));
 }
 #define RU_VOL_FIRST 32u
@@ -206,7 +212,7 @@ static uint16_t ru_boot_payload(uint16_t m){
 struct ru_vol_record {uint16_t magic;uint8_t volume,opposite;uint32_t crc;};
 _Static_assert(sizeof(struct ru_vol_record)==8u,"volume record must be exactly 8 bytes");
 static struct ru_vol_record ru_vol_make(uint8_t vol,uint8_t autosave,uint8_t screensaver,uint8_t seconds_index,uint8_t boot_project,uint8_t crt,uint8_t welcome_done){
- struct ru_vol_record r={(uint16_t)((welcome_done?(crt?RU_WELCOME_CRT_ON_MAGIC:RU_WELCOME_CRT_OFF_MAGIC):(crt?RU_BOOT_MAGIC:RU_BOOT_CRT_OFF_MAGIC))+((uint16_t)boot_project*32u)+((seconds_index&7u)<<2)+(autosave?2u:0u)+(screensaver?1u:0u)),vol,(uint8_t)(vol^255u),0u};
+ struct ru_vol_record r={(uint16_t)((welcome_done?(crt?RU_WELCOME_V182_ON_MAGIC:RU_WELCOME_V182_OFF_MAGIC):(crt?RU_BOOT_MAGIC:RU_BOOT_CRT_OFF_MAGIC))+((uint16_t)boot_project*32u)+((seconds_index&7u)<<2)+(autosave?2u:0u)+(screensaver?1u:0u)),vol,(uint8_t)(vol^255u),0u};
  r.crc=etch_store_crc(&r,4u);return r;
 }
 static uint8_t ru_vol_valid(const struct ru_vol_record *r){
@@ -214,8 +220,8 @@ static uint8_t ru_vol_valid(const struct ru_vol_record *r){
    r->opposite==(uint8_t)(r->volume^255u)&&r->crc==etch_store_crc(r,4u);
 }
 static int ru_vol_scan(const struct etch_store_io *io,uint32_t bank,
- uint8_t *value,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint32_t *free_offset,uint8_t *crt,uint8_t *welcome_done){
- uint32_t last_free=0xffffffffu;*value=100u;if(autosave)*autosave=0u;if(screensaver)*screensaver=1u;if(seconds_index)*seconds_index=1u;if(boot_project)*boot_project=0u;if(crt)*crt=0u;if(welcome_done)*welcome_done=0u;
+ uint8_t *value,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint32_t *free_offset,uint8_t *crt,uint8_t *welcome_done,uint8_t *current_wizard){
+ uint32_t last_free=0xffffffffu;*value=100u;if(autosave)*autosave=0u;if(screensaver)*screensaver=1u;if(seconds_index)*seconds_index=1u;if(boot_project)*boot_project=0u;if(crt)*crt=0u;if(welcome_done)*welcome_done=0u;if(current_wizard)*current_wizard=0u;
  for(uint32_t i=0;i<RU_VOL_SLOTS;i++){
   struct ru_vol_record rec;uint32_t off=base(bank)+RU_VOL_FIRST+i*RU_VOL_REC_BYTES;
   if(io->read(off,&rec,sizeof(rec)))return ETCH_STORE_IO;
@@ -230,20 +236,26 @@ static int ru_vol_scan(const struct etch_store_io *io,uint32_t bank,
    if(boot_project)*boot_project=ru_is_boot_magic(rec.magic)?(uint8_t)(ru_boot_payload(rec.magic)/32u):0u;
    if(crt)*crt=(uint8_t)!ru_is_crt_off_magic(rec.magic);
    if(welcome_done)*welcome_done=ru_is_welcome_done_magic(rec.magic);
+   if(current_wizard)*current_wizard=ru_is_v182_magic(rec.magic);
   }
  }
  if(free_offset)*free_offset=last_free;
  return ETCH_STORE_OK;
 }
-int etch_store_user_settings_welcome_load(const struct etch_store_io *io,
- uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint8_t *crt,uint8_t *welcome_done){
- if(!io||!io->read||!volume||!autosave||!screensaver||!seconds_index||!boot_project||!crt||!welcome_done)return ETCH_STORE_IO;
- *volume=100u;*autosave=0u;*screensaver=1u;*seconds_index=1u;*boot_project=0u;*crt=0u;*welcome_done=0u;
+int etch_store_user_settings_welcome_version_load(const struct etch_store_io *io,
+ uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint8_t *crt,uint8_t *welcome_done,uint8_t *current_wizard){
+ if(!io||!io->read||!volume||!autosave||!screensaver||!seconds_index||!boot_project||!crt||!welcome_done||!current_wizard)return ETCH_STORE_IO;
+ *volume=100u;*autosave=0u;*screensaver=1u;*seconds_index=1u;*boot_project=0u;*crt=0u;*welcome_done=0u;*current_wizard=0u;
  int selected=select_project_read_region(io);if(selected<0)return selected;
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
- return ru_vol_scan(io,(uint32_t)bank,volume,autosave,screensaver,seconds_index,boot_project,0,crt,welcome_done);
+ return ru_vol_scan(io,(uint32_t)bank,volume,autosave,screensaver,seconds_index,boot_project,0,crt,welcome_done,current_wizard);
+}
+int etch_store_user_settings_welcome_load(const struct etch_store_io *io,
+ uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint8_t *crt,uint8_t *welcome_done){
+ uint8_t current=0u;
+ return etch_store_user_settings_welcome_version_load(io,volume,autosave,screensaver,seconds_index,boot_project,crt,welcome_done,&current);
 }
 int etch_store_user_settings_crt_load(const struct etch_store_io *io,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver,uint8_t *seconds_index,uint8_t *boot_project,uint8_t *crt){
  uint8_t done=0u;return etch_store_user_settings_welcome_load(io,volume,autosave,screensaver,seconds_index,boot_project,crt,&done);
@@ -269,9 +281,9 @@ int etch_store_user_settings_welcome_save(const struct etch_store_io *io,uint8_t
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
- uint8_t previous,old_autosave,old_saver,old_seconds,old_boot,old_crt,old_done;uint32_t free_offset;
- int rc=ru_vol_scan(io,(uint32_t)bank,&previous,&old_autosave,&old_saver,&old_seconds,&old_boot,&free_offset,&old_crt,&old_done);if(rc)return rc;
- if(previous==volume&&old_autosave==autosave&&old_saver==screensaver&&old_seconds==seconds_index&&old_boot==boot_project&&old_crt==crt&&old_done==welcome_done)return ETCH_STORE_OK;
+ uint8_t previous,old_autosave,old_saver,old_seconds,old_boot,old_crt,old_done,old_current;uint32_t free_offset;
+ int rc=ru_vol_scan(io,(uint32_t)bank,&previous,&old_autosave,&old_saver,&old_seconds,&old_boot,&free_offset,&old_crt,&old_done,&old_current);if(rc)return rc;
+ if(previous==volume&&old_autosave==autosave&&old_saver==screensaver&&old_seconds==seconds_index&&old_boot==boot_project&&old_crt==crt&&old_done==welcome_done&&(!welcome_done||old_current))return ETCH_STORE_OK;
  if(free_offset==0xffffffffu){
   /* The 28-entry NOR journal is full. Compact by copying the complete,
    * previously verified project payload to the INACTIVE A/B bank. The
@@ -675,7 +687,7 @@ static int p05_rewrite(const struct etch_store_io *io,const struct etch_wave_lib
   * normal project save. Never copy torn/corrupted log entries. */
  if(cur>=0&&store_region==3u){
   uint8_t last_volume=100u,last_autosave=0u,last_saver=1u,last_seconds=1u,last_boot=0u,last_crt=0u,last_done=0u;
-  int vr=ru_vol_scan(io,(uint32_t)cur,&last_volume,&last_autosave,&last_saver,&last_seconds,&last_boot,0,&last_crt,&last_done);if(vr)return vr;
+  int vr=ru_vol_scan(io,(uint32_t)cur,&last_volume,&last_autosave,&last_saver,&last_seconds,&last_boot,0,&last_crt,&last_done,0);if(vr)return vr;
   if(last_volume!=100u||last_autosave||!last_saver||last_seconds!=1u||last_boot||last_crt||last_done){
    struct ru_vol_record rec=ru_vol_make(last_volume,last_autosave,last_saver,last_seconds,last_boot,last_crt,last_done);
    if(io->program(offset+RU_VOL_FIRST,&rec,sizeof(rec)))return ETCH_STORE_IO;
@@ -929,7 +941,7 @@ int etch_store_catalog_edit(const struct etch_store_io *io,uint8_t op,uint8_t so
  }
  if(store_region==3u){
   uint8_t vol=100u,autosave=0u,saver=1u,seconds=1u,boot=0u,crt=0u,done=0u;
-  int gr=ru_vol_scan(io,(uint32_t)cur,&vol,&autosave,&saver,&seconds,&boot,0,&crt,&done);if(gr)return gr;
+  int gr=ru_vol_scan(io,(uint32_t)cur,&vol,&autosave,&saver,&seconds,&boot,0,&crt,&done,0);if(gr)return gr;
   if(vol!=100u||autosave||!saver||seconds!=1u||boot||crt||done){
    struct ru_vol_record rec=ru_vol_make(vol,autosave,saver,seconds,boot,crt,done);
    if(io->program(offset+RU_VOL_FIRST,&rec,sizeof(rec)))return ETCH_STORE_IO;

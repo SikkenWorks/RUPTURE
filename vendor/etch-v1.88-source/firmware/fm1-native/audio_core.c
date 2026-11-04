@@ -355,6 +355,21 @@ static void mono_perf_clear(struct etch_native_audio *s){
  if(out!=s->mono_count){s->mono_count=out;mono_resume(s);}
 }
 static uint8_t mono_perf_tick(struct etch_native_audio *s){
+#ifdef RUPTURE_BUILD
+ /* V1.81: Most PCM samples contain no performance gate expiry. Countdown
+  * in place, and compact the stack only on an actual expiry. Identical
+  * ordered mono-note state, but no six-note read/write copy every sample.
+  * Timer-driven sequence notes still expire at the EXACT same sample. */
+ uint8_t out=0u,changed=0u;
+ for(uint8_t i=0u;i<s->mono_count;i++){
+  struct etch_mono_held *m=&s->mono_stack[i];
+  if(m->id>=4096u && m->gate_left && !--m->gate_left){changed=1u;continue;}
+  if(changed && out!=i)s->mono_stack[out]=*m;
+  ++out;
+ }
+ if(changed){s->mono_count=out;mono_resume(s);}
+ return changed;
+#else
  uint8_t out=0,changed=0;
  for(uint8_t i=0;i<s->mono_count;i++){
   struct etch_mono_held m=s->mono_stack[i];
@@ -363,6 +378,7 @@ static uint8_t mono_perf_tick(struct etch_native_audio *s){
  }
  if(out!=s->mono_count){s->mono_count=out;mono_resume(s);}
  return changed;
+#endif
 }
 void etch_native_midi_panic(struct etch_native_audio *s){
  s->sustain=0;s->mono_count=0;for(uint32_t i=0;i<16;i++){s->bend[i]=65536;}
@@ -675,7 +691,11 @@ static uint32_t perf_period(uint8_t bpm,uint8_t rate){
 static uint8_t perf_tick(struct etch_native_audio *s,const struct etch_native_controls *c,uint32_t keys){
  uint8_t pitch_changed=s->mono_mode?mono_perf_tick(s):0u;
  /* Gate countdowns are per voice: a new step never cuts off a long note. */
+#ifdef RUPTURE_BUILD
+ for(uint32_t i=0;i<1u;i++){
+#else
  for(uint32_t i=0;i<ETCH_NATIVE_VOICES;i++){
+#endif
   struct etch_native_voice *v=&s->voice[i];
   if(v->active&&v->note>=4096&&v->gate_left){if(!--v->gate_left)v->held=v->down=0;}
  }
@@ -752,7 +772,14 @@ static void envelope(struct etch_native_voice *v,const struct etch_native_contro
 static void native_rates(const struct etch_native_audio *s,const struct etch_native_controls *c,
                          uint32_t increments[8],uint32_t modincrements[8]){
  static const uint8_t ratios[12]={8,1,2,4,12,16,24,32,48,64,96,128};
+#ifdef RUPTURE_BUILD
+ /* V1.81: RUPTURE renders one monophonic slot; even rapid note retriggers
+  * must never recalculate seven silent ETCH polyphonic slot rates. */
+ for(uint32_t i=1u;i<8u;i++){increments[i]=0u;modincrements[i]=0u;}
+ for(uint32_t i=0;i<1u;i++){
+#else
  for(uint32_t i=0;i<8;i++){
+#endif
   const struct etch_native_voice *v=&s->voice[i];
   uint32_t factor=v->note>=128&&v->note<2176?(s->bend[(v->note-128)/128]&0x00ffffffu):65536;
 #ifdef RUPTURE_BUILD
@@ -936,7 +963,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   if((f&31u)==0u || rates_changed){
    const struct etch_organic_settings *org=&c->organic;
    uint8_t valid=(uint8_t)(c->mono_mode && etch_organic_valid(org));
+#ifdef RUPTURE_BUILD
+   for(uint32_t oi=0;oi<1u;oi++){
+#else
    for(uint32_t oi=0;oi<ETCH_NATIVE_VOICES;oi++){
+#endif
     struct etch_native_voice *ov=&s->voice[oi];
     struct organic_voice_state *os=organic_at(oi);
     int32_t deviation=0;
@@ -989,7 +1020,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    * loop. Do not do eight weight updates or modulo operations for an
    * effect that is explicitly mono-only. Preset data is left untouched. */
   if((f&31u)==0u){
+#ifdef RUPTURE_BUILD
+   for(uint32_t li=0;li<1u;li++){
+#else
    for(uint32_t li=0;li<ETCH_NATIVE_VOICES;li++){
+#endif
     struct etch_native_voice *lv=&s->voice[li];
     uint8_t li_owner=etch_native_voice_group((uint8_t)li);
     const struct etch_preset_dsp *li_dsp=parts[li_owner].dsp;

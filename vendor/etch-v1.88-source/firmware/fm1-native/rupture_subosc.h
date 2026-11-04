@@ -31,15 +31,45 @@ static inline void ru_sub_init(RuSubState *s,uint32_t inc,uint32_t seed){
 /* octave index 0=-2,1=-1,2=0,3=+1. 50 detune = neutral.
  * 38 Q16 units ~= 1 cent over +/-50 cent range, 32-bit math throughout
  * apart from the same bounded 32x32 ->64 multiply already used by CXS. */
+/* V1.79: exact, saturating fixed-point increment, using TWO 32x32
+ * multiplies instead of a 64-bit multiply per sample per active SUB.
+ * factor is 0..131071 for ALL legal detune and drift settings (the
+ * drift integrator is bounded to +/-768 Q16). The exceptional corrupted
+ * state follows the original 64-bit calculation rather than truncating.
+ * Unlike a 32-sample update this preserves EVERY sample's pitch, including
+ * very slow drift, low notes and octave=+1. */
 static inline uint32_t ru_sub_inc(uint32_t base,uint8_t octave,uint8_t detune,int32_t drift){
- uint64_t inc=base;
- if(octave==0u)inc>>=2u;else if(octave==1u)inc>>=1u;
- else if(octave==3u)inc<<=1u;
+ uint64_t raw=base;
+ if(octave==0u)base>>=2u;
+ else if(octave==1u)base>>=1u;
+ else if(octave==3u)raw<<=1u;
  int32_t cents=(int32_t)detune-50;
- int32_t factor=65536+cents*38+drift;
- if(factor<32768)factor=32768;
- inc=(inc*(uint32_t)factor)>>16;
- return (uint32_t)(inc>0xffffffffULL?0xffffffffULL:inc<1u?1u:inc);
+ int32_t signed_factor=65536+cents*38+drift;
+ if(signed_factor<32768)signed_factor=32768;
+ uint32_t factor=(uint32_t)signed_factor;
+ if(factor>=131072u){
+  /* Invalid-state defensive path. Regular musical settings never use it. */
+  uint64_t v=(octave==3u)?raw:(uint64_t)base;
+  v=(v*factor)>>16;
+  return (uint32_t)(v>UINT32_MAX?UINT32_MAX:v<1u?1u:v);
+ }
+ uint32_t fraction=factor&65535u;
+ uint32_t lo=(base&65535u)*fraction;
+ uint32_t middle=(base>>16)*fraction;
+ uint32_t part=lo>>16;
+ if(middle>UINT32_MAX-part)return UINT32_MAX;
+ uint32_t result=middle+part;
+ if(factor>=65536u){
+  if(result>UINT32_MAX-base)return UINT32_MAX;
+  result+=base;
+ }
+ if(octave==3u){
+  /* Exact floor((base * factor * 2) / 65536): include bit 15 of
+   * product's low half. Saturate instead of overflowing the octave. */
+  if(result>0x7fffffffu)return UINT32_MAX;
+  result=(result<<1u)|((lo>>15u)&1u);
+ }
+ return result?result:1u;
 }
 static inline int16_t ru_sub_sine_read(uint32_t phase){
  uint32_t i=phase>>24,fract=(phase>>8)&65535u;

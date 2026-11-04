@@ -308,3 +308,22 @@ python3 tests/test_v173_mapping_docs.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v176_countin_bridge.c -o /tmp/rupture_v176_first && /tmp/rupture_v176_first
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation tests/test_v176_quant_led.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c -o /tmp/rupture_v176_quant && /tmp/rupture_v176_quant
 python3 tests/test_v176_source_contract.py
+
+# V1.78: distinct global DSP topologies, compatible legacy project decoder,
+# and project/preset reverb-type retention without expanded storage records.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v178_three_reverbs.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v178_engines && /tmp/rupture_v178_engines
+# V1.79: no signal-quality compromises. Compare original V1.78 FX source
+# against new source PCM; verify exact per-sample SUB DRIFT and audio-priority UI.
+python3 tests/test_v179_pcm_parity.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v179_drift_exact.c vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c -o /tmp/rupture_v179_sub && /tmp/rupture_v179_sub
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v179_ui_headroom.c -o /tmp/rupture_v179_ui && /tmp/rupture_v179_ui
+
+# V1.82 first-boot migration and NOR integrity regression
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v182_welcome_version.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v182_store && /tmp/rupture_v182_store

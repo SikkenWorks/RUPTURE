@@ -24,10 +24,15 @@ static inline int32_t rupture_saw_tone(int32_t *low_state,int32_t raw,
  /* Approx 1.4 kHz one-pole at 44.1 kHz, no per-sample division. */
  int32_t low=*low_state + ((raw-*low_state)>>3);
  *low_state=low;
- int32_t wet=low+(((raw-low)*((int32_t)bright*5/2))>>8);
+ /* V1.77: most of the BRIGHT range now covers warm, low-harmonic
+  * bass instead of feeding a fixed ~57% unfiltered saw at its default.
+  * 0..60: genuinely rounded; 61..100: progressively open and brilliant.
+  * One existing multiply/shift replaces the old expression, no DSP state. */
+ int32_t bright_q8=bright<=60u?(12+(int32_t)bright):(72+((int32_t)bright-60)*4);
+ int32_t wet=low+(((raw-low)*bright_q8)>>8);
  wet+=(low*(int32_t)body)>>9;
  /* EDGE neutral at 50, preserves both polarities and soft-knee headroom. */
- int32_t drive=256+((int32_t)edge-50)*3;
+ int32_t drive=256+((int32_t)edge-50)*2; /* more usable drive travel */
  wet=(wet*drive)>>8;
  if(wet>24576)wet=24576+((wet-24576)>>3);
  if(wet< -24576)wet=-24576-(((-wet)-24576)>>3);
@@ -36,7 +41,7 @@ static inline int32_t rupture_saw_tone(int32_t *low_state,int32_t raw,
  /* SOUND SHAPE EDGE has an audible SAW mapping too. Neutral at 50.
   * Only a bounded multiply; CXS still uses its unmodified edge engine. */
  if(shape_edge!=50u){
-  wet=(wet*(256+((int32_t)shape_edge-50)*2))>>8;
+  wet=(wet*(256+((int32_t)shape_edge-50)))>>8;
   if(wet>32767)wet=32767;
   if(wet< -32767)wet=-32767;
  }
@@ -50,7 +55,7 @@ static inline int32_t rupture_saw_tone(int32_t *low_state,int32_t raw,
   * no 64-bit math, division, tables, allocation or further wavetable reads.
   * Inactive controls preserve V1.46 PCM exactly. */
  if(shape_weight){
-  wet+=(low*(int32_t)shape_weight)>>7;
+  wet+=(low*(int32_t)shape_weight)>>8; /* preserves low-end headroom */
   if(wet>32767)wet=32767;
   if(wet< -32767)wet=-32767;
  }

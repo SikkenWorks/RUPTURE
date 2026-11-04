@@ -93,7 +93,7 @@ static int validsettings(const struct etch_project_settings *s){
  return s->seq_length>=1&&s->seq_length<=ETCH_SEQ_STEPS&&s->tempo>=1&&
  s->seq_gate<=100&&s->seq_swing<=75&&s->clock_follow<=1&&s->mono_mode<=1&&
  s->harmony.root<12&&s->harmony.mode<9&&s->harmony.keylock<=2&&s->harmony.chord<=2&&
- s->global_fx.routing<=1&&s->global_fx.chorus_rate<=32767&&s->global_fx.chorus_depth<=32767&&
+ etch_fx_valid_route_and_type(s->global_fx.routing)&&s->global_fx.chorus_rate<=32767&&s->global_fx.chorus_depth<=32767&&
  s->global_fx.delay_time<=32767&&s->global_fx.delay_feedback<=32767&&
  s->global_fx.reverb_size<=32767&&s->global_fx.reverb_decay<=32767&&
  s->global_fx.ring_mix<=32767&&s->global_fx.ring_rate<=32767&&
@@ -430,7 +430,7 @@ int etch_project_encode(const struct etch_wave_library *l,const struct etch_nati
   put32(&w,s->preset_valid);
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if(s->preset_valid&(1u<<i)){
    const struct etch_fx_settings *fx=&s->preset_fx[i];
-   if(fx->routing>1||fx->ring_mix>32767||fx->eq_low>32767||fx->eq_mid>32767||fx->eq_high>32767)return -1;
+   if(!etch_fx_valid_route_and_type(fx->routing)||fx->ring_mix>32767||fx->eq_low>32767||fx->eq_mid>32767||fx->eq_high>32767)return -1;
    put(&w,fx,ETCH_FX_V13_SIZE);
    for(uint32_t j=0;j<3;j++){
     const int16_t *wave=s->preset_wave[i][j];
@@ -626,7 +626,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   s->global_fx.delay_time=get16(&r);s->global_fx.delay_feedback=get16(&r);
   s->global_fx.reverb_size=get16(&r);s->global_fx.reverb_decay=get16(&r);
   s->global_fx.routing=get8(&r);
-  if(s->global_fx.routing>1)return -1;
+  if(!etch_fx_valid_route_and_type(s->global_fx.routing))return -1;
  }else etch_fx_defaults(&s->global_fx);
  if(magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){
   uint8_t count=get8(&r);int last=-1;
@@ -662,7 +662,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if(s->preset_valid&(1u<<i)){
    etch_fx_defaults(&s->preset_fx[i]);
    get(&r,&s->preset_fx[i],ETCH_FX_V13_SIZE);
-   if(r.error||s->preset_fx[i].routing>1||s->preset_fx[i].ring_mix>32767||
+   if(r.error||!etch_fx_valid_route_and_type(s->preset_fx[i].routing)||s->preset_fx[i].ring_mix>32767||
       s->preset_fx[i].eq_low>32767||s->preset_fx[i].eq_mid>32767||s->preset_fx[i].eq_high>32767)return -1;
    for(uint32_t j=0;j<3;j++){
     uint8_t method=get8(&r);

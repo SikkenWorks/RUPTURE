@@ -1095,7 +1095,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.76","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.82","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

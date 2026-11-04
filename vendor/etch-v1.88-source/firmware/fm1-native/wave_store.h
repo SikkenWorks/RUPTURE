@@ -109,6 +109,7 @@ int etch_store_delete_project_slot(const struct etch_store_io*,uint8_t slot,uint
 int etch_store_user_settings_load(const struct etch_store_io*,uint8_t *volume,uint8_t *autosave,uint8_t *screensaver);
 /* First-run completion uses the existing CRC-verified settings journal;
  * legacy magic values remain readable, no new flash regions. */
+int etch_store_user_settings_welcome_version_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
 int etch_store_user_settings_welcome_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
 int etch_store_user_settings_welcome_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_user_settings_crt_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);

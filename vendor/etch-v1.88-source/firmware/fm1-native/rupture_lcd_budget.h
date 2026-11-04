@@ -9,10 +9,27 @@
 static inline uint16_t ru_lcd_animation_period(uint8_t pressure,uint8_t missed){
  /* Only smooth knob interpolation and the splash require a rate budget.
   * This value must NEVER be applied to individual sprite changes. */
- (void)pressure; /* High max DSP percent is not a DMA underrun. */
+ /* Pressure is a RECENT ISR wall-time hint, not historical DSP MAX.
+  * When the active render + USB/copy service already occupies most of a DMA
+  * half, cap noncritical art to 20fps instead of causing bus contention. */
  if(missed>=3u)return 100u; /* Actual repeated lateness: protect audio. */
  if(missed)return 50u;
- return 25u; /* 40 FPS target for knob easing at healthy DMA. */
+ if(pressure>=24u)return 50u;
+ return 25u; /* 40 FPS remains unchanged when ALNK is healthy. */
+}
+/* V1.79: repeatedly turning SUB DRIFT/FX encoders used to force a full
+ * LCD transfer every 25ms EVEN when the audio wall-time budget was already
+ * under pressure. Coalesce only redundant KNOB paints, never control data,
+ * page changes, record/stop, notes, OTA, or fault notices. This function
+ * is UI-thread only. Under healthy timing, behavior is unchanged. */
+static inline uint8_t ru_lcd_knob_paint_due(uint32_t now,uint32_t last,
+ uint8_t wall_pressure,uint8_t missed_streak){
+ uint16_t period=25u;
+ if(wall_pressure>=24u)period=75u;
+ else if(wall_pressure>=12u)period=50u;
+ if(missed_streak>=2u)period=100u;
+ else if(missed_streak && period<75u)period=75u;
+ return (uint8_t)((uint32_t)(now-last)>=period);
 }
 static inline uint16_t ru_lcd_idle_period(uint8_t pressure,uint8_t missed){
  if(missed>=3u||pressure>=20u)return 750u;
@@ -33,7 +50,7 @@ static inline uint8_t ru_lcd_should_paint(uint32_t now,uint32_t last,
    * still impose the original protective cap to avoid audio dropouts. */
   /* A high DSP MAX is historical and alone must not slow graphics.
    * Throttle only when actual DMA deadline misses persist. */
-  const uint16_t period=missed>=3u?100u:missed?50u:25u;
+  const uint16_t period=ru_lcd_animation_period(pressure,missed);
   if(elapsed>=period)return 1u;
  }
  if(visual_moving && elapsed>=ru_lcd_animation_period(pressure,missed))return 1u;
