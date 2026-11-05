@@ -1,0 +1,16 @@
+{
+  "default": "rupture",
+  "firmwares": [
+    {
+      "id": "rupture",
+      "name": "RUPTURE",
+      "version": "bundled",
+      "author": "SikkenWorks",
+      "license": "firmware license follows RUPTURE upstream",
+      "repo": "https://github.com/SikkenWorks/RUPTURE",
+      "about": "Bundled RUPTURE.fwsc; locked firmware edition",
+      "package": "./RUPTURE.fwsc",
+      "sha256": "dd0988abeefd5439db602d8a8420e92954de313bf4e041a7f1495144e0603993"
+    }
+  ]
+}

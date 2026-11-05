@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-edition="rupture">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#111214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="RUPTURE for the M-VAVE FM-1. Firmware bundled. Full-screen touch and MIDI emulator with saves and performance controls.">
+  <title>RUPTURE Emulator V2.4 · Full Screen</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="site bar" aria-label="Emulator toolbar">
+    <div class="toolbar-brand">
+      <img src="./favicon.png" width="26" height="26" alt="" draggable="false">
+      <div class="app-ident"><strong>RUPTURE</strong><span>FM-1 EMULATOR</span></div>
+      <span class="fw-pill" id="firmware-name">RUPTURE</span>
+    </div>
+    <div class="toolbar-controls" role="group" aria-label="Tools">
+      <label class="tool labelled" title="Changes the emulated CPU clock (reboots the firmware)">
+        <span>Clock</span><select id="mhz" aria-label="CPU clock MHz"></select>
+      </label>
+      <label class="tool labelled" title="Performance favors smooth playback; Hardware Accuracy uses measured CPU costs, flash cache and timed LCD transfers">
+        <span>Mode</span><select id="mode" aria-label="Emulator mode">
+          <option value="performance">Performance</option>
+          <option value="accurate">Hardware Accuracy</option>
+        </select>
+      </label>
+      <label class="tool labelled" title="Trade lower input latency for extra headroom. Changing this restarts the emulated firmware while retaining saved flash.">
+        <span>Response</span><select id="audio-ahead" aria-label="Emulated audio queue / input response">
+          <option value="256">Fast · 256</option>
+          <option value="512">Balanced · 512</option>
+          <option value="1024">Stable · 1024</option>
+        </select>
+      </label>
+      <span class="tool-separator"></span>
+      <button class="tool" id="save-now" type="button" title="Save current emulator flash state">Save</button>
+      <button class="tool" id="export-save" type="button" title="Export a portable .fm1save backup">Export save</button>
+      <label class="tool" title="Import a portable .fm1save backup">Import save
+        <input id="import-save" type="file" accept=".fm1save,.json" aria-label="Import emulator save">
+      </label>
+      <details id="midi-settings" class="tool-menu">
+        <summary class="tool" aria-label="MIDI input settings">MIDI <span class="chevron">⌄</span></summary>
+        <div class="popover midi-popover">
+          <label id="midiin">MIDI input <span class="midi-input"><span id="midiact" aria-hidden="true"></span><select id="midi" aria-label="MIDI input"><option value="">Off</option><option value="*">All inputs</option></select></span></label>
+          <label id="midichl">Channel <select id="midich" aria-label="MIDI channel"><option value="0">As sent</option></select></label>
+          <p>Web MIDI requires browser support and HTTPS. You can always play using touch or keyboard.</p>
+        </div>
+      </details>
+      <button class="tool" id="keys-open" type="button" title="View and change keyboard shortcuts">Shortcuts</button>
+      <button class="tool" id="diagnostics-open" type="button" title="Measure audio and emulator timing">Diagnostics</button>
+    </div>
+    <div class="toolbar-meta">
+      <span id="save-status" aria-live="polite">Saved locally after running</span>
+      <span id="status" role="status" aria-live="polite">RUPTURE ready · press Start</span>
+      <a class="credit" href="https://github.com/joakimeriksson/fm1-emu" target="_blank" rel="noopener noreferrer" title="Original FM-1 Emulator by Joakim Eriksson">
+        <span>Emulator by</span><strong>Joakim Eriksson</strong><span aria-hidden="true">↗</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="viewport">
+    <div class="deck">
+      <div class="stage" aria-label="Emulated M-VAVE FM-1 front panel">
+        <canvas id="panel" aria-label="Interactive FM-1 panel. Tap keys and buttons, drag knobs to adjust them."></canvas>
+        <div id="empty" class="empty-overlay" hidden></div>
+        <button id="start" type="button" hidden>Start RUPTURE</button>
+        <div id="engine-error" class="engine-error" hidden>
+          WebAssembly could not be loaded. Deploy the GitHub Actions build containing <code>fm1_web.wasm</code>.
+        </div>
+        <div id="perfwarn" role="alert" hidden>
+          <p id="perfwarn-text"></p>
+          <div class="acts">
+            <button type="button" id="perfwarn-fix" class="primary"></button>
+            <button type="button" id="perfwarn-copy">Copy report</button>
+            <button type="button" id="perfwarn-close" aria-label="Dismiss warning">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+  </main>
+
+  <!-- Internal compatibility nodes. No firmware import or firmware switching is exposed. -->
+  <div class="compat" hidden aria-hidden="true">
+    <span id="title"></span><span id="about"></span>
+    <a id="fullpage" href="./"></a>
+    <select id="fw"></select>
+    <input id="bank" type="file" accept=".syx"><span id="bankname"></span>
+    <ul id="fwlist"></ul>
+    <select id="saved-versions"></select>
+    <button id="browse-saves" type="button"></button>
+    <button id="open-saved-version" type="button"></button>
+    <button id="reset-save" type="button"></button>
+    <button id="update-firmware" type="button"></button>
+  </div>
+
+  <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <div class="dialog-head">
+      <div><h2 id="shortcuts-title">Keyboard shortcuts</h2><p>View and change all keys and rotary controls. Changes are saved on this device.</p></div>
+      <button id="keys-close" class="dialog-close" type="button" aria-label="Close shortcuts">✕</button>
+    </div>
+    <p id="key-prompt" role="status" aria-live="polite">Tap a shortcut to reassign it.</p>
+    <input id="key-capture" type="text" hidden autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Press or type the new shortcut">
+    <div id="key-grid" class="key-grid"></div>
+    <div class="dialog-footer">
+      <button type="button" id="keys-reset">Restore defaults</button>
+      <button type="button" id="keys-done">Done</button>
+    </div>
+  </dialog>
+  <dialog id="diagnostics-dialog" aria-labelledby="diagnostics-title">
+    <div class="dialog-head">
+      <div><h2 id="diagnostics-title">Emulator diagnostics</h2><p>10 seconds of RUPTURE emulation measurements. No microphone, notes or audio are recorded.</p></div>
+      <button id="diagnostics-close" class="dialog-close" type="button" aria-label="Close diagnostics">✕</button>
+    </div>
+    <div class="diagnostics-body">
+      <p class="diagnostics-disclaimer">Measures how smoothly the emulator runs. It does <strong>not</strong> prove that the emulation matches physical FM-1 hardware.</p>
+      <p id="diagnostics-status" role="status" aria-live="polite">Import a firmware and start playing, then run the test.</p>
+      <pre id="diagnostics-result" aria-label="Diagnostic results">No results yet.</pre>
+    </div>
+    <div class="dialog-footer">
+      <button id="diagnostics-run" type="button">Run 10-second test</button>
+      <button id="diagnostics-export" type="button" disabled>Export JSON</button>
+    </div>
+    <section class="calibration-section" aria-labelledby="calibration-title">
+      <h3 id="calibration-title">Physical FM-1 audio comparison</h3>
+      <p class="diagnostics-disclaimer">Compare two recordings of the <strong>same firmware, patch and MIDI passage</strong>. This measures audio similarity, not chip-level accuracy. Files stay on this device.</p>
+      <div class="calibration-inputs">
+        <label>Physical FM-1 recording <input id="physical-wav" type="file" accept=".wav,audio/wav,audio/x-wav"></label>
+        <label>Emulator recording <input id="emulator-wav" type="file" accept=".wav,audio/wav,audio/x-wav"></label>
+      </div>
+      <p class="calibration-hint">Export both from your DAW as 16-bit PCM WAV at 44.1 kHz, without normalization. Use an identical MIDI pattern and line up their start approximately.</p>
+      <div class="calibration-settings">
+        <label>Skip at start <select id="calibration-skip"><option value="0">0 s</option><option value="0.5" selected>0.5 s</option><option value="1">1 s</option><option value="2">2 s</option></select></label>
+        <label>Max timing offset <select id="calibration-lag"><option value="100">100 ms</option><option value="250" selected>250 ms</option><option value="500">500 ms</option><option value="1000">1000 ms</option></select></label>
+      </div>
+      <p id="calibration-status" role="status" aria-live="polite">Choose both recordings to start. No audio is uploaded.</p>
+      <pre id="calibration-result" aria-label="Physical audio comparison results">No comparison yet.</pre>
+      <div class="dialog-footer">
+        <button id="calibration-run" type="button" disabled>Compare WAV recordings</button>
+        <button id="calibration-export" type="button" disabled>Export comparison JSON</button>
+      </div>
+    </section>
+  </dialog>
+  <script src="./protect.js" defer></script>
+  <script type="module" src="./main.js"></script>
+  <script type="module" src="./calibration-ui.js"></script>
+  <script src="./pwa.js" defer></script>
+</body>
+</html>

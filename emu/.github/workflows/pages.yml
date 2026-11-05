@@ -1,0 +1,61 @@
+name: Build and deploy FM-1 Emulator PWA
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: fm1-emulator-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check web JS and keyboard mappings
+        run: |
+          for file in web/main.js web/firmware-policy.js web/shortcuts.js web/render-scheduler.js web/accuracy.js web/calibration.js web/calibration-ui.js web/fwsc.js web/persistence.js web/tryout.js web/worklet.js web/jit.js web/protect.js web/pwa.js web/sw.js; do node --check "$file"; done
+          node --test web/accuracy.test.mjs web/render-scheduler.test.mjs web/main.test.mjs web/fwsc.test.mjs web/persistence.test.mjs web/jit.test.mjs web/tryout.test.mjs web/worklet.test.mjs web/audio-file.test.mjs web/calibration.test.mjs web/calibration-ui.test.mjs web/firmware-policy.test.mjs
+      - name: Test physical-audio comparison helper
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Verify bundled firmware
+        run: |
+          test -s web/RUPTURE.fwsc
+          sha256sum -c web/RUPTURE.sha256
+      - name: Build WebAssembly + PWA
+        run: bash web/build.sh _site
+      - name: Verify bundled engine
+        run: |
+          test -s _site/fm1_web.wasm
+          test -s _site/RUPTURE.fwsc
+          file _site/fm1_web.wasm
+          test -s _site/icons/icon-512.png
+      - name: Upload complete website ZIP for other hosting
+        uses: actions/upload-artifact@v4
+        with:
+          name: rupture-emulator-v2-4-website
+          path: _site/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

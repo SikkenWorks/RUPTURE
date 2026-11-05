@@ -1,0 +1,30 @@
+{
+  "id": "./",
+  "name": "RUPTURE FM-1 Emulator V2.4",
+  "short_name": "RUPTURE",
+  "description": "RUPTURE firmware bundled for the M-VAVE FM-1; original emulator by Joakim Eriksson.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "background_color": "#101114",
+  "theme_color": "#111214",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
