@@ -939,6 +939,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   * color several POLY buffers despite the LFO editor being hidden. */
  if(!c->mono_mode)evolution_smooth=0;
  uint32_t evo_step=evolving?etch_evolution_step(e,(c->clock_follow&&s->clock_bpm)?s->clock_bpm:c->tempo):0u;
+ /* V1.83: control snapshots remain immutable for the entire DMA render.
+  * Compute the Q16 master gain target once per block; the sample-wise
+  * slewing itself is unchanged and stays click-free. */
+ const int32_t gain_target=(int32_t)(c->gain>32767?32767:c->gain)*65536;
 
  for(uint32_t f=0;f<frames;f++){
   if(s->clock_samples<1000000u)++s->clock_samples;
@@ -1369,7 +1373,6 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    * 128-frame block. ~6 ms smoothing at 44.1 kHz suppresses zipper noise.
    * An 8/16-bit knob/ADC step must never become a PCM amplitude step.
    * The accumulator belongs to audio_core and survives successive blocks. */
-  const int32_t gain_target=(int32_t)(c->gain>32767?32767:c->gain)*65536;
   int32_t gain_delta=gain_target-s->master_gain_q16;
   if(gain_delta){
    int32_t gain_step=gain_delta/256;
@@ -1389,21 +1392,37 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    * increases within 32 samples, decreases over 1024, and is continuous
    * at each sample. The instantaneous safety knee below is a second line
    * of defence when filter resonance or coherent phases exceed nominal. */
+#ifdef RUPTURE_BUILD
+  /* V1.83: mono always has <= 1 sounding voice. The upstream adaptive
+   * headroom target is therefore invariant at 4096 (Q10 -> /4). Keep
+   * the normal 8-voice algorithm untouched for the non-RUPTURE target.
+   * No effect, attack, MIDI, glide or reverb sample is approximated. */
+  s->poly_div_q10=4096;
+#else
   uint32_t admitted=voices_sounding;
   for(uint32_t i=0;i<limit;i++)if(s->voice[i].active &&
       s->voice[i].held && s->voice[i].attack_fade &&
       s->voice[i].env<=256)++admitted;
   s->poly_div_q10=etch_poly_headroom_step(s->poly_div_q10,admitted);
+#endif
   /* 8 voices with max Q15 carriers and a 128-sample soft tail are below
    * +/-524288. Avoid two emulated 64-bit VARIABLE divisions every 44.1kHz
    * sample. The bound also protects against unexpected transients. */
   int32_t bounded_sum=sum>524288?524288:sum< -524288?-524288:sum;
+#ifdef RUPTURE_BUILD
+  int32_t mix=bounded_sum/4;
+#else
   int32_t mix=(bounded_sum*1024)/s->poly_div_q10;
+#endif
   mix=etch_poly_safe_sample(mix);
   int32_t preview_dry=0;
   if(preview_mix){
    int32_t bounded_preview=preview_sum>524288?524288:preview_sum< -524288?-524288:preview_sum;
+#ifdef RUPTURE_BUILD
+   preview_dry=etch_poly_safe_sample(bounded_preview/4);
+#else
    preview_dry=etch_poly_safe_sample((bounded_preview*1024)/s->poly_div_q10);
+#endif
   }
   /* Ramp DRIVE once per sample. The original version switched gain and
    * waveshaping abruptly at buffer boundaries, generating zipper clicks.

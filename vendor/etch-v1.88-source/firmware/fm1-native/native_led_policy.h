@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * The 12 non-octave function buttons remain lit. Octaves indicate offset.
+ * Function buttons have page-aware intensity in RUPTURE V1.84. Octaves indicate offset.
  * Musical keyboard LEDs still follow active notes and sequencer feedback.
  */
 #pragma once

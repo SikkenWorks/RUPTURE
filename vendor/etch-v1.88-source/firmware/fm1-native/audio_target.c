@@ -100,7 +100,9 @@ static void native_output_poll(void){
   * for an uninterrupted stable window instead. This gate is NOT a VBUS
   * voltage or an analogue offset detector. */
  uint8_t usb_stable=etch_output_usb_ready(&native_usb_gate,now,usb_state);
- if(native_output_gate.phase==ETCH_OUTPUT_CLOCK_SILENCE && !usb_stable)return;
+ if(native_output_gate.phase==ETCH_OUTPUT_CLOCK_SILENCE &&
+    (!usb_stable || !etch_output_led_quiet_ready(native_led_seen,now,
+        native_led_last_change_ticks)))return;
  uint8_t action=etch_output_gate_advance(&native_output_gate,fm1_ticks(),native_halves);
  if(action==ETCH_OUTPUT_ENABLE_ANALOG){
   /* The DMA ISR still outputs zeros; no audio reaches the DAC yet. */

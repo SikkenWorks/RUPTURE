@@ -1,3 +1,30 @@
+# RUPTURE V1.84.2 — Speaker Pop: LED/PC6 Sequencing Hotfix
+
+- Removed the simultaneous full-current twelve-button LED transition during AUDIO STOP/SAFE/UPDATE status. Protected states now keep the background function LEDs on their existing fast low-current glow; physical press feedback remains immediate. Normal page, SEQ, PLAY and REC LEDs remain unchanged.
+- PC6's existing digital-silence/USB-stability startup now additionally requires **400 ms of actual stable function LED masks** before the single analogue power-enable transition. The LED soft-start is refreshed during the Welcome wizard, and the bank is initialized before the audio start.
+- **Not changed:** synth PCM, SUBs/DRIFT, ROOM/HALL/SPRING and all FX, audio fault-stop guard, input/LED scan ISR, sequencer, storage, first-boot wizard logic, USB MIDI/OTA, protected 16 KiB header, trusted OTA loader. No PWM is applied to PC6.
+- Cross-build and host startup arbitration tests passed. The source-based mitigation is **not proof that a hardware-only PC6 amplifier-bias pop has been eliminated**; a low-volume physical comparison, including GLO-held PC6-muted diagnostic, is necessary.
+
+# RUPTURE V1.84.1 — Button LED Startup Pop Mitigation
+
+- **Only the function-button LED policy changes.** In V1.84, the first-run Welcome state commanded all twelve function LEDs at full current in one update. V1.84.1 uses low-current glow for Welcome, introduces the dim states incrementally during the first ~260 ms, and then hands control to the original V1.84 LED rules.
+- **Unchanged:** every non-startup button and note LED behavior, all synthesizer/DSP/reverbs, LCD, hardware matrix-scan ISR, USB/MIDI, boot/welcome logic, storage, protected flash header and OTA loader.
+- **Physical limitation:** the sudden LED-current step was a plausible coupling source, but a startup pop can also result from the separate PC6 analog amplifier enable. The latter is deliberately untouched. The speaker-pop fix is not proven on FM1 hardware yet; do not infer physical silence from host tests.
+
+# RUPTURE V1.84 — Hardware Integration
+
+- **Contextual function LEDs:** active hardware page is bright; inactive function keys retain the existing fast dim glow. Physical presses always override the page indicator. Sequencer PLAY, armed/live REC and SEQ count-in each have unambiguous LED ownership. Normal octave, note, GUIDE and GRID feedback is preserved.
+- **Encoder consistency:** a page change resets K1–K4 acceleration history, so a fast turn on the previous page cannot double the first movement on the new page. Selecting another FX panel also resets the history; discrete controls and existing accelerated continuous controls otherwise behave as before.
+- **Realtime isolation:** changes only in UI/control-loop routing and button LED planes. No changes to the synthesizer DSP, three reverb engines, IRQ timing, HAL scan implementation, project schema, Welcome completion logic or native OTA writer.
+- **Validation limits:** cross-compiled native firmware and host tests, including function LED priority and count-in logic. Physical LED perceived brightness, responsiveness and DMA/GUARD counts still need verification on actual FM1 hardware.
+
+# RUPTURE V1.83 — Realtime Mono Headroom
+
+- **Mono mixer:** replaced per-sample variable Q10 5–8-voice headroom stepping and variable division with the mathematically identical fixed `/4` operation for the always-monophonic RUPTURE build. Unmodified upstream poly behavior remains under the non-RUPTURE build path.
+- **Master volume:** its Q16 target is now calculated once per audio render block, retaining the exact per-sample smoothing for changing gain, MIDI notes and preset ramps.
+- **Sound preservation:** CXS, SAW, both SUBs with DRIFT, all three unique ROOM/HALL/SPRING reverbs, all other FX, envelope, sequence and MIDI paths are unchanged. Host stress renders match V1.82 sample-for-sample for rapid notes and multi-FX scenarios.
+- **Safety:** project storage, the existing V1.82 Welcome completion marker, exact protected 16 KiB bootheader and trusted OTA loader are preserved; no new flash writes or partitions. The installed firmware's physical DMA deadline and true worst-case cycle headroom still need measured hardware validation; zero-underrun operation is **not yet certified**.
+
 # RUPTURE V1.82 — First-Boot Welcome Restore
 
 - Replaced the legacy-only `welcome_done` boot decision with a CRC-checked V1.82-specific completion marker in the existing device settings journal. Legacy V1.81 completion is now treated as requiring the V1.82 wizard once; normal subsequent boots skip it.

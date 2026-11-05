@@ -19,6 +19,22 @@ After the existing first-run setup, RUPTURE asks **VIEW QUICK TUTORIAL?** Choose
 
 The rotary knobs have a smooth, time-based indicator and brief focus markers. UI rendering is separate from the audio processor; if the device reports actual DMA misses, screen frames may be reduced temporarily to protect the audio.
 
+### Speaker-pop / analog-enable sequencing (V1.84.2)
+
+The earlier LED soft start remains in place. V1.84.2 additionally removes the abrupt **all-twelve-button-LEDs-at-full-brightness** transition on **audio faults, SAFE and protected screens**. A pressed button still illuminates immediately. The analog PC6 power gate is now released only after the *observed* button LED masks have stopped changing for at least 400 ms, alongside the existing digital-silence and USB-stability checks. The welcome wizard's low-power LED ramp continues while its UI owns navigation.
+
+These are deliberately limited current/transient mitigations; **PC6 is a binary hardware power-control pin and its own analog bias pop cannot be guaranteed silent by a digital fade or a timer.** There is no added audio work, no new GPIO PWM, and no change to the 10 kHz scan ISR, reverb algorithms, project data or firmware updater. On a physical FM1, compare speaker output at low volume with V1.84.1 and with GLO-held PC6-muted diagnostic mode. If the pop remains with the ordinary LEDs stable, inspect the speaker-enable/power-rail circuit instead of increasing delays or adding unstable PWM.
+
+### Button LED startup pop mitigation (V1.84.1)
+
+At power-on, the twelve function-button LEDs no longer switch directly from dark to a full-current group during Welcome. They enter their existing low-current dim states gradually over about 260 ms. When the normal RUPTURE screen is reached, all V1.84 button, countdown and page indicators behave exactly as before. This does not alter audio, the amp power-control pin, the LED scanning interrupt, storage or OTA. **An audible plop from the external amp's separate PC6 hardware-enable edge is still possible; confirmation on a real FM1 is required.**
+
+### Hardware integration (V1.84)
+
+RUPTURE uses its FM1 function LEDs as direct feedback. The selected hardware section is **bright** (HOME for PLAY / SOUND SHAPE / SUB, ENV, LFO, FX, EDIT for channel EQ, ARP, SEQ or GLO for utility screens). Other function buttons stay discoverable at the existing **high-frequency soft glow**, rather than switching slowly on and off. Pressed buttons immediately take priority. The PLAY LED stays bright while the sequencer is playing, REC while recording is armed/active, and SEQ pulses on the two-bar count-in. Octave and keyboard LEDs continue their established behaviors. During protected update, recovery and first-run screens, background function LEDs stay dim instead of all switching to full current; physical button feedback is unchanged. These are UI-thread policies; **there are no new audio callback operations or LED timer ISR changes**.
+
+When switching pages (including choosing a different FX engine), the acceleration history of K1–K4 resets. The first physical detent on a newly selected page therefore cannot inherit a doubled step from the previous page. Existing fast-turn acceleration on continuous controls and exact single-detent changes on discrete controls are otherwise retained. Knob focus markers and visible values still respond immediately. These behaviors are software-tested but require a physical FM1 check to confirm perceived LED brightness and encoder feel.
+
 ### Basic navigation
 
 - **PLAY:** Main CXS/SAW oscillator. The four knobs control PRESSURE/BALANCE/MEMORY/DENSITY in CXS, and BRIGHT/EDGE/BODY/LEVEL in SAW. In SAW mode, the BRIGHT range now starts with a warmer, filtered bass core; EDGE and the four SOUND SHAPE controls still provide aggressive sounds when deliberately raised. For rounded bass, start around BRIGHT 35–60, EDGE 40–55, with a low-pass/ladder filter and moderate resonance. This evokes the role of an analog bass synth without reproducing a specific hardware instrument.
@@ -33,6 +49,12 @@ The rotary knobs have a smooth, time-based indicator and brief focus markers. UI
 - **SETTINGS:** Master volume, autosave, startup project, storage and CRT/VCR appearance.
 
 Use **HOME** to cycle the main oscillator pages. On any ordinary screen where SELECT has no dedicated function, turning **SELECT** opens the exact same screen list as on PLAY. Where SELECT already controls a step, FX selection, slot, scroll position or setting, that function remains unchanged. **SEL** confirms selections. Protected update, recovery and welcome screens are excluded from the global navigation shortcut. On pages with K1–K4 rotaries, the last turned knob is highlighted briefly with two small bars beside its circle. FX, FILTER, ENV, LFO, PLAY, SOUND SHAPE, SUB, ARP and SEQUENCER use the same indicator. In Channel EQ, the selected value row is marked instead; the fifth ALGORITHM knob on SUB shows the same focus when adjusting BLEND. User-defined projects use the existing RUPTURE format. The display has dedicated 1-bit animations for PLAY, LFO, ENV and SOUND SHAPE. Animations are rendered in the UI loop, outside the audio callback. On **ENV**, the wall-break dust and debris settle through eight short frames, while the broken wall continues to tremble subtly until Note OFF. On **LFO**, small debris keeps falling into the sinkhole in an eight-frame loop while a note is held; releasing the note closes the scene. PLAY and SOUND SHAPE retain their existing hold loops and shake.
+
+## Realtime mono headroom
+
+The RUPTURE mono renderer uses a fixed four-to-one gain divider rather than recalculating the upstream 5–8-voice adaptive headroom every sample. The mono engine never uses those extra voices. Master gain still slews smoothly on every audio sample; its unchanged target is resolved once per DMA block. The existing CXS, bandlimited SAW, dual SUBs, all three ROOM/HALL/SPRING algorithms, sustain, MIDI, sequencer, storage and OTA are preserved. Host PCM comparisons prove sample identity for the tested workloads; **they do not guarantee zero DMA LATE/GUARD on physical FM1 hardware**.
+
+Updating from an already completed V1.82 setup keeps its Welcome completion marker in V1.83. No existing user data is erased and no automatic format is performed. The Quick Tour remains available from GLO. A V15 round-trip to the same already-completed release may still be indistinguishable from a reboot if V15 preserves that marker.
 
 ## V1.81: Rapid-note realtime reliability
 
@@ -58,7 +80,7 @@ A saved project is acknowledged only after the storage operation completes. Load
 
 ## Firmware installation and recovery
 
-The WebInstaller is available in `index.html` and `WebInstaller.html`. Use a supported desktop browser with Web MIDI SysEx permission, through HTTPS or localhost. The firmware package is `RUPTURE-V1.82.fwsc` and uses identity **FM-1_968**. Its protected bootheader and trusted OTA loader are retained from the prior working release.
+The WebInstaller is available in `index.html` and `WebInstaller.html`. Use a supported desktop browser with Web MIDI SysEx permission, through HTTPS or localhost. The firmware package is `RUPTURE-V1.84.fwsc` and uses identity **FM-1_968**. Its protected bootheader and trusted OTA loader are retained from the prior working release.
 
 The installer can show a confirmed transfer at 100% while the device is rebooting; confirmation that the new firmware is running requires reconnect/identity verification or confirmation on the FM1 itself. Keep the USB connection stable until the process completes. A firmware write is always a recovery-sensitive operation.
 

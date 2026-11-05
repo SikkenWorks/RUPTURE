@@ -26,6 +26,17 @@ static inline uint8_t etch_output_usb_ready(struct etch_output_usb_gate *g,
  return (uint8_t)((uint32_t)(now-g->changed_ticks)>=ETCH_OUTPUT_USB_STABLE_TICKS);
 }
 
+/* Wait until the *actual* main-loop LED bank has remained steady before
+ * applying the single binary PC6 power edge. This prevents two independent
+ * digital-load transitions from coinciding. It cannot eliminate a pop
+ * generated inside the analogue amplifier itself. TIMER4 = 24 MHz. */
+#define ETCH_OUTPUT_LED_QUIET_TICKS 9600000u /* 400 ms */
+static inline uint8_t etch_output_led_quiet_ready(uint8_t led_seen,
+    uint32_t now,uint32_t last_led_change){
+ return (uint8_t)(led_seen &&
+    (uint32_t)(now-last_led_change)>=ETCH_OUTPUT_LED_QUIET_TICKS);
+}
+
 #define ETCH_OUTPUT_MIN_DMA_HALVES 32u
 #define ETCH_OUTPUT_RAMP_SAMPLES 8192u          /* ~186ms at 44.1kHz */
 enum etch_output_phase { ETCH_OUTPUT_CLOCK_SILENCE=0, ETCH_OUTPUT_ANALOG_SILENCE=1, ETCH_OUTPUT_PLAY=2 };

@@ -220,6 +220,7 @@ static void etch_panel_commit(void){
 #include "rupture_seq_entry.h"
 #include "rupture_seq_redraw.h"
 #include "rupture_encoder_feel.h"
+#include "rupture_hw_leds.h"
 #include "rupture_welcome.h"
 #include "rupture_save_route.h"
 static uint8_t ru_crt_enabled=0u;
@@ -342,6 +343,13 @@ void fm1_timer5_irq(void){
  if(job==ETCH_IRQ_USB_POLL)usb_poll(); /* non-nested only */
  if(nested){++native_nested_count;native_nested_ticks+=fm1_ticks()-start;}
 }
+/* Main-loop LED bank changes are tracked only for the boot-time PC6
+ * analogue-enable quiet window. This is neither ISR polling nor DSP work. */
+static uint32_t native_led_last_change_ticks;
+static uint16_t native_led_last_solid,native_led_last_glow;
+static uint8_t native_led_seen;
+static uint32_t ru_led_start_ms;
+static uint8_t ru_led_started;
 /* Mode is shared by main-loop waveform publication and the renderer. Keep
  * the declaration ahead of audio_target.c because it is included here. */
 static uint8_t native_mono_mode=1u;
@@ -1197,9 +1205,29 @@ static void native_seq_led_refresh(void){
   native_seq_led_dim(14u+k,(dim&bit)!=0);
   native_seq_led_mid(14u+k,(mid&bit)!=0);
  }
- for(uint8_t b=2u;b<14u;b++)fm1_led_key(b,
-   b==13u?native_seq_recording:
-   b==11u&&ru_countin.active?ru_countin_pulse:etch_led_function(b));
+ /* V1.84: show the current page and transport status on the physical
+  * function buttons. Inactive functions stay discoverable at the existing
+  * high-frequency dim glow. No low-frequency PWM and no audio-thread work. */
+ RuFunctionLeds leds=ru_function_leds(ru_page,native_seq_run,
+   native_seq_recording,ru_countin.active,ru_countin_pulse,fm1_in.buttons,
+   (uint8_t)(native_safe||native_tripped||native_updating||ru_welcome.phase));
+ /* Cold boot: prevent the abrupt all-function-LED current edge. No impact
+  * on the usual page/transport/button LED behavior after startup. */
+ if(!ru_led_started){ru_led_start_ms=etch_ms;ru_led_started=1u;}
+ leds=ru_function_led_boot_softstart(leds,(uint8_t)!!ru_welcome.phase,
+    (uint32_t)(etch_ms-ru_led_start_ms),(uint16_t)fm1_in.buttons);
+ if(!native_led_seen || native_led_last_solid!=leds.solid ||
+    native_led_last_glow!=leds.glow){
+  native_led_seen=1u;
+  native_led_last_solid=leds.solid;
+  native_led_last_glow=leds.glow;
+  native_led_last_change_ticks=fm1_ticks();
+ }
+ for(uint8_t b=2u;b<14u;b++){
+  const uint16_t bit=(uint16_t)(1u<<b);
+  fm1_led_key(b,(leds.solid&bit)!=0u);
+  native_seq_led_dim(b,(leds.glow&bit)!=0u);
+ }
  #ifdef RUPTURE_BUILD
  fm1_led_key(0u,rupture_octave_led(0u,native_controls.octave,fm1_in.buttons));
  fm1_led_key(1u,rupture_octave_led(1u,native_controls.octave,fm1_in.buttons));
@@ -3725,7 +3753,14 @@ static void screen(void){
 }
 #ifdef RUPTURE_BUILD
 static uint8_t ru_menu_pages[]={RU_PAGE_FILTER,RU_PAGE_ENV,RU_PAGE_LFO,RU_PAGE_FX,RU_PAGE_SEQ,RU_PAGE_ARP,RU_PAGE_GUIDE,RU_PAGE_KEYLOCK,RU_PAGE_NOTE_MEMORY,RU_PAGE_PROJECTS,RU_PAGE_MIDI};
-static void ru_nav_to(uint8_t page){ru_prev=ru_page;ru_page=page;ru_knob_focus_until=0u;ru_focus=0u;ru_seq_confirm=0u;ru_seq_feedback=0u;ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;}
+static void ru_nav_to(uint8_t page){
+ if(page!=ru_page){
+  /* A fast turn on the previous page must not accelerate the first detent
+   * on the new page. Physical detents remain one-to-one after navigation. */
+  for(uint8_t k=0u;k<4u;k++)ru_knob_feel[k]=(RuEncoderFeel){0};
+ }
+ ru_prev=ru_page;ru_page=page;ru_knob_focus_until=0u;ru_focus=0u;ru_seq_confirm=0u;ru_seq_feedback=0u;ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;
+}
 static void ru_begin_name(uint8_t sequence,uint8_t save_after){
  ru_edit_target=sequence;ru_edit_after_save=save_after;ru_edit_pos=0u;
  ru_name_new_slot=(uint8_t)(sequence && !ru_seq_slot_used((uint8_t)(RU_SEQ_BANK_BASE+ru_seq_slot-1u)));
@@ -4700,8 +4735,12 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(alg){ru_help_scroll=(uint8_t)ui_bound((int32_t)ru_help_scroll+alg,0,2);first_frame=1u;}
  }
  else if(ru_page==RU_PAGE_FX){
-  if(select){ru_fx_selected=(uint8_t)ui_bound((int32_t)ru_fx_selected+(select>0?1:-1),0,7);
-   ru_knob_focus_until=0u;first_frame=1u;}
+  if(select){
+   uint8_t previous_fx=ru_fx_selected;
+   ru_fx_selected=(uint8_t)ui_bound((int32_t)ru_fx_selected+(select>0?1:-1),0,7);
+   if(previous_fx!=ru_fx_selected)for(uint8_t k=0u;k<4u;k++)ru_knob_feel[k]=(RuEncoderFeel){0};
+   ru_knob_focus_until=0u;first_frame=1u;
+  }
   if(pressed&(1u<<3)){
    if(ru_fx_selected<4u){
     uint8_t bit=ru_fx_selected==0u?ETCH_FXB_REVERB:ru_fx_selected==1u?ETCH_FXB_DELAY:ru_fx_selected==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE;
@@ -5096,6 +5135,9 @@ void fm1_cstart(void){
  native_parameter_publish();
  int32_t pot=fm1_adc_read(FM1_ADC_MASTER);
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
+ /* Establish the LED bank before the audio clock/PC6 sequence starts.
+  * Otherwise the first LED-refresh timestamp could arrive AFTER PC6 ON. */
+ native_seq_led_refresh();
  if(!muted&&!native_keyboard_mode&&etch_recovery_may_run_audio(native_recovery_reason)){fm1_irq_off();native_start();fm1_irq_enable_all();}
  uint32_t last=0,held=0,previous_buttons=fm1_in.buttons,last_seq_notes=fm1_in.notes,last_ui_paint_ms=0,last_wave_compile_ms=0;
 #ifdef RUPTURE_BUILD
@@ -5386,6 +5428,9 @@ void fm1_cstart(void){
         (uint32_t)(etch_ms-last_ui_paint_ms)>=120u)){
      screen();last_ui_paint_ms=etch_ms;
     }
+    /* Keep the low-current Welcome bank ramp advancing even while the
+     * wizard temporarily owns navigation. No LED scan ISR changes. */
+    if((uint32_t)(etch_ms-ru_led_start_ms)<340u)native_seq_led_refresh();
     last_seq_notes=fm1_in.notes;
     continue;
    }
