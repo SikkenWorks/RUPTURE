@@ -82,7 +82,12 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  uint8_t manager_seq_mask,manager_return,about_scroll;
  char manager_seq_names[8][13];
  uint16_t diag_wall,diag_dsp,diag_render,diag_copy,diag_slack;
- uint32_t diag_late,diag_guard,diag_scope;uint16_t ota_error;} RuState;
+ uint32_t diag_late,diag_guard,diag_scope;uint16_t ota_error;
+ /* V1.85: second page of the existing read-only DMA diagnostic. */
+ uint8_t diag_view;uint8_t diag_midi_batch;
+ uint16_t diag_control,diag_nested,diag_live_slack;
+ uint32_t diag_midi_queue,diag_midi_deferred,diag_postlate;
+} RuState;
 #ifdef RU_BITS_EXTERNAL
 /* Display scratch is unused while drawing RUPTURE. */
 #define ru_bits ((uint8_t*)etch_scope_canvas)
@@ -1095,7 +1100,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.84.2","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.85","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){
@@ -1117,6 +1122,19 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("SEL DETAILS / HOME BACK");return;
  }
  if(page==RU_PAGE_DIAG){
+  if(v->diag_view){
+   const char *names[]={"CONTROL MAX","NESTED MAX","SLACK LAST","MIDI BATCH","MIDI QUEUE","MIDI DEFER","GUARD","POST LATE"};
+   uint32_t vals[]={v->diag_control,v->diag_nested,v->diag_live_slack,
+    v->diag_midi_batch,v->diag_midi_queue,v->diag_midi_deferred,
+    v->diag_guard,v->diag_postlate};
+   ru_center("READ ONLY / MIDI + TIMING",120,53,1);
+   for(int i=0;i<8;i++){
+    int y=77+i*17;char value[12];ru_uint(vals[i],value);
+    ru_text(names[i],10,y,1);ru_text(value,151,y,1);
+    if(i<3)ru_text("%",211,y,1);
+   }
+   ru_footer("SEL MAIN / HOME BACK");return;
+  }
   const char *names[]={"WALL MAX","DSP MAX","RENDER","PUBLISH","MIN SLACK","LATE","GUARD","SCOPE SKIP"};
   uint32_t vals[]={v->diag_wall,v->diag_dsp,v->diag_render,v->diag_copy,
    v->diag_slack,v->diag_late,v->diag_guard,v->diag_scope};
@@ -1126,7 +1144,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
    ru_text(names[i],10,y,1);ru_text(value,151,y,1);
    if(i<5)ru_text("%",211,y,1);
   }
-  ru_footer("HOME BACK / LATE AND GUARD 0");return;
+  ru_footer("SEL DETAILS / HOME BACK");return;
  }
  if(page==RU_PAGE_ABOUT){
   char line[RU_ABOUT_COLS+1];uint16_t count=ru_about_lines();

@@ -7,6 +7,7 @@
 #include "native_audio_timing.h"
 #include "native_output_startup.h"
 #include "native_performance_midi.h"
+#include "native_midi_rt_budget.h"
 #include "native_preset_ramp.h"
 static struct etch_native_audio native_audio __attribute__((section(".pool")));
 /* V1.81: published control snapshot resides in zeroed shared DSP pool.
@@ -50,6 +51,12 @@ static volatile uint32_t native_max_wall_ticks,native_max_nested_ticks;
  * printing in the realtime interrupt. */
 static volatile uint32_t native_render_wall_peak,native_publish_wall_peak;
 static volatile uint32_t native_min_dma_slack,native_scope_deferred;
+/* V1.85: classify real DMA pressure without serial/logging/allocations
+ * in the interrupt. Historical peaks reset at audio restart. */
+static volatile uint32_t native_controls_wall_peak,native_last_dma_slack;
+static volatile uint32_t native_midi_queue_peak,native_midi_deferred_batches;
+static volatile uint32_t native_postpublish_late;
+static volatile uint8_t native_midi_batch_peak,native_midi_backlog;
 
 /* DMA pre-publish guard hits: block writes into a buffer that may be active. */
 static volatile uint32_t native_dma_blocked;
@@ -204,8 +211,12 @@ static void native_compile_edit(void){
 #if ETCH_NATIVE_USB
 static void native_midi_drain(uint8_t play){
  uint32_t end=mi_w;RING_PUBLISH();
- if(midi_in_overflow){etch_native_midi_panic(&native_audio);mi_r=end;RING_PUBLISH();midi_in_overflow=0;return;}
- for(uint32_t count=0;mi_r!=end&&count<MQ;count++){
+ if(midi_in_overflow){etch_native_midi_panic(&native_audio);mi_r=end;RING_PUBLISH();midi_in_overflow=0;native_midi_backlog=0u;return;}
+ uint32_t pending=end-mi_r;
+ if(pending>native_midi_queue_peak)native_midi_queue_peak=pending;
+ uint32_t limit=ru_midi_batch_size(pending);
+ if(limit>native_midi_batch_peak)native_midi_batch_peak=(uint8_t)limit;
+ for(uint32_t count=0;count<limit;count++){
   uint32_t pkt=midi_in_q[mi_r%MQ];RING_PUBLISH();++mi_r;
   if(play){
    uint8_t status=(uint8_t)(pkt>>8),note=(uint8_t)(pkt>>16),velocity=(uint8_t)(pkt>>24);
@@ -217,6 +228,11 @@ static void native_midi_drain(uint8_t play){
    etch_native_midi(&native_audio,status,note,velocity);
   }
  }
+ /* Original ring and overflow ownership remain intact: only defer heavy
+  * USB bursts, never remove events or re-order Note OFF/ON. */
+ native_midi_backlog=ru_midi_scope_skip(end-mi_r);
+ if(native_midi_backlog&&native_midi_deferred_batches<UINT32_MAX)
+  native_midi_deferred_batches++;
 }
 #endif
 extern void isr_alnk0(void);
@@ -292,6 +308,8 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    * while PC6 is switching can force a restart and a second hard pop. */
   native_audio.mono_mode=(uint8_t)(c.mono_mode!=0 && !etch_native_groups_playing());
   uint32_t render_start=fm1_ticks();
+  uint32_t ctrl_elapsed=(uint32_t)(render_start-start);
+  if(ctrl_elapsed>native_controls_wall_peak)native_controls_wall_peak=ctrl_elapsed;
   if(!native_output_enabled && !native_output_analog_ready){
    for(uint32_t i=0;i<ETCH_NATIVE_FRAMES*2;i++)native_stereo[i]=0;
   }else{
@@ -356,7 +374,8 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    * sample, a MIDI event or an FX sample, and does not touch storage.
    * The scope freezes briefly under load rather than stealing deadline.
    * Hysteresis uses the already-owned ISR pressure state. */
-  if(etch_audio_scope_may_capture((uint32_t)(fm1_ticks()-start),
+  if(!native_midi_backlog &&
+     etch_audio_scope_may_capture((uint32_t)(fm1_ticks()-start),
         ETCH_NATIVE_FRAMES*544u,native_ui_pressure)){
    uint8_t scope_to=native_scope_ready^1u;
   for(uint32_t i=0;i<ETCH_NATIVE_FRAMES;i++)
@@ -399,6 +418,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   if(measure.wall_ticks>native_max_wall_ticks)native_max_wall_ticks=measure.wall_ticks;
   uint32_t slack=measure.wall_ticks>=ETCH_NATIVE_FRAMES*544u?0u:
      ETCH_NATIVE_FRAMES*544u-measure.wall_ticks;
+  native_last_dma_slack=slack;
   if(slack<native_min_dma_slack)native_min_dma_slack=slack;
   if(measure.nested_ticks>native_max_nested_ticks)native_max_nested_ticks=measure.nested_ticks;
   /* LCD frames are expensive SPI DMA transfers. Track recent wall-time
@@ -409,6 +429,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    else native_ui_pressure=32u;
   }else if((native_halves&15u)==0u && native_ui_pressure)native_ui_pressure--;
   if(measure.late){
+   ++native_postpublish_late;
    ++native_late;
    /* A rare late DMA boundary must not disable the instrument forever.
     * The pre-write ownership guard above already rejects expired halves.
@@ -421,7 +442,11 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
 static void native_start(void){
  native_suspended=0;native_missed_streak=0;native_healthy_blocks=0;native_tripped=0;native_ui_pressure=0;
  native_render_wall_peak=native_publish_wall_peak=native_scope_deferred=0u;
- native_min_dma_slack=ETCH_NATIVE_FRAMES*544u;
+ native_controls_wall_peak=native_midi_queue_peak=native_midi_deferred_batches=0u;
+ /* LATE and GUARD remain cumulative across audio restarts; POST LATE must
+  * remain cumulative too, so LATE == GUARD + POST LATE stays meaningful. */
+ native_midi_batch_peak=0u;native_midi_backlog=0u;
+ native_min_dma_slack=native_last_dma_slack=ETCH_NATIVE_FRAMES*544u;
  native_output_enabled=0;native_output_analog_ready=0;native_boot_audio_released=0;native_output_fade=0;native_prepared_blocks=0;native_halves=0;
  native_preset_ramp_requested=0u;etch_preset_ramp_reset(&native_preset_ramp);
 #if ETCH_NATIVE_USB

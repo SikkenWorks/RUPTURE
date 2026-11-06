@@ -1,0 +1,13 @@
+{
+  "audio_core.c": "624491c1e30834b0337ad343f9408172dabfbc093b3710deff46c9f3d2f123bd",
+  "native_fx.c": "99e37d0564d5fd1bcb95ede763ed2c5218cd06f0c505d87f21e8b82c01feb645",
+  "native_project_codec.c": "12c4e43c006fe8fbb0c9386461b4488fe7cd40814e52ad52c7f1f2822ddcc30d",
+  "ota.c": "770c90f879f8944db1f5a39b67a28ca5cebba27269bf8360d547ff56da1da04d",
+  "native_output_startup.h": "58d9943dc1d0fd994f1cbb6e31078e5e23c8223c099ec194c862ecaef5983d6f",
+  "rupture_hw_leds.h": "59354e0089077f3e7e6efd388a522de8f893064d8a4ab31f34fd03f54a029dc3",
+  "native_performance.c": "1b9b5b361b015062fc24834be82ee859e75f4872137df4a427c3ccebf62c1565",
+  "native_cxs_q15.c": "8625829401e27711263b2a66dd18cd6180b2b590752f49214b9d036389a851c1",
+  "rupture_subosc.h": "a42ea9a42f8a544ea765b5c6caf6f3250227d583170efd4ac038f0d948fec43e",
+  "hal/fm1_audio.h": "06b0e54b0058811dbc7d2bc6ec41ee5b1657b381fce8b840b56ea50aef808cfc",
+  "hal/fm1_isr.S": "2aad84e24a51c79b187ef3faf9d1bae108b1389bf78659f6b02dbbd95d8a7d7b"
+}

@@ -4,7 +4,14 @@
  */
 #pragma once
 #include <stdint.h>
-struct etch_panel_midi { uint8_t active[27], note[27]; };
+struct etch_panel_midi {
+ uint8_t active[27],note[27];
+ /* Audio ISR idle fast path: bypass 54 unchanged-key scans per block.
+  * retry_pending MUST remain set on a full USB TX ring. */
+ uint32_t cached_keys;
+ int8_t cached_octave;
+ uint8_t cached_connected,cached_valid,retry_pending;
+};
 typedef int (*etch_panel_emit)(uint32_t packet,void *context);
 void etch_panel_midi_reset(struct etch_panel_midi *m);
 void etch_panel_midi_update(struct etch_panel_midi *m,uint32_t keys,int8_t octave,

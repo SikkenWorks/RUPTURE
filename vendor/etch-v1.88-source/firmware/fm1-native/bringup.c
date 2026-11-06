@@ -732,6 +732,7 @@ static RuEncoderFeel ru_knob_feel[4]={{0}};
 static uint8_t ru_knob_focused=0u,ru_knob_focus_page=RU_PAGE_PLAY;
 static uint32_t ru_knob_focus_until=0u;
 static uint8_t ru_project_slot=1,ru_reverb_type=1,ru_help_chapter=0,ru_help_scroll=0,ru_selected;
+static uint8_t ru_diag_view; /* read-only main/detail page, never stored */
 static uint8_t ru_edit_target=0u,ru_edit_pos=0u,ru_edit_after_save=0u,ru_name_new_slot=0u;
 static char ru_edit_name[13];
 static uint8_t ru_use_staged_name=0u;
@@ -2960,6 +2961,14 @@ static void rupture_native_screen(void){
   break;
  case RU_PAGE_DIAG:
   {uint32_t budget=ETCH_NATIVE_FRAMES*544u;
+   v.diag_view=ru_diag_view;
+   v.diag_control=(uint16_t)(etch_diag_cpu_permille(native_controls_wall_peak,budget)/10u);
+   v.diag_nested=(uint16_t)(etch_diag_cpu_permille(native_max_nested_ticks,budget)/10u);
+   v.diag_live_slack=(uint16_t)(etch_diag_cpu_permille(native_last_dma_slack,budget)/10u);
+   v.diag_midi_batch=native_midi_batch_peak;
+   v.diag_midi_queue=native_midi_queue_peak;
+   v.diag_midi_deferred=native_midi_deferred_batches;
+   v.diag_postlate=native_postpublish_late;
    v.diag_wall=(uint16_t)(etch_diag_cpu_permille(native_max_wall_ticks,budget)/10u);
    v.diag_dsp=(uint16_t)(etch_diag_cpu_permille(native_max_ticks,budget)/10u);
    v.diag_render=(uint16_t)(etch_diag_cpu_permille(native_render_wall_peak,budget)/10u);
@@ -4547,13 +4556,19 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    ru_nav_to(ru_selected==0u?RU_PAGE_SETTINGS:ru_selected==1u?RU_PAGE_SYS_INFO:
              ru_selected==2u?RU_PAGE_HELP:ru_selected==3u?RU_PAGE_DIAG:
              ru_selected==4u?RU_PAGE_ABOUT:RU_PAGE_BUG_REPORT);
+   if(ru_page==RU_PAGE_DIAG)ru_diag_view=0u;
    ru_settings_open=0u;if(ru_page==RU_PAGE_ABOUT)ru_about_scroll=0u;
    }
   }
  }
  else if(ru_page==RU_PAGE_SYS_INFO){
   /* Explicit drill-down; all figures are read-only. */
-  if(pressed&(1u<<3))ru_nav_to(RU_PAGE_DIAG);
+  if(pressed&(1u<<3)){ru_diag_view=0u;ru_nav_to(RU_PAGE_DIAG);}
+ }
+ else if(ru_page==RU_PAGE_DIAG){
+  /* SEL switches two purely diagnostic displays. No stored settings and
+   * no further ISR work; all values are existing peak/snapshot counters. */
+  if(pressed&(1u<<3)){ru_diag_view^=1u;first_frame=1u;}
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){

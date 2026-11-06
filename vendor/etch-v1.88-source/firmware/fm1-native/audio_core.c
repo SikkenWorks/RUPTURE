@@ -732,8 +732,11 @@ static uint8_t perf_tick(struct etch_native_audio *s,const struct etch_native_co
                         (c->arp_gate?c->arp_gate:72u)))/100u);
  if(!s->perf_gate)s->perf_gate=1;
  if(seq){
-  uint16_t length=(c->seq_length==8||c->seq_length==16||c->seq_length==32||c->seq_length==64||c->seq_length==128||c->seq_length==256)?c->seq_length:16;
-  uint16_t step=s->perf_step;
+  /* V1.85.1: LEN=4 is valid in the RUPTURE SEQ editor. Honor it in
+   * playback too, and wrap the pending playhead immediately if LENGTH
+   * was reduced while the sequence was running. */
+  uint16_t length=(c->seq_length==4||c->seq_length==8||c->seq_length==16||c->seq_length==32||c->seq_length==64||c->seq_length==128||c->seq_length==256)?c->seq_length:16;
+  uint16_t step=(uint16_t)(s->perf_step%length);
   s->perf_current_step=(uint8_t)step;
   s->perf_played=1u;
 #ifdef RUPTURE_BUILD

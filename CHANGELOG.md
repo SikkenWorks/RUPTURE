@@ -1,3 +1,20 @@
+# RUPTURE V1.85.1 — Sequencer LENGTH=4 playback hotfix
+
+- Corrected the audio-engine sequencer length validation: LENGTH=4 displayed a four-step loop on the UI but the DSP incorrectly defaulted to sixteen steps.
+- The real audio playhead wraps inside the selected length when LENGTH is reduced during playback; only selected steps can trigger on subsequent note boundaries.
+- Steps beyond LENGTH are **not deleted**; raising LENGTH to 16 restores all sixteen recorded notes.
+- Only `audio_core.c` changed in FM1 firmware sources. Sound, reverbs, all other sequencer behavior, storage, Welcome, MIDI, LED/PC6 and OTA remain byte-for-byte unchanged at source level.
+- Real DSP host tests cover live 16→4→16, fresh four-step loops and the unaffected 8–128 lengths. Unrelated 16-step/FX PCM is byte-identical to V1.85. Hardware verification pending.
+
+# RUPTURE V1.85 — Realtime MIDI + DMA diagnostics
+
+- Bound exceptional USB MIDI bursts to 32 queued packets per 128-frame audio half. Preserve FIFO and existing overflow panic; remaining events are serviced next DMA half. This is a deliberate latency/headroom tradeoff **only under extreme incoming burst traffic**, never a note-drop policy.
+- Fast-path unchanged 27-key outbound panel MIDI; retry pending unsent Note OFF/ON after USB queue backpressure.
+- Skip optional scope copying when USB MIDI backlog remains; actual PCM and effects never skipped.
+- Add second read-only GLO → AUDIO DIAGNOSTICS page (SEL to switch) showing pre-render control peak, nested TIMER5 peak, latest DMA slack, maximum MIDI batch/queue, deferred MIDI batches, guard count and post-publish LATE count. The LATE, GUARD and POST LATE counters remain cumulative across audio restarts, allowing LATE=GUARD+POST LATE to remain meaningful. Original diagnostic display retained.
+- Keep native CXS/SAW, both SUBs, all three reverbs, Welcome/format, native PC6 LED-pop mitigation, project codec, OTA source, trusted OTA loader and protected bootheader unchanged.
+- Native JieLi build and host randomized 120,000-state panel-MIDI packet parity tests pass. Physical FM1 DMA LATE/GUARD and pop-free speaker operation remain to be verified.
+
 # RUPTURE V1.84.2 — Speaker Pop: LED/PC6 Sequencing Hotfix
 
 - Removed the simultaneous full-current twelve-button LED transition during AUDIO STOP/SAFE/UPDATE status. Protected states now keep the background function LEDs on their existing fast low-current glow; physical press feedback remains immediate. Normal page, SEQ, PLAY and REC LEDs remain unchanged.
