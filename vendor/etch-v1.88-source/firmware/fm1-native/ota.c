@@ -136,6 +136,11 @@ static void ota_reply_identity(void)
     uint32_t i;
     for (i = 0; i < sizeof id; i++)
         id[i] = i < sizeof ID - 1u ? (uint8_t)ID[i] : 0;
+    /* The Firmware Hub convention: bytes 24..26 contain read-only JEDEC ID.
+     * Old installers still see the identical null-terminated FM-1 identity. */
+    id[24] = (uint8_t)(native_flash_jedec_cached >> 16);
+    id[25] = (uint8_t)(native_flash_jedec_cached >> 8);
+    id[26] = (uint8_t)native_flash_jedec_cached;
     ota_send_msg(0x11, id, sizeof id);
 }
 

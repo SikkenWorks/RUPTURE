@@ -1,3 +1,12 @@
+# RUPTURE V1.85.2 — Dual FM1 Flash ID Compatibility
+
+- Add `hal/fm1_flash_id.h` with exact allowlist `0x856014` (Puya P25Q80) and `0xB36014` (UCUN UC25HQ80). Both are 1 MiB SPI NOR; flash map, erase/program commands and project serialization stay unchanged.
+- Read and cache JEDEC once before audio startup. Recognized IDs permit normal project and OTA staging writes; readable unknown IDs are refused. A failed/unavailable read (0) preserves V1.85.1's existing write behavior.
+- Expose the cached ID in bytes 24–26 of the 27-byte MIDI update identity reply, retaining the exact `FM-1_968` text and the original SysEx protocol.
+- Preserve the audited vendor/Felucca-derived app-only OTA loader and bootheader byte-identically: **there is no separate JEDEC allowlist in that loader**, so there is no verified loader-side patch to apply.
+- No changes to synthesis, realtime DMA, sequencer, MIDI scheduling, UI, speaker-pop mitigation, flash partition boundaries, project data format, or first-run wizard. Existing V1.85.1 functionality is preserved.
+- Host allowlist/unknown ID/identity tests, native FM1 build, MIDI regressions and sequencer audio regressions pass; project persistence and OTA on a physical UC25HQ80 FM1 remain unverified.
+
 # RUPTURE V1.85.1 — Sequencer LENGTH=4 playback hotfix
 
 - Corrected the audio-engine sequencer length validation: LENGTH=4 displayed a four-step loop on the UI but the DSP incorrectly defaulted to sixteen steps.

@@ -19,6 +19,14 @@
 #define FL_ERASE_RANGE_OK(off,n) (FL_RANGE_OK(off,n) || (ETCH_NATIVE_STORAGE && FL_IN(off,n,ETCH_STORE_BASE,0xE0000u)))
 #include "hal/fm1_flash.h"
 static struct etch_wave_library native_library;
+/* Cached before audio starts. Zero means the read was unavailable, NOT an
+ * unsupported ID; in that case preserve V1.85.1's previously working writes.
+ * A readable but unknown chip is never sent erase/program commands. */
+static uint32_t native_flash_jedec_cached;
+static uint8_t native_flash_jedec_recognized;
+static int native_flash_write_allowed(void){
+ return native_flash_jedec_cached==0u || native_flash_jedec_recognized;
+}
 static uint8_t native_slot,native_save_confirm;
 static int native_store_status=ETCH_STORE_EMPTY;
 /* Last exact PJT10 byte requirement. Updated only by explicit SAVE. */
@@ -31,11 +39,11 @@ static int native_store_read(uint32_t off,void *dst,uint32_t n){
  return 0;
 }
 static int native_store_erase(uint32_t off){
- if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason))return -1;
+ if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed())return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
 static int native_store_program(uint32_t off,const void *src,uint32_t n){
- if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason))return -1;
+ if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed())return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_prog_ram)(off,(const uint8_t*)src,n,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
 static int native_store_wipe_read(uint32_t off,void *dst,uint32_t n){
@@ -47,7 +55,7 @@ static int native_store_wipe_read(uint32_t off,void *dst,uint32_t n){
  return 0;
 }
 static int native_store_wipe_erase(uint32_t off){
- if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||
+ if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed()||
     (off&4095u)||!FL_IN(off,4096u,ETCH_STORE_BASE,0xE0000u))return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);
  fm1_irq_enable_all();fm1_wdt_feed();return rc;
@@ -56,6 +64,12 @@ static const struct etch_store_io native_wipe_io={native_store_wipe_read,native_
 static const struct etch_store_io native_store_io={native_store_read,native_store_erase,native_store_program};
 static void native_library_boot(void){
  if(!ETCH_NATIVE_STORAGE)return;
+ /* The SPI NOR JEDEC read is a short, read-only, main-thread operation.
+  * Cache once while sound/PC6 is muted, never in an IRQ or while playing. */
+ fm1_irq_off();
+ native_flash_jedec_cached=FL_FAR(fl_jedec_ram)();
+ fm1_irq_enable_all();
+ native_flash_jedec_recognized=(uint8_t)FL_JEDEC_OK(native_flash_jedec_cached);
  native_store_status=etch_store_load_project(&native_store_io,&native_library,&native_pattern,&native_project_cfg);
  if(native_store_status==ETCH_STORE_OK){for(uint32_t w=0;w<3;w++)for(uint32_t i=0;i<128;i++)native_editor.points[w][i]=native_library.active[w][i];native_editor.dirty=1;}
 }

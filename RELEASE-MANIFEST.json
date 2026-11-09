@@ -1,13 +1,13 @@
 {
-  "version": "1.85.1",
+  "version": "1.85.2",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.85.1.fwsc",
+  "firmware_file": "RUPTURE-V1.85.2.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "9acc914d65bc37448ced04ece12f396c8748c2ccc9e7310a69e3a5712fdb3f7f",
-  "app_bytes": 348380,
-  "app_sha256": "f625d120a5c2008af40683db0221ec7e0933e7686899061fd876d4134fb16f04",
+  "firmware_sha256": "c0de3025f84b0ba371fa6f7ca69b32bb0be9534daa404b4dcd89f28698ce6856",
+  "app_bytes": 348560,
+  "app_sha256": "b2d517230e6896d10e53182ce1a085b17abe0621758fba634ddd3b087d4a1bbb",
   "native_screens": 125,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -69,7 +69,8 @@
     "V1.84.2: source/host tests prove LED current-edge and PC6 sequencing, not removal of an intrinsic amplifier-bias pop; low-volume physical FM1 testing remains essential.",
     "V1.85: only exceptional >32-event MIDI burst input can be deferred by 1+ 128-sample audio halves; queue overflow panic protection remains. Host test does not prove zero DMA LATE/GUARD, no speaker pop or worst-case USB+TRS MIDI stability on real FM1 hardware.",
     "V1.85: only exceptional >32-event MIDI burst input can be deferred by 1+ 128-sample audio halves; queue overflow panic protection remains. Host test does not prove zero DMA LATE/GUARD, no speaker pop or worst-case USB+TRS MIDI stability on real FM1 hardware.",
-    "V1.85.1: sequencer length regression is confirmed and fixed by native audio host tests; physical FM1 playback validation remains required."
+    "V1.85.1: sequencer length regression is confirmed and fixed by native audio host tests; physical FM1 playback validation remains required.",
+    "V1.85.2: UC25HQ80 acceptance is source/host-tested only; save/reboot/OTA on a physical 0xB36014 FM1 requires validation. Existing trusted OTA loader has no independent JEDEC check, and was left unchanged. An unreadable JEDEC probe (0) keeps the previously working write behavior for backwards compatibility."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -315,7 +316,7 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "V1.85.1: fixes sequencer LENGTH=4 playing 16 steps; clamp audio playhead after shortening LENGTH while playing. No other firmware sources, bootloader, OTA, UI, sound, effects or storage changes.",
+  "release_note": "V1.85.2: recognize both Puya 0x856014 and UCUN UC25HQ80 0xB36014; read/cached ID at boot, allow both in confirmed flash-write policy, report JEDEC via OTA identity bytes 24..26. Preserve existing stock-compatible prebuilt OTA loader and firmware audio, UI and project layout.",
   "headroom_qualification": "PCM-exact native candidate; actual FM1 89% DSP, DMA LATE 28, GUARD 23 must be remeasured after installation. No all-load stability guarantee until a full hardware soak passes.",
   "v180": {
     "reverb_engines": [
