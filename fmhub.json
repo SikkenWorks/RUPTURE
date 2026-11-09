@@ -3,5 +3,6 @@
   "author": "Joppe Sikken (SikkenWorks)",
   "kinds": ["synth"],
   "play": "https://sikkenworks.github.io/RUPTURE/emu/web",
-  "cheat": "https://sikkenworks.github.io/RUPTURE/#cheatsheet"
+  "cheat": "https://sikkenworks.github.io/RUPTURE/#cheatsheet",
+  "image": "RUPTURE.png"
 }
