@@ -1,5 +1,17 @@
-# RUPTURE
+# RUPTURE V1.89
 
+**V1.89 speaker startup pop mitigation:** Based on the complete V1.88.3 firmware, with the three isolated startup changes from the user-supplied V1.88.2 POPFIX source. The codec and silent DMA clock start before the LED bank. Codec control pins PC0/PC2/PC1 are enabled after the silent I2S clock and receive a 2 ms step and 5 ms settling delay. A watchdog-fed 300 ms quiet interval precedes LED startup; the existing PC6 analog gate still requires the LED bank to have been stable for 400 ms and the USB/clock settle conditions. The 20-frame ENV and reverse release from V1.88.3 remain intact. Trusted OTA loader, protected bootheader, Web MIDI connection fix and both FM1 flash-chip IDs are preserved. Physical speaker-pop performance is not yet independently verified on hardware.
+
+**V1.88.3 ENV animation:** The eruption now plays all 20 native 1-bit frames, including the smoke settling into an exposed jagged hole. While a note is held the hole remains, with no frozen smoke plume. On key release the exact animation reverses from its current frame back to the intact wall. The OTA connection fix, trusted loader, protected bootheader and compatibility with both FM1 flash-chip batches are retained. Physical FM1 validation remains pending.
+
+**V1.88.2 BEND crop correction:** All 40 frames use 1:1 source pixel crops centered in the unchanged 224×30 viewport. No stretching. Audio and OTA retained.
+
+
+**V1.88.1 poster-frame correction:** V1.88 unintentionally shipped 40 newly drawn substitute sprites instead of the approved 5 × 8 illustrations. V1.88.1 takes the exact artwork cells from the approved JPEG reference, crops and downscales them once into FM1-native 224×30 1-bit read-only bitmap assets. The source poster, cropped cells, repeatable converter and byte-for-byte header parity test are included. Existing K1/K2/K3 bend operation, 4-of-5 shake, pre-FX audio processing and OTA/connection fix are unchanged. The poster does not contain lossless individual source sprites, so there is unavoidable detail loss at 30 pixels high.
+
+**V1.88 BEND visuals:** K3 now controls five distinct 8-frame monochrome animations: LINEAR Everest, SOFT Monolith, HARD pirate flagship erupting from a meadow, S-CURVE close-up camera rising from hull to pirate flag, EXP Kraken. Four eruptions shake; the ship close-up stays stable. All frames are packed read-only 1-bit ROM bitmaps with no additional audio/DSP/ISR work. The V1.86 connection/OTA fix and dual JEDEC ID support are retained.
+
+**Installer connection note (V1.86.1, retains the V1.86 connection fix):** Use desktop Chrome/Edge on HTTPS or `http://localhost`. After clicking **CONNECT FM1**, approve Web MIDI / SysEx access. The installer reads the running FM1 identity, including on both supported flash-chip batches; generic Windows MIDI port names are now probed by read-only identity query. If no FM1 appears, confirm that Windows shows a MIDI input and output for the powered-on FM1, close software holding the port, and use manual port selection. The V1.86.1 firmware adds only BEND K3 response shaping; the verified V1.86 Web MIDI connection fix and trusted OTA protocol are retained.
 **A monophonic bass synthesizer for the M-VAVE FM1.**  
 Cycle Exchange Synthesis (CXS), a selectable bandlimited SAW oscillator, two suboscillators, modulation, sound shaping and effects.
 
@@ -35,6 +47,10 @@ RUPTURE uses its FM1 function LEDs as direct feedback. The selected hardware sec
 
 When switching pages (including choosing a different FX engine), the acceleration history of K1–K4 resets. The first physical detent on a newly selected page therefore cannot inherit a doubled step from the previous page. Existing fast-turn acceleration on continuous controls and exact single-detent changes on discrete controls are otherwise retained. Knob focus markers and visible values still respond immediately. These behaviors are software-tested but require a physical FM1 check to confirm perceived LED brightness and encoder feel.
 
+### BEND play parameter (FX long press)
+
+**Tap FX** to open the usual effects page, or **hold FX for approximately 700 ms** to enter **BEND**. **K3 CURVE** selects `LINEAR`, `SOFT` (fast at the start), `HARD` (accelerating), `S-CURVE` (gentle at both ends) and `EXP` (strongest bend near the end). All five return automatically when K1 stops and reach the exact K2 target at maximum K1 bend. The BEND screen now includes a mini curve chart and three labeled knobs. Curves are momentary performance state, not saved.  K1 is a momentary guitar/bass-style pitch bend: keep turning K1 to hold/raise the pitch, and when you stop turning, it springs rapidly back to the unbent note. Turn K2 to choose `1/4`, `1/2`, `FULL`, `1 1/2` or `DOUBLE` (up to two semitones). The 240×240 BEND panel shows the live semitone offset, the target, the bend meter and a return indicator. The rising mountain is a prepacked eight-frame 1-bit sprite animation. Pitch bending happens at the oscillator, **before** delay, drive, chorus, reverb and other effects. BEND is a live performance control; it does not change project files or preset data. Test at low volume on the physical FM1; hardware and user-perceived latency are not yet validated.
+
 ### Basic navigation
 
 - **PLAY:** Main CXS/SAW oscillator. The four knobs control PRESSURE/BALANCE/MEMORY/DENSITY in CXS, and BRIGHT/EDGE/BODY/LEVEL in SAW. In SAW mode, the BRIGHT range now starts with a warmer, filtered bass core; EDGE and the four SOUND SHAPE controls still provide aggressive sounds when deliberately raised. For rounded bass, start around BRIGHT 35–60, EDGE 40–55, with a low-pass/ladder filter and moderate resonance. This evokes the role of an analog bass synth without reproducing a specific hardware instrument.
@@ -50,7 +66,7 @@ When switching pages (including choosing a different FX engine), the acceleratio
 
 Use **HOME** to cycle the main oscillator pages. On any ordinary screen where SELECT has no dedicated function, turning **SELECT** opens the exact same screen list as on PLAY. Where SELECT already controls a step, FX selection, slot, scroll position or setting, that function remains unchanged. **SEL** confirms selections. Protected update, recovery and welcome screens are excluded from the global navigation shortcut. On pages with K1–K4 rotaries, the last turned knob is highlighted briefly with two small bars beside its circle. FX, FILTER, ENV, LFO, PLAY, SOUND SHAPE, SUB, ARP and SEQUENCER use the same indicator. In Channel EQ, the selected value row is marked instead; the fifth ALGORITHM knob on SUB shows the same focus when adjusting BLEND. User-defined projects use the existing RUPTURE format. The display has dedicated 1-bit animations for PLAY, LFO, ENV and SOUND SHAPE. Animations are rendered in the UI loop, outside the audio callback. On **ENV**, the wall-break dust and debris settle through eight short frames, while the broken wall continues to tremble subtly until Note OFF. On **LFO**, small debris keeps falling into the sinkhole in an eight-frame loop while a note is held; releasing the note closes the scene. PLAY and SOUND SHAPE retain their existing hold loops and shake.
 
-## V1.85.2: UC25HQ80 / Puya flash compatibility
+## UC25HQ80 / Puya flash compatibility (introduced in V1.85.2)
 
 The FM1 can contain either Puya **P25Q80** (JEDEC `0x856014`) or UCUN **UC25HQ80** (`0xB36014`) 1 MiB SPI NOR. V1.85.2 explicitly recognizes **both** IDs in its common flash-ID helper. The ID is read once while audio is muted during boot and cached in RAM. Both chips are permitted for the existing explicit project SAVE/FORMAT and firmware OTA staging writes. A **readable unknown** chip ID is refused for writes; a zero/unreadable ID leaves V1.85.1's existing behavior unchanged to avoid unexpectedly disabling older hardware. The project format, flash map, SPI opcodes, timeouts, UI and DSP were not changed.
 
@@ -58,11 +74,11 @@ MIDI SysEx update identity (`cmd 0x11`) now includes the cached JEDEC ID in byte
 
 **Important:** Software checks and FM1 cross-compilation do not prove project persistence or OTA install on the new flash. On an actual UC25HQ80 FM1, back up the full flash, verify JEDEC ID, save a test project, power off completely, start again and confirm the save. Then test the update path using an established recovery method. Older firmware's loader/update restrictions cannot be cured retrospectively by a newer package; return to stock using a known working route if the older firmware refuses the transfer. Physical testing is pending.
 
-## V1.85.1: Sequencer LENGTH=4 playback fix
+## Sequencer LENGTH=4 playback fix (introduced in V1.85.1)
 
 SEQ K1 LENGTH=4 now really plays only steps 1–4, rather than displaying four steps while the audio plays sixteen. Shrinking LENGTH while playback runs immediately confines the next note trigger to the new loop. The hidden notes are preserved and return when you increase LENGTH again. No other firmware functionality has been changed. Physical FM1 testing remains necessary.
 
-## V1.85: Realtime Reliability (USB MIDI + DMA diagnostics)
+## Realtime Reliability (USB MIDI + DMA diagnostics; V1.85)
 
 - The USB-MIDI input queue still retains **all** received packets in FIFO order. Exceptional bursts are serviced in **batches of up to 32 events per 128-frame audio half**, instead of allowing up to 64 events to consume the entire render window. Remaining packets are processed on the next block; existing queue-overflow **panic/Note OFF safety** is unchanged. This may add one block of latency to events at the back of a very large simultaneous burst. Ordinary note traffic is unchanged.
 - FM1 panel-key-to-USB-MIDI scanning now skips redundant checks when key state, octave and connection are unchanged. **Pending USB transmit retries are never skipped**: if the USB TX ring was full, Note OFFs and Note ONs keep retrying until sent or disconnected. Randomized host parity against V1.84.2 verifies the exact MIDI packets for 120,000 state transitions, including disconnect/reconnect, octave changes and output backpressure.
@@ -78,7 +94,7 @@ The RUPTURE mono renderer uses a fixed four-to-one gain divider rather than reca
 
 Updating from an already completed V1.82 setup keeps its Welcome completion marker in V1.83. No existing user data is erased and no automatic format is performed. The Quick Tour remains available from GLO. A V15 round-trip to the same already-completed release may still be indistinguishable from a reboot if V15 preserves that marker.
 
-## V1.81: Rapid-note realtime reliability
+## Rapid-note realtime reliability (V1.81)
 
 V1.81 targets rising **DMA LATE** and **GUARD** counts when playing rapid notes. The monophonic synth now avoids needless eight-voice rate and modulation housekeeping on note changes, and performance-gate countdowns no longer copy the full held-note stack on every PCM sample. The existing MIDI, panel-key, sustain, sequencer and ARP behavior is preserved. On a desktop host, long fast-note and sequence-gate PCM comparisons match V1.80 exactly; on-device cycle savings remain to be measured.
 

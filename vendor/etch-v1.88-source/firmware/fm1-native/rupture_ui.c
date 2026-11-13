@@ -15,6 +15,9 @@
 #include "rupture_volcano_sprites.h"
 #include "rupture_hold_sprites.h"
 #include "rupture_crt_vcr.h"
+#include "rupture_bend_sprites.h"
+#include "rupture_bend_curves.h"
+#include "rupture_bend_knob_pixels.h"
 #define RU_W 240
 #define RU_H 240
 #define RU_PAGE_PLAY 0
@@ -49,7 +52,7 @@
 #define RU_PAGE_SUB1 29
 #define RU_PAGE_SUB2 30
 #define RU_PAGE_COMP 31
-#define RU_PAGE_FOLDER 32
+#define RU_PAGE_BEND 32
 #define RU_PAGE_TRANSIENT 33
 #define RU_PAGE_TILT 34
 #define RU_PAGE_FUZZ 35
@@ -70,8 +73,8 @@
 #define RU_PAGE_SYS_INFO 50
 #define RU_PAGE_COUNT 51
 #include "rupture_tutorial.h"
-static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","DISABLED","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO"};
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
@@ -402,6 +405,19 @@ static void ru_knob(int x,int y,uint32_t v){
 }
 /* One common feedback geometry for every drawn rotary control. Markers are
  * alongside the knob body; never on top of the 1-bit label/value glyphs. */
+static uint8_t ru_knob_normal(const RuState *v,int i);
+static void ru_bend_knob(const RuState *v,int x,int y,uint8_t control){
+ uint32_t value=v->animate?v->knob_visual[control]:ru_knob_normal(v,control);
+ if(value>100u)value=100u;
+ for(uint32_t j=0u;j<RU_BEND_KNOB_PIXELS;j++)
+  ru_set(x+ru_bend_knob_ring[j][0],y+ru_bend_knob_ring[j][1]);
+ const int nx=(int)ru_needle_xy[value][0]*16/22;
+ const int ny=(int)ru_needle_xy[value][1]*16/22;
+ ru_line(x,y,x+nx,y+ny);ru_rect(x-1,y-1,3,3);
+ if(v->knob_focus_visible && v->knob_focus==control){
+  ru_rect(x-21,y-5,2,10);ru_rect(x+19,y-5,2,10);
+ }
+}
 static void ru_knob_focus_marker(const RuState *v,int x,int y,uint8_t control){
  if(v->knob_focus_visible && v->knob_focus==control){
   ru_rect(x-29,y-5,2,10);ru_rect(x+27,y-5,2,10);
@@ -444,6 +460,7 @@ static uint8_t ru_knob_normal(const RuState *v,int i){
  case RU_PAGE_REVERB:if(i==0)val=val*50u;break;
  case RU_PAGE_DELAY:case RU_PAGE_CHORUS:if(i==2)val=val*100u;break;
  case RU_PAGE_DRIVE:if(i==3)val=val*25u;break;
+ case RU_PAGE_BEND:if(i==1||i==2)val=val*25u;break;
  default:break;
  }
  return (uint8_t)(val>100u?100u:val);
@@ -457,7 +474,7 @@ static const char *const ru_knob_labels[RU_PAGE_COUNT][4]={
  {"TYPE","OCTAVE","DETUNE","DRIFT"},
  {"THRESH","RATIO","ATTACK","RELEASE"},
  {"FOLD","SYMMETRY","TONE","MIX"},
- {"ATTACK","SUSTAIN","SENS","MIX"},
+ {"BEND","TARGET","CURVE",""},
  {"TILT","FREQ","MIX","OUTPUT"},
  {"DRIVE","OCTAVE","TONE","MIX"},
  {"SMOOTH","SOFT","WARMTH","MIX"}
@@ -478,6 +495,9 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==2){int n=(int)v->k[2]-50; char *t=buf[i];int off=0;if(n<0){t[off++]='-';n=-n;}else t[off++]='+';char digs[8];ru_uint((uint32_t)n,digs);for(int z=0;digs[z];z++)t[off++]=digs[z];t[off++]='C';t[off]=0;txt=t;}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==0){static const char *const pr[]={"LAST","HIGH","LOW"};txt=pr[v->k[0]%3];}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==1)txt=v->k[1]?"ON":"OFF";
+ if(v->page==RU_PAGE_BEND&&i==0){ru_uint(v->bend_live,buf[i]);int l=ru_strlen(buf[i]);if(l<9){buf[i][l]='%';buf[i][l+1]=0;}txt=buf[i];}
+ if(v->page==RU_PAGE_BEND&&i==1){static const char *const tg[]={"1/4","1/2","FULL","1.5","DOUBLE"};txt=tg[v->bend_target<5u?v->bend_target:0u];}
+ if(v->page==RU_PAGE_BEND&&i>=2)txt="";
  if(v->page==RU_PAGE_ARP&&i==0)txt=ru_arp[v->k[0]%8];
  if(v->page==RU_PAGE_LFO&&i==2){static const char *const modes[]={"KEYED","FREE","TEMPO"};txt=modes[v->k[2]%3u];}
  if(v->page==RU_PAGE_LFO&&i==3)txt=v->k[3]?"LEVEL":"PITCH";
@@ -983,6 +1003,77 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_draw_knobs(v);
   ru_footer("SELECT FX  SEL ON/OFF");return;
  }
+ if(page==RU_PAGE_BEND){
+  /* V1.88.1: Five prepacked 1-bit animation strips, selected by K3 curve.
+   * Entirely read-only ROM. UI-only panel jitter on four eruption scenes;
+   * the camera rising along the flagship (S-CURVE) stays perfectly still.
+   * No audio interrupt, oscillator or FX calculations have been added. */
+  const uint8_t frame=v->bend_frame<RU_BEND_FRAMES?v->bend_frame:0u;
+  const uint8_t target=v->bend_target<5u?v->bend_target:2u;
+  const uint8_t curve=v->bend_curve<RU_BEND_CURVE_COUNT?v->bend_curve:RU_BEND_LINEAR;
+  const uint32_t strength=v->bend_live<=100u?v->bend_live:100u;
+  const uint32_t shaped=ru_bend_curve_percent(curve,(uint8_t)strength);
+  static const char *const range_names[5]={"1/4","1/2","FULL","1 1/2","DOUBLE"};
+  static const uint16_t bend_cents[5]={25u,50u,100u,150u,200u};
+  int bxoff=0,byoff=0;
+  if(curve!=RU_BEND_SCURVE && frame>0u && strength>0u){
+   /* One offset lookup for each already-budgeted LCD paint. No per-pixel
+    * shake, timer ISR, audio callback or extra framebuffer. */
+   static const int8_t sx[4]={0,1,-2,1};
+   static const int8_t sy[4]={0,-1,1,0};
+   bxoff=sx[v->bend_shake_phase&3u];
+   byoff=sy[v->bend_shake_phase&3u];
+  }
+  ru_panel_blit_shaken(ru_bend_sprites[curve][frame],bxoff,byoff);
+  ru_center("K2 / BEND RANGE",120,88,1);
+  for(int i=0;i<5;i++){
+   const int x=10+i*44;
+   if(i==(int)target){ru_frame(x,98,42,24);ru_rect(x+3,117,36,3);}
+   else ru_frame(x,100,42,20);
+   ru_center(range_names[i],x+21,105,1);
+  }
+  /* The live readout uses the curved pitch, not the raw K1 position. */
+  uint32_t cents=(shaped*bend_cents[target]+50u)/100u;
+  char pitch[16],whole[8];
+  ru_uint(cents/100u,whole);
+  int w=0;pitch[w++]='+';
+  for(int k=0;whole[k]&&w<7;k++)pitch[w++]=whole[k];
+  pitch[w++]='.';
+  pitch[w++]=(char)('0'+(cents%100u)/10u);
+  pitch[w++]=(char)('0'+cents%10u);
+  pitch[w++]=' ';pitch[w++]='S';pitch[w++]='T';pitch[w]=0;
+  /* Read-only miniature curve graph: X = raw K1 turn; Y = actual bend.
+   * The marker shows the current instant on the selected preset curve. */
+  ru_frame(10,124,41,21);
+  ru_line(14,140,46,140);ru_line(14,140,14,128);
+  for(int q=1;q<=16;q++){
+   int x0=14+(q-1)*2,x1=14+q*2;
+   uint8_t prev=ru_bend_curve_percent(curve,(uint8_t)((q-1)*100/16));
+   uint8_t next=ru_bend_curve_percent(curve,(uint8_t)(q*100/16));
+   ru_line(x0,140-(int)prev*12/100,x1,140-(int)next*12/100);
+  }
+  ru_rect(14+(int)strength*32/100,140-(int)shaped*12/100,2,2);
+  ru_text("LIVE",56,131,1);
+  ru_text(pitch,227-ru_strlen(pitch)*6,131,1);
+  ru_frame(11,147,218,12);
+  if(shaped)ru_rect(14,150,(int)((shaped*212u+50u)/100u),6);
+  for(int k=1;k<4;k++)ru_rect(14+k*53,148,1,3);
+  ru_text("0",12,161,1);ru_text("100%",203,161,1);
+  const char *state=strength?(v->bend_releasing?"RETURN":"BENDING"):"IDLE";
+  ru_center(state,120,162,1);
+  /* Three compact controls: K1 momentary, K2 distance, K3 curve. */
+  static const int bx[3]={39,120,201};
+  for(int k=0;k<3;k++)ru_bend_knob(v,bx[k],188,(uint8_t)k);
+  ru_center("K1 BEND",39,209,1);
+  char percent[12];ru_uint(strength,percent);
+  int plen=ru_strlen(percent);if(plen<9){percent[plen]='%';percent[plen+1]=0;}
+  ru_center(percent,39,218,1);
+  ru_center("K2 RANGE",120,209,1);
+  ru_center(range_names[target],120,218,1);
+  ru_center("K3 CURVE",201,209,1);
+  ru_center(ru_bend_curve_names[curve],201,218,1);
+  ru_footer("STOP K1 = RELEASE");return;
+ }
  if(page==RU_PAGE_SUB1||page==RU_PAGE_SUB2){
   ru_frame(8,50,224,30);
   ru_center(page==RU_PAGE_SUB1?"SUB OSCILLATOR 1":"SUB OSCILLATOR 2",120,60,1);
@@ -1020,10 +1111,10 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_draw_knobs(v);ru_footer("ALG OSC / HOME SHAPE");return;
  }
  if(page==RU_PAGE_LFO || page==RU_PAGE_ENV){
-  /* V1.72: original opening/closing PNGs remain untouched. During Note
-   * HOLD, ENV plays eight smoke-and-rubble settling PNGs ONCE, then keeps
-   * only the 1px wall tremble; LFO loops its own falling-debris sprites.
-   * All work is in the UI thread; no audio callback, allocations or DSP. */
+  /* V1.88.3: ENV plays its 20-frame opening plus eight sequential hold
+   * frames until smoke settles and a real hole remains. Release retraces
+   * the exact frames in reverse. LFO keeps its existing debris loop.
+   * All work stays in the UI thread; no audio callback, allocations or DSP. */
   uint8_t frame=v->panel_frame<RU_PANEL_FRAMES?v->panel_frame:0u;int xoff=0,yoff=0;
   const uint8_t (*art)[RU_PANEL_HEIGHT][RU_PANEL_BYTES]=
    page==RU_PAGE_LFO?ru_lfo_sprites:ru_env_sprites;
@@ -1100,7 +1191,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.85","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.89","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

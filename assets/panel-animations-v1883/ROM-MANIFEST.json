@@ -1,0 +1,27 @@
+{
+  "version": "1.88.3",
+  "size": [
+    224,
+    30
+  ],
+  "layout": "5x4",
+  "frame_order": "01 -> 20 attack / 20 -> 01 release",
+  "hold_frame": "20 (smoke gone, hole stays)",
+  "source": "ENV-20-FRAMES.png",
+  "rom_arrays": {
+    "ru_env_sprites": {
+      "old_sha256": "b739e94bd63ff2ea725863cca35ebf5f4e14874a25de154be8d3dd604ad47c72",
+      "new_sha256": "50f3e12fcb651ba417a2e8a66c188e8c3db2fb136effa53f384e0fb811640a81",
+      "frames": 20,
+      "bytes": 16800
+    },
+    "ru_env_hold_sprites": {
+      "old_sha256": "7d9cbf103bd6fd5bb023bc1ceaeb4f2e9e32cb81ddaef9b254feaec0bf37799b",
+      "new_sha256": "6f8880bda414d254782eebf2d9f0d6ce823487582a5428f7bae140959e11dbb2",
+      "frames": 8,
+      "bytes": 6720
+    }
+  },
+  "ota_code_changed": false,
+  "no_extra_rom_frames": true
+}

@@ -21,13 +21,12 @@ static void check_rom_sprites(void){
  assert(RU_HOLD_FRAMES==RU_PANEL_HOLD_FRAMES);
  assert(sizeof(ru_env_hold_sprites)==RU_HOLD_FRAMES*RU_PANEL_HEIGHT*RU_PANEL_BYTES);
  assert(sizeof(ru_lfo_hold_sprites)==RU_HOLD_FRAMES*RU_PANEL_HEIGHT*RU_PANEL_BYTES);
- assert(!memcmp(ru_env_hold_sprites[7],ru_env_sprites[12],
-                RU_PANEL_HEIGHT*RU_PANEL_BYTES));
- for(unsigned n=0;n<7;n++){
-  assert(memcmp(ru_env_hold_sprites[n],ru_env_sprites[12],
-                RU_PANEL_HEIGHT*RU_PANEL_BYTES)!=0);
-  assert(memcmp(ru_env_hold_sprites[n],ru_env_hold_sprites[n+1],
-                RU_PANEL_HEIGHT*RU_PANEL_BYTES)!=0);
+ for(unsigned n=0;n<8;n++){
+  /* ENV hold is exactly frames 13..20 of the full animation. */
+  assert(!memcmp(ru_env_hold_sprites[n],ru_env_sprites[12+n],
+                 RU_PANEL_HEIGHT*RU_PANEL_BYTES));
+  if(n<7)assert(memcmp(ru_env_hold_sprites[n],ru_env_hold_sprites[n+1],
+                     RU_PANEL_HEIGHT*RU_PANEL_BYTES)!=0);
  }
  for(unsigned n=0;n<RU_HOLD_FRAMES;n++){
   assert(memcmp(ru_lfo_hold_sprites[n],ru_lfo_hold_sprites[(n+1)%RU_HOLD_FRAMES],
@@ -63,16 +62,16 @@ static void test_env(void){
  }
  assert(hit[0]&&hit[1]&&hit[2]&&moved>5u);
  assert(ru_panel_update(&a,t+25u,0u,1u));
- assert(a.phase==RU_PANEL_CLOSE && a.frame==13u && a.hold_frame==0u);
- for(unsigned n=0;n<15;n++)ru_panel_update(&a,t+50u+n*90u,0u,1u);
+ assert(a.phase==RU_PANEL_CLOSE && a.frame==19u && a.hold_frame==0u);
+ for(unsigned n=0;n<25;n++)ru_panel_update(&a,t+50u+n*90u,0u,1u);
  assert(a.phase==RU_PANEL_IDLE && a.frame==0u);
- /* Early Note OFF must still take original 13..19 closing frames. */
+ /* Early Note OFF reverses from the exact displayed opening frame. */
  a=(RuPanelAnim){0};t=200u;ru_panel_update(&a,t,1u,1u);
  for(unsigned n=0;n<7;n++){t+=80u;ru_panel_update(&a,t,1u,1u);}
  assert(a.phase==RU_PANEL_OPEN);
  ru_panel_update(&a,t+25u,0u,1u);
- assert(a.phase==RU_PANEL_CLOSE && a.frame>=13u && a.frame<=19u);
- puts("PASS ENV: eight unique settling sprites -> subtly vibrating static rubble -> release closes");
+ assert(a.phase==RU_PANEL_CLOSE && a.frame>=1u && a.frame<=12u);
+ puts("PASS ENV: eight settling frames -> static hole -> reverse release closes");
 }
 static void test_lfo(void){
  RuPanelAnim a={0};uint32_t t=100u;

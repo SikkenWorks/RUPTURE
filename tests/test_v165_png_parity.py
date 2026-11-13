@@ -16,7 +16,7 @@ def bytes_of(name, header):
     return data
 for name,header,folder in [
  ('ru_lfo_sprites','rupture_panel_sprites.h','assets/panel-animations-v156/lfo'),
- ('ru_env_sprites','rupture_panel_sprites.h','assets/panel-animations-v156/env'),
+ ('ru_env_sprites','rupture_panel_sprites.h','assets/panel-animations-v1883/env'),
  ('ru_volcano_sprites','rupture_volcano_sprites.h','assets/panel-animations-v157/volcano')]:
     data=bytes_of(name,header)
     for i in range(20):
@@ -26,4 +26,4 @@ for name,header,folder in [
         actual=im.tobytes()
         expected=data[i*840:(i+1)*840]
         assert actual==expected, f'{name} frame {i+1} differs from source PNG'
-print('PASS V1.65: 60/60 source PNGs bit-identical to ROM sprite arrays (no rescaling or redraw)')
+print('PASS V1.88.3: 60/60 source PNGs bit-identical to ROM sprite arrays (no rescaling)')

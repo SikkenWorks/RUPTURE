@@ -31,6 +31,9 @@ static inline uint8_t etch_output_usb_ready(struct etch_output_usb_gate *g,
  * digital-load transitions from coinciding. It cannot eliminate a pop
  * generated inside the analogue amplifier itself. TIMER4 = 24 MHz. */
 #define ETCH_OUTPUT_LED_QUIET_TICKS 9600000u /* 400 ms */
+/* At cold boot, let silent codec DMA settle before the first LED step.
+ * This separates the codec-bias transition from the LED current surge. */
+#define ETCH_OUTPUT_CODEC_PRE_LED_MS 300u
 static inline uint8_t etch_output_led_quiet_ready(uint8_t led_seen,
     uint32_t now,uint32_t last_led_change){
  return (uint8_t)(led_seen &&

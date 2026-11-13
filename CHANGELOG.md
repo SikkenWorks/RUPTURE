@@ -1,3 +1,110 @@
+# RUPTURE V1.89 — Speaker Pop Fix
+
+## V1.89 (2026-11-13)
+
+- **Imported the speaker startup POPFIX** from the user-supplied V1.88.2 source into the complete V1.88.3 firmware. Only `bringup.c`, `hal/fm1_audio.h` and `native_output_startup.h` change startup behavior; a separate ABOUT version label identifies V1.89.
+- Starts the silent audio DMA and I2S clock before asserting codec lines PC0/PC2/PC1. Preserves the original line order, with a 2 ms step and 5 ms settling interval. Warm restarts with already-enabled codec lines avoid an unnecessary second edge.
+- Holds a watchdog-fed **300 ms quiet interval between codec start and LED-bank activation**, avoiding coincident codec-bias and LED-current transitions. The existing PC6 analog gate still requires 400 ms LED stability, DMA/USB settling, and subsequent muted-to-audible fade; recovery and keyboard-only modes retain their respective audio restrictions.
+- **Preserved all V1.88.3 ENV frames**: the smoke settles into the exposed hole and returns in exact reverse on note release. BEND/LFO graphics and the synthesis/FX/MIDI/storage engines are unchanged.
+- Retained the native trusted OTA loader, the protected bootheader, NUL-safe read-only Web MIDI connection verification and Puya/UC25HQ80 flash compatibility. The loader and bootheader are verified byte-identical to V1.88.3.
+- Native and host-side regression checks verify the intended startup order and OTA packaging. Whether the speaker pop is audibly eliminated requires testing on real FM1 hardware; this remains a software release candidate.
+
+---
+
+# RUPTURE V1.88.3 — Complete ENV Animation
+
+## V1.88.3 (2026-11-13)
+
+- **Restored the full ENV eruption sequence:** all 20 original-resolution 224×30 monochrome frames now progress from the intact brick wall through an eruption into a fully exposed hole. The final eight frames animate the plumes settling and clearing instead of freezing in place.
+- **Held note:** the finished hole remains visible. **Note release:** the exact animation rewinds toward the intact wall from the displayed frame, without a jump or a second plume. Short notes and retriggering during release are handled continuously.
+- Regenerated the native ENV sprite and hold-frame ROM tables directly from the 1-bit PNGs; verified per-pixel parity. LFO, BEND, audio processing, effects, MIDI, presets and flash storage remain unchanged.
+- Retained the **trusted OTA loader and protected 16 KiB bootheader byte-for-byte** from V1.88.2. The existing Web MIDI read-only identity probe and NUL-safe connection handling are unchanged; both supported Puya and UC25HQ80 JEDEC IDs are still accepted.
+- Native compilation and host tests passed. Hardware installation, frame timing and actual OTA on a physical FM1 still require validation.
+
+---
+
+# RUPTURE V1.88.2 — BEND Crop Fix
+
+## V1.88.2 (2026-11-11)
+
+- **Fixed all 40 BEND frames** across LINEAR, SOFT, HARD, S-CURVE and EXP. The previous 156×90-ish poster cells were stretched independently along X/Y to fit a 224×30 panel, creating the flattened appearance.
+- Each original poster cell now supplies a **true 1:1 pixel crop, 30 pixels high**, positioned by a per-frame camera Y coordinate. The crop (156 pixels wide) is centered in the existing 224×30 black panel with side margins, avoiding all image resampling or geometric distortion. Tall scenery outside the panel is deliberately cropped; it is not squashed.
+- Frame sequence, 4-of-5 shake behavior, static close-up camera (no shake), curve presets, original source poster, control logic, voices, audio DSP, FX, flash storage and OTA/bootloader behavior retained.
+- The native ROM sprite bank stays **exactly 33,600 bytes**, with **no additional per-frame computations** in the audio engine.
+- Native FM1 software builds and tests are not hardware validation.
+
+---
+
+# RUPTURE V1.88.1 — Approved Poster Frame Correction
+
+## V1.88.1 (2026-11-11)
+
+- **Corrects V1.88's visual mismatch:** the earlier V1.88 firmware used newly drawn sprites, not the 40 illustrated frames from the approved reference poster. This release directly crops and converts **the actual 5 × 8 cells in the user-provided 1536×1024 JPEG**, retaining the source compositions.
+- All five preset animations now use that poster: LINEAR (Everest), SOFT (inscribed monolith), HARD (pirate flagship emerging from a meadow), S-CURVE (ship close-up from bottom to mast), EXP (Kraken).
+- The reference poster is a composite, not the original individual source PNGs: original cells are cropped and non-uniformly scaled to the native 224×30 1-bit RUPTURE viewport. This conversion necessarily loses resolution; both untouched poster and intermediate crops are provided for traceability.
+- **No runtime animation math**: all five 8-frame sets are prepacked at build time to the exact existing 33,600-byte read-only ROM array. UI frame selection and the existing 4-of-5 shake behavior are unchanged; close-up remains stable.
+- **Audio engine untouched**: no additional ISR, DSP, MIDI, DAC, FX or animation cycles inside audio processing. Existing native LCD deadline gating is retained.
+- **OTA/Connection Fix preserved**: Puya `0x856014`, UC25HQ80 `0xB36014`, Web MIDI generic port probing and NUL-safe FM1 identity handling. Original protected 16 KiB bootheader, trusted OTA loader and flash/storage layout unchanged.
+- **Version bumped to V1.88.1** so the corrected firmware and download artifacts cannot be mistaken for the original V1.88 release.
+
+---
+
+# RUPTURE V1.88 — Five Curve-Linked BEND Animations
+
+## V1.88 (2026-11-11)
+
+- **K3 selects one unique 8-frame 224×30 1-bit animation per curve**: LINEAR = unchanged V1.87 Mount Everest; SOFT = monolith smashing through stone; HARD = a three-masted pirate flagship bursting up from a meadow; S-CURVE = a steady close-up camera travelling up the flagship, from cannon-pierced hull to Jolly Roger; EXP = a colossal Kraken tearing open the ground.
+- The 40 pre-rendered 1-bit frames are generated **offline** and packed into constant 33,600-byte flash ROM data. No additional audio ISR work, realtime procedural art, animation framebuffer, voices or DSP effects. The original 5 pre-FX K3 response curves remain byte-identical.
+- **UI-only shake** on all sequences except S-CURVE. Up to 4 tiny ±1/2-pixel offsets cycle at 85ms while actively bending. The existing audio-first LCD refresh budget remains authoritative and can defer frames if audio is busy.
+- V1.87 Everest sprites are kept bit-for-bit, including their original height and 1-bit monochrome appearance.
+- Existing **OTA/Connection Fix** (NUL-safe identity parsing, generic Windows MIDI ports), both supported flashchip JEDEC IDs (Puya `0x856014`, UC25HQ80 `0xB36014`), trusted OTA loader, 16KiB protected boothead and flash layout remain untouched.
+- Audio DSP, all 3 reverbs, presets, sequencer, MIDI queue, PC6 speaker gate and save format remain unchanged. Hardware verification required before unrestricted release.
+
+---
+
+# RUPTURE V1.87 — Everest BEND Mountain Sprites
+
+## V1.87 (2026-11-11)
+
+- Replaces the BEND page mountain animation with the new **Mount-Everest-style eruption sprite sheet** approved by the user. The mountain now bursts upward more realistically and aggressively as bend intensity rises.
+- Integration is **offline only**: the eight 224×30 1-bit frames are preconverted from the supplied PNG sheet and compiled into `rupture_bend_sprites.h` ROM data. There is **no procedural drawing, no particle system, no extra LCD buffer and no work added to the audio ISR**.
+- **K3 curve presets remain exactly as in V1.86.1**: LINEAR, SOFT, HARD, S-CURVE and EXP. K1 live bend behavior and K2 range selection remain unchanged.
+- **OTA fix preserved:** the V1.86/V1.86.1 Web MIDI connection fix, dual flash-chip support and trusted OTA/storage code are unchanged.
+- Changed assets only: `vendor/etch-v1.88-source/firmware/fm1-native/rupture_bend_sprites.h` and `vendor/etch-v1.88-source/firmware/fm1-native/bend_frames/*`.
+
+---
+
+# RUPTURE V1.86.1 — BEND K3 Curve Presets
+
+## V1.86.1 (2026-11-11)
+
+- **BEND K3** now selects five distinct pitch-response curves: LINEAR, SOFT (ease-out), HARD (ease-in), S-CURVE (smoothstep) and EXP (cubic).
+- K1 still pushes the active string-style bend and quickly releases when turning stops. K2 still selects 1/4, 1/2, FULL, 1 1/2 or DOUBLE (2 semitones maximum). All curves share the same precise endpoints.
+- Native BEND UI shows three physical knobs and their current values, a tiny actual K3 curve preview with K1 playhead, and the *curved* live pitch, meter and existing mountain sprite animation.
+- Curve is computed in the control/UI path, **before** effects, not in the audio ISR. At K3 LINEAR the existing V1.86 pitch response remains unchanged. BEND performance settings are not saved to project flash.
+- **OTA connection hotfix preserved:** NUL-terminated FM1 identity and extra JEDEC bytes are parsed correctly; unknown Windows MIDI port names still undergo read-only identification. Both existing flash chip IDs remain supported.
+- Existing trusted OTA loader, 16 KiB boot/header, storage format, project/sequence handling, CXS/SAW and all effects unchanged. Device validation remains pending; keep a recovery path available.
+
+---
+
+# RUPTURE V1.86 — BEND Play Parameter
+
+## V1.86 Web MIDI connection fix (installer/website only, 2026-11-11)
+
+- Fixes a real FM1 detection regression introduced by V1.85.2 flash-chip telemetry. The 27-byte identity payload is NUL-terminated; JEDEC bytes 24..26 must **not** be concatenated to `FM-1_968`.
+- Both Puya `0x856014` and UC25HQ80 `0xB36014` identity packets now parse correctly, while invalid device identities remain rejected.
+- If Windows exposes generic or unrecognized MIDI port names, the installer safely probes at most 16 input/output combinations using the **read-only ID query**. OTA CHECK and WRITE rules are unchanged.
+- Adds visible MIDI input/output diagnostics and a manual port pairing fallback when no FM1 identity is returned.
+- **No native FM1 firmware, audio, storage, OTA loader or flash image bytes were changed.** Existing `RUPTURE-V1.86.fwsc` SHA-256 remains `239edee0056b32896f6f293cab22a05e366b94928ed76d2ebd4487047a45ccd8`.
+
+- **FX short press** continues to open the existing FX screen. **Hold FX for 700 ms** to open the new BEND play-parameter screen.
+- **K1 momentary bend:** turning K1 raises the playing pitch; releasing the encoder causes the bend to return rapidly to zero. K1 is transient performance control, not an FX wet level or a stored patch edit.
+- **K2 range:** select `1/4`, `1/2`, `FULL`, `1 1/2` or `DOUBLE` (maximum 2 semitones). The active target, live semitone offset, 0–100% meter and `IDLE` / `BENDING` / `RETURN` status appear on the native 240×240 UI.
+- **8 original 224×30, 1-bit mountain PNG frames**, compiled into packed ROM sprites: rise in response to K1, reverse automatically as the bend returns. No live mountain drawing or additional LCD buffers in the audio interrupt; existing CRT/VCR optics work on BEND.
+- Pitch scaling is applied to the oscillator rates **before the existing FX processors**, preserving the sonic processing order, reverb algorithms and MIDI handling.
+- BEND is session/performance state: no changes to stored projects, update-loader bytes, NOR layout, preset format, LEDs, PC6 startup logic or legacy page behavior.
+- Native JieLi FM1 compilation and release packaging completed. Physical FM1 responsiveness, audible bend feel, DMA headroom, flash upgrade and post-USB power-on plop remain unverified without real-hardware checks.
+
 # RUPTURE V1.85.2 — Dual FM1 Flash ID Compatibility
 
 - Add `hal/fm1_flash_id.h` with exact allowlist `0x856014` (Puya P25Q80) and `0xB36014` (UCUN UC25HQ80). Both are 1 MiB SPI NOR; flash map, erase/program commands and project serialization stay unchanged.

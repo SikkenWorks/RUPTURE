@@ -327,3 +327,11 @@ python3 tests/test_v179_pcm_parity.py
 
 # V1.82 first-boot migration and NOR integrity regression
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v182_welcome_version.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v182_store && /tmp/rupture_v182_store
+
+# V1.88.3: complete 20-frame ENV opening, 8 smoke-settling hold frames,
+# fixed exposed hole and pixel-exact reverse on note release. OTA is intact.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v1883_env_animation.c -o /tmp/rupture_v1883_env && /tmp/rupture_v1883_env
+python3 tests/test_v165_png_parity.py
+python3 tests/test_v170_hold_png_parity.py
+python3 tests/test_v189_popfix_ota.py
+bash tests/pop_fix/run_pop_tests.sh

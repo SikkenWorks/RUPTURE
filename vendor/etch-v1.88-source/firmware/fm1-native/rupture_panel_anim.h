@@ -1,7 +1,8 @@
 /* RUPTURE ENV wall-break, LFO sinkhole and SOUND SHAPE volcano.
- * Opening/closing sprites from V1.56/V1.57 remain byte-identical.
- * V1.72: ENV smoke/debris settle once, then the cracked wall trembles subtly; LFO debris
- * falls in an endless eight-frame loop. Pure UI; never runs in audio ISR.
+ * V1.88.3: ENV 20-frame opening includes settling smoke and a persistent hole.
+ * Release reverses that same artwork from its actual current frame.
+ * LFO debris keeps its eight-frame loop and SOUND SHAPE is unchanged.
+ * Pure UI; never runs in audio ISR.
  * SPDX-License-Identifier: GPL-3.0-only */
 #ifndef RUPTURE_PANEL_ANIM_H
 #define RUPTURE_PANEL_ANIM_H
@@ -21,10 +22,14 @@ static uint8_t ru_panel_update(RuPanelAnim *a,uint32_t now,uint8_t gates,uint8_t
    /* Retrigger during a closing animation resumes the existing opening
     * without ever indexing outside its 0..19 original art range. */
    if(mode==2u){a->phase=RU_PANEL_OPEN;a->frame=1u;}
-   else if(mode==1u && a->frame>12u){
-    a->phase=RU_PANEL_HOLD;a->frame=12u;
+   else if(mode==1u && a->frame>=12u){
+    /* Resume the 8-frame settling segment at the same visual frame. */
+    a->phase=RU_PANEL_HOLD;
+    a->hold_frame=(uint8_t)(a->frame-12u);
+    a->frame=12u;
    }else{a->phase=RU_PANEL_OPEN;if(a->frame>12u)a->frame=12u;}
-   a->hold_frame=0u;a->shake=0u;a->next_ms=now+80u;
+   if(a->phase!=RU_PANEL_HOLD)a->hold_frame=0u;
+   a->shake=0u;a->next_ms=now+80u;
   }else if(a->next_ms){
    for(uint8_t i=0u;i<32u && (int32_t)(now-a->next_ms)>=0;i++){
     if(a->phase==RU_PANEL_HOLD){
@@ -64,21 +69,27 @@ static uint8_t ru_panel_update(RuPanelAnim *a,uint32_t now,uint8_t gates,uint8_t
   }
  }else{
   if(a->phase==RU_PANEL_OPEN || a->phase==RU_PANEL_HOLD){
-   a->phase=RU_PANEL_CLOSE;a->shake=0u;a->hold_frame=0u;
-   if(mode!=0u){
+   if(mode==1u){
+    /* While held, ENV shows frames 13..20 through the hold table.
+     * Translate its position back into the same 20-frame opening bank.
+     * Close by stepping backwards, with no wall/smoke teleport. */
+    if(a->phase==RU_PANEL_HOLD)
+     a->frame=(uint8_t)(12u+a->hold_frame);
+   }else if(mode!=0u){
     /* No sudden jump to a fully closed wall after a short press. */
     a->frame=(uint8_t)(mode==2u ?
        (a->frame<=2u?18u:a->frame<=4u?17u:a->frame<=6u?16u:a->frame<=8u?15u:14u) :
        (a->frame<=2u?18u:a->frame<=4u?17u:a->frame<=6u?16u:a->frame<=8u?15u:a->frame<=10u?14u:13u));
    }
+   a->phase=RU_PANEL_CLOSE;a->shake=0u;a->hold_frame=0u;
    a->next_ms=now+(mode==0u?80u:90u);
   }else if(a->phase==RU_PANEL_CLOSE){
    for(uint8_t i=0u;i<20u && (int32_t)(now-a->next_ms)>=0;i++){
-    if(mode!=0u){
+    if(mode==2u){
      if(a->frame<19u){++a->frame;a->next_ms+=90u;}
      else{a->frame=0u;a->phase=RU_PANEL_IDLE;a->next_ms=0u;break;}
     }else{
-     if(a->frame>0u){--a->frame;a->next_ms+=80u;
+     if(a->frame>0u){--a->frame;a->next_ms+=(mode==0u?80u:90u);
       if(a->frame==0u){a->phase=RU_PANEL_IDLE;a->next_ms=0u;break;}}
      else{a->phase=RU_PANEL_IDLE;a->next_ms=0u;break;}
     }

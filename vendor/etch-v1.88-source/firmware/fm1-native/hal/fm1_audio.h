@@ -40,6 +40,19 @@ static void fm1__pc_out(uint32_t bit, int v)   /* codec control lines on PC0/1/2
     FM1_PR(FM1_PC, FM1_DIR) &= ~m;
 }
 
+/* A/B diagnostic switch: 1 restores the former codec-before-clock ordering. */
+#ifndef FM1_AUDIO_LEGACY_CODEC_ORDER
+#define FM1_AUDIO_LEGACY_CODEC_ORDER 0
+#endif
+#define FM1_AUDIO_CODEC_LINES ((1u << 0) | (1u << 1) | (1u << 2))
+#define FM1_AUDIO_CODEC_STEP_MS 2u
+#define FM1_AUDIO_CODEC_SETTLE_MS 5u
+FM1_INLINE uint8_t fm1_audio_codec_lines_asserted(void)
+{
+    return (uint8_t)((FM1_PR(FM1_PC, FM1_OUT) & FM1_AUDIO_CODEC_LINES) == FM1_AUDIO_CODEC_LINES &&
+                     (FM1_PR(FM1_PC, FM1_DIR) & FM1_AUDIO_CODEC_LINES) == 0u);
+}
+
 FM1_INLINE void fm1_audio_init(int32_t *buf, uint32_t half_words, void (*isr)(void), uint32_t prio)
 {
     fm1__pc_out(6, 0);
@@ -50,10 +63,14 @@ FM1_INLINE void fm1_audio_init(int32_t *buf, uint32_t half_words, void (*isr)(vo
     FM1_ALNK_CON3 = 0;
     FM1_IOMAP_CON5 &= ~0xC0u;
     FM1_ALNK_CON3 |= 3u;
+#if FM1_AUDIO_LEGACY_CODEC_ORDER
     fm1__pc_out(0, 1);
+#endif
     FM1_ALNK_CON0 |= 0x100u;
+#if FM1_AUDIO_LEGACY_CODEC_ORDER
     fm1__pc_out(2, 1);
     fm1__pc_out(1, 1);
+#endif
     FM1_ALNK_CON0 |= 0x80u;
     FM1_ALNK_CON0 &= ~0x40u;
     FM1_ALNK_LEN = half_words;
@@ -72,6 +89,19 @@ FM1_INLINE void fm1_audio_init(int32_t *buf, uint32_t half_words, void (*isr)(vo
     fm1_irq_attach(FM1_IRQ_ALNK0, isr, prio);
     FM1_ALNK_CON0 |= 0x800u;
     fm1_delay_ms(5);
+#if !FM1_AUDIO_LEGACY_CODEC_ORDER
+    /* Set PC0, PC2 and PC1 only after the silent DMA/I2S clock is running.
+     * Preserve the original line order and final states. Skip the extra
+     * edges/delays on warm restarts where the lines are already asserted.
+     * The PC6 analog-output gate remains LOW throughout this operation. */
+    if (!fm1_audio_codec_lines_asserted()) {
+        fm1__pc_out(0, 1);
+        fm1_delay_ms(FM1_AUDIO_CODEC_STEP_MS);
+        fm1__pc_out(2, 1);
+        fm1__pc_out(1, 1);
+        fm1_delay_ms(FM1_AUDIO_CODEC_SETTLE_MS);
+    }
+#endif
     /* Remain gated; ETCH app releases after warmup and applies a soft ramp. */
 }
 

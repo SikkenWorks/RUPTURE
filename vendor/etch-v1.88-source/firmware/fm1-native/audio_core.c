@@ -794,6 +794,10 @@ static void native_rates(const struct etch_native_audio *s,const struct etch_nat
    int32_t candidate=65536+scaled;
    factor=(uint32_t)(candidate<16384?16384:candidate>131072?131072:candidate);
   }
+  if(c->live_bend_q16 && c->live_bend_q16!=65536u){
+   factor=(uint32_t)(((uint64_t)factor*c->live_bend_q16)>>16);
+   if(factor<16384u)factor=16384u;else if(factor>131072u)factor=131072u;
+  }
 #endif
   increments[i]=(uint32_t)(((uint64_t)v->inc*factor)>>16);
   const struct etch_native_patch *gp=group_patch_at(etch_native_voice_group((uint8_t)i));
@@ -1217,6 +1221,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
      int32_t delta=((int32_t)mfactor-65536)*(int32_t)s->mono_bend_range/2;
      int32_t scaled=65536+delta;
      mfactor=(uint32_t)(scaled<16384?16384:scaled>131072?131072:scaled);
+    }
+    if(c->live_bend_q16 && c->live_bend_q16!=65536u){
+     mfactor=(uint32_t)(((uint64_t)mfactor*c->live_bend_q16)>>16);
+     if(mfactor<16384u)mfactor=16384u;else if(mfactor>131072u)mfactor=131072u;
     }
     if(mfactor==65536u) pitch_inc=s->mono_current_inc;
     else {

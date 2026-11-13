@@ -24,7 +24,7 @@ int main(int argc,char **argv){if(argc!=3 && argc!=4)return 2;RuState v={0};v.cr
 if(v.page==RU_PAGE_SUB2){v.k[0]=0;v.k[1]=1;v.k[2]=54;v.k[3]=0;}
 /* View a source sprite with the actual native renderer: dam0..dam19. */
 if(argc>=4 && !strcmp(argv[3],"crt-off"))v.crt_enabled=0u;
-if(argc>=4 && !strcmp(argv[3],"crt-on"))v.crt_enabled=1u;
+if(argc>=4 && strstr(argv[3],"crt-on"))v.crt_enabled=1u;
 if(argc>=4 && ((v.page==RU_PAGE_ENV && strncmp(argv[3],"env",3)==0) ||
                 (v.page==RU_PAGE_LFO && strncmp(argv[3],"lfo",3)==0))){
  int frame=atoi(argv[3]+3);if(frame>=0 && frame<20)v.panel_frame=(uint8_t)frame;
@@ -42,7 +42,20 @@ if(argc>=4 && (v.page==RU_PAGE_SUB1 || v.page==RU_PAGE_SUB2)){
  else if(!strcmp(argv[3],"saw"))v.k[0]=4u;
 }
 if(v.page==RU_PAGE_SHAPE){v.k[0]=72;v.k[1]=64;v.k[2]=30;v.k[3]=42;}if(v.page==RU_PAGE_COMP){v.k[0]=74;v.k[1]=65;v.k[2]=30;v.k[3]=60;}
-if(v.page==RU_PAGE_FOLDER){v.k[0]=62;v.k[1]=50;v.k[2]=84;v.k[3]=72;}
+if(v.page==RU_PAGE_BEND){
+ v.bend_target=2u;v.bend_live=62u;v.bend_curve=RU_BEND_LINEAR;
+ if(argc>=4 && strncmp(argv[3],"bend",4)==0){
+  int mode=atoi(argv[3]+4);if(mode>=0&&mode<(int)RU_BEND_CURVE_COUNT)v.bend_curve=(uint8_t)mode;
+  /* Renderer-only selector: bend3-frame7 or bend1-frame2. */
+  const char *detail=strstr(argv[3],"-frame");
+  if(detail){int f=atoi(detail+6);if(f>=0&&f<8)v.bend_frame=(uint8_t)f;}
+ }
+ v.bend_shaped=ru_bend_curve_percent(v.bend_curve,v.bend_live);
+ if(!(argc>=4 && strstr(argv[3],"-frame")))v.bend_frame=(uint8_t)((v.bend_shaped*(RU_BEND_FRAMES-1u)+99u)/100u);
+ v.bend_releasing=0u;v.bend_shake_phase=(uint8_t)(v.bend_curve==RU_BEND_SCURVE?0u:2u);
+ if(argc>=4){const char *sh=strstr(argv[3],"-shake");if(sh){int n=atoi(sh+6);if(n>=0&&n<=3)v.bend_shake_phase=(uint8_t)n;}}
+ v.k[0]=62u;v.k[1]=2u;v.k[2]=v.bend_curve;v.k[3]=0u;
+}
 if(v.page==RU_PAGE_TRANSIENT){v.k[0]=72;v.k[1]=52;v.k[2]=63;v.k[3]=70;}
 if(v.page==RU_PAGE_TILT){v.k[0]=67;v.k[1]=50;v.k[2]=71;v.k[3]=50;}
 if(v.page==RU_PAGE_FUZZ){v.k[0]=75;v.k[1]=90;v.k[2]=75;v.k[3]=78;}

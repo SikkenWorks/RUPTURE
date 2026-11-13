@@ -26,6 +26,9 @@
 #include "rupture_main_state.h"
 #include "rupture_saver_loop.h"
 #include "rupture_performance_state.h"
+#include "rupture_bend_sprites.h"
+#include "rupture_bend_curves.h"
+#include "rupture_bend_storyboard.h"
 #endif
 #include "hal/fm1_timer.h"
 #include "hal/fm1_audio.h"
@@ -749,6 +752,11 @@ static uint8_t ru_sub_drift[2]={0u,0u};
 static uint8_t ru_sub_blend_amount[2]={75u,75u};
 static uint8_t ru_note_priority=0u,ru_note_legato=1u,ru_note_bend=2u;
 static uint16_t ru_note_glide_ms=0u;
+static uint8_t ru_bend_target=2u,ru_bend_live=0u,ru_bend_curve=RU_BEND_LINEAR,ru_bend_last_visual_frame=0u,ru_bend_last_visual_shake=0u;
+static uint32_t ru_bend_last_turn_ms=0u,ru_bend_last_decay_ms=0u;
+static uint32_t ru_bend_live_q16(void);
+static uint8_t ru_bend_frame_from_live(void);
+static void ru_bend_service(void);
 static uint8_t ru_seq_velocity=110u; /* K3: step note velocity 1..127 */
 /* Eight per-project SEQ snapshots use the already journalled PJT pattern archive.
  * Reserved indices 24..31 keep the current live preset pattern independent.
@@ -1270,7 +1278,7 @@ static void native_parameter_publish(void){
   native_controls.sub_blend[z]=ru_sub_blend_amount[z];
  }
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
- native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
+ native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;native_controls.live_bend_q16=ru_bend_live_q16();
 #endif
 
  native_controls.env_enabled=1;native_controls.attack_step=envelope_step(native_env_ms[0]);native_controls.decay_step=envelope_step(native_env_ms[1]);native_controls.release_step=envelope_step(native_env_ms[2]);native_controls.sustain_level=native_sustain;
@@ -1728,7 +1736,7 @@ static void native_patch_load(uint8_t pattern_prepared){
  native_controls.cxs_pressure=ru_pressure;native_controls.cxs_balance=ru_balance;
   native_controls.cxs_memory=ru_memory;native_controls.cxs_density=ru_density;
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
- native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
+ native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;native_controls.live_bend_q16=ru_bend_live_q16();
  }
 #endif
  native_env_ms[0]=p->attack_ms;native_env_ms[1]=p->decay_ms;native_env_ms[2]=p->release_ms;native_sustain=p->sustain;
@@ -2793,7 +2801,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);v.bend_live=ru_bend_live;v.bend_target=ru_bend_target;v.bend_curve=ru_bend_curve;v.bend_shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);v.bend_frame=ru_bend_frame_from_live();v.bend_shake_phase=(uint8_t)((etch_ms/85u)&3u);v.bend_releasing=(uint8_t)(ru_bend_live && (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
  v.welcome_phase=ru_welcome.phase;v.welcome_choice=ru_welcome.choice;
  v.welcome_lesson=ru_welcome.lesson;v.welcome_overlay=ru_welcome.overlay;
  v.welcome_crt=ru_welcome.crt;v.welcome_status=ru_welcome.status;
@@ -2943,7 +2951,7 @@ static void rupture_native_screen(void){
   v.k[2]=etch_fx_route(&native_fx_settings);
   v.k[3]=(uint16_t)(native_chorus*100u/32767u);break;
  case RU_PAGE_COMP:v.k[0]=(uint16_t)(native_fx_settings.comp_threshold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.comp_ratio*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.comp_attack*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.comp_release*100u/32767u);break;
- case RU_PAGE_FOLDER:v.k[0]=(uint16_t)(native_fx_settings.folder_fold*100u/32767u);v.k[1]=(uint16_t)(native_fx_settings.folder_symmetry*100u/32767u);v.k[2]=(uint16_t)(native_fx_settings.folder_tone*100u/32767u);v.k[3]=(uint16_t)(native_fx_settings.folder_mix*100u/32767u);break;
+ case RU_PAGE_BEND:v.k[0]=ru_bend_live;v.k[1]=ru_bend_target;v.k[2]=ru_bend_curve;v.k[3]=0u;break;
  
  case RU_PAGE_TILT:for(uint8_t j=0;j<4u;j++)v.k[j]=ru_tilt[j];break;
  case RU_PAGE_FUZZ:for(uint8_t j=0;j<4u;j++)v.k[j]=ru_fuzz[j];break;
@@ -4038,6 +4046,33 @@ static uint8_t *ru_undo_target(uint8_t page,uint8_t k){
  if(page==RU_PAGE_SANDPAPER)return &ru_sand[k];
  return 0;
 }
+static uint32_t ru_bend_live_q16(void){
+ static const uint32_t target_q16[5]={66489u,67456u,69433u,71468u,73562u};
+ uint8_t idx=ru_bend_target<5u?ru_bend_target:0u;
+ uint32_t target=target_q16[idx];
+ uint32_t delta=target>65536u?target-65536u:0u;
+ uint8_t shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);
+ return 65536u + (uint32_t)((delta*(uint32_t)shaped + 50u)/100u);
+}
+static uint8_t ru_bend_frame_from_live(void){
+ uint8_t shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);
+ uint8_t releasing=(uint8_t)(ru_bend_live && ru_bend_last_turn_ms &&
+   (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
+ return ru_bend_poster_frame(ru_bend_curve,shaped,releasing);
+}
+static void ru_bend_service(void){
+ if(!ru_bend_last_decay_ms)ru_bend_last_decay_ms=etch_ms?etch_ms:1u;
+ uint32_t now=etch_ms?etch_ms:ru_bend_last_decay_ms;
+ uint32_t dt=(uint32_t)(now-ru_bend_last_decay_ms);
+ if(dt>80u)dt=80u;
+ ru_bend_last_decay_ms=now;
+ if(ru_bend_live && (!ru_bend_last_turn_ms || (uint32_t)(now-ru_bend_last_turn_ms)>=75u)){
+  uint32_t drop=1u+dt/2u;
+  uint8_t next=(uint8_t)(ru_bend_live>drop?ru_bend_live-drop:0u);
+  if(next!=ru_bend_live){ru_bend_live=next;} /* UI sprite event is scheduled only if its packed PNG frame changes. */
+ }
+ native_controls.live_bend_q16=ru_bend_live_q16();
+}
 static void ru_undo_capture(uint8_t page,uint8_t k,uint8_t value,uint32_t now){
  ru_undo_gesture_capture(&ru_knob_undo,page,k,value,now);ru_undo_notice=0u;
 }
@@ -4063,7 +4098,7 @@ static uint8_t ru_knob_focusable(uint8_t page,uint8_t control){
  case RU_PAGE_GUIDE:case RU_PAGE_KEYLOCK:case RU_PAGE_NOTE_MEMORY:
  case RU_PAGE_ARP:case RU_PAGE_REVERB:case RU_PAGE_DELAY:
  case RU_PAGE_CHORUS:case RU_PAGE_DRIVE:case RU_PAGE_COMP:
- case RU_PAGE_FOLDER:case RU_PAGE_TILT:case RU_PAGE_FUZZ:
+ case RU_PAGE_BEND:case RU_PAGE_TILT:case RU_PAGE_FUZZ:
  case RU_PAGE_SANDPAPER:return 1u;
  case RU_PAGE_PROJECTS:return (uint8_t)(control<=1u);
  case RU_PAGE_SETTINGS:return (uint8_t)(control==0u&&
@@ -4083,6 +4118,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
   (ru_page==RU_PAGE_SUB1&&control>=2u)||(ru_page==RU_PAGE_SUB2&&control>=2u)||
   (ru_page==RU_PAGE_FILTER&&control>=1u)||ru_page==RU_PAGE_ENV||
   (ru_page==RU_PAGE_LFO&&control==1u)||
+  (ru_page==RU_PAGE_BEND&&control==0u)||
   (ru_page==RU_PAGE_SETTINGS&&control==0u));
  if(control<4u){
   amount=ru_encoder_feel(&ru_knob_feel[control],etch_ms,amount,continuous);
@@ -4244,9 +4280,15 @@ static void ru_adjust(uint8_t control,int32_t amount){
   uint16_t *slot=control==0u?&native_fx_settings.comp_threshold:control==1u?&native_fx_settings.comp_ratio:control==2u?&native_fx_settings.comp_attack:&native_fx_settings.comp_release;
   *slot=etch_encoder_pct(*slot,amount);
  }
- else if(ru_page==RU_PAGE_FOLDER){
-  uint16_t *slot=control==0u?&native_fx_settings.folder_fold:control==1u?&native_fx_settings.folder_symmetry:control==2u?&native_fx_settings.folder_tone:&native_fx_settings.folder_mix;
-  *slot=etch_encoder_pct(*slot,amount);
+ else if(ru_page==RU_PAGE_BEND){
+  if(control==0u){
+   int32_t live=(int32_t)ru_bend_live + amount*12;
+   ru_bend_live=(uint8_t)ui_bound(live,0,100);
+   ru_bend_last_turn_ms=etch_ms?etch_ms:1u;
+   if(ru_bend_live)first_frame=1u;
+  }
+  if(control==1u)ru_bend_target=(uint8_t)ui_bound((int32_t)ru_bend_target+amount,0,4);
+  if(control==2u)ru_bend_curve=(uint8_t)ui_bound((int32_t)ru_bend_curve+amount,0,RU_BEND_CURVE_COUNT-1u);
  }
  else if(ru_page==RU_PAGE_TILT){ru_tilt[control]=(uint8_t)ui_bound((int32_t)ru_tilt[control]+amount,0,100);ru_fx_apply_extra();}
  else if(ru_page==RU_PAGE_FUZZ){ru_fuzz[control]=(uint8_t)ui_bound((int32_t)ru_fuzz[control]+amount,0,100);ru_fx_apply_extra();}
@@ -4262,7 +4304,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
   ru_undo_capture(ru_page,control,undo_previous,etch_ms);
  /* At a clamped endpoint, a click has not changed the project. */
  if((!undo_target || *undo_target!=undo_previous) &&
-    ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD)ru_mark_dirty();
+    ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD && ru_page!=RU_PAGE_BEND)ru_mark_dirty();
  /* Apply after all FX forwarding: the visible FX panel, not its temporary
   * internal effect page, owns the active-knob marker. Force an immediate
   * UI redraw even when the parameter is already at its endpoint. */
@@ -4450,10 +4492,20 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  if(buttons&(1u<<11)){if(!ru_seq_since)ru_seq_since=etch_ms?etch_ms:1u;}
  else if(ru_seq_since){if(!ru_seq_used){ru_nav_to(RU_PAGE_SEQ);native_seq_step=0u;ru_seq_velocity=110u;}
   ru_seq_since=0u;ru_seq_used=0u;}
+ if((pressed&(1u<<2)) && !(buttons&(1u<<9))){
+  native_fx_press_since=etch_ms?etch_ms:1u;native_fx_press_consumed=0u;pressed&=~(1u<<2);*pressed_ptr=pressed;
+ }
+ if((buttons&(1u<<2)) && native_fx_press_since && !native_fx_press_consumed && !(buttons&(1u<<9)) &&
+    (uint32_t)(etch_ms-native_fx_press_since)>=700u){
+  native_fx_press_consumed=1u;ru_nav_to(RU_PAGE_BEND);
+ }
+ if(!(buttons&(1u<<2)) && native_fx_press_since){
+  if(!native_fx_press_consumed)ru_nav_to(RU_PAGE_FX);
+  native_fx_press_since=0u;native_fx_press_consumed=0u;
+ }
  if(pressed&(1u<<7)){ru_nav_to(RU_PAGE_GLO);ru_selected=0;}
  if(pressed&(1u<<4))ru_nav_to(RU_PAGE_ENV);
  if(pressed&(1u<<5))ru_nav_to(RU_PAGE_LFO);
- if(pressed&(1u<<2))ru_nav_to(RU_PAGE_FX);
  if(pressed&(1u<<6)){
   /* EDIT owns Channel EQ navigation, just as other hardware pages own theirs.
    * First press enters EQ. Subsequent presses cycle GAIN / FREQ / Q.
@@ -4942,7 +4994,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  native_controls.cxs_pressure=ru_pressure;native_controls.cxs_balance=ru_balance;
  native_controls.cxs_memory=ru_memory;native_controls.cxs_density=ru_density;
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
- native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
+ native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;native_controls.live_bend_q16=ru_bend_live_q16();
  native_controls.cxs_weight=ru_weight;native_controls.cxs_edge=ru_edge;
  native_controls.cxs_bite=ru_bite;native_controls.cxs_punch=ru_punch;
  for(uint8_t z=0u;z<2u;z++){
@@ -4953,7 +5005,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   native_controls.sub_blend[z]=ru_sub_blend_amount[z];
  }
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
- native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;
+ native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;native_controls.live_bend_q16=ru_bend_live_q16();
  native_parameter_publish();
  if(select||alg||dm||dd||up||down||pressed)first_frame=1u;
  /* All LCD drawing now goes through the SINGLE budgeted paint decision in
@@ -5150,10 +5202,15 @@ void fm1_cstart(void){
  native_parameter_publish();
  int32_t pot=fm1_adc_read(FM1_ADC_MASTER);
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
- /* Establish the LED bank before the audio clock/PC6 sequence starts.
-  * Otherwise the first LED-refresh timestamp could arrive AFTER PC6 ON. */
+ /* POPFIX: start zero-filled DMA and settle codec bias before turning on
+  * the LED bank. The LED and codec current steps must not coincide.
+  * PC6 remains gated until LEDs are established and steady for 400 ms. */
+ uint8_t boot_audio=(uint8_t)(!muted&&!native_keyboard_mode&&etch_recovery_may_run_audio(native_recovery_reason));
+ if(boot_audio){
+  fm1_irq_off();native_start();fm1_irq_enable_all();
+  for(uint32_t ms=0u;ms<ETCH_OUTPUT_CODEC_PRE_LED_MS;ms+=10u){fm1_wdt_feed();fm1_delay_ms(10u);}
+ }
  native_seq_led_refresh();
- if(!muted&&!native_keyboard_mode&&etch_recovery_may_run_audio(native_recovery_reason)){fm1_irq_off();native_start();fm1_irq_enable_all();}
  uint32_t last=0,held=0,previous_buttons=fm1_in.buttons,last_seq_notes=fm1_in.notes,last_ui_paint_ms=0,last_wave_compile_ms=0;
 #ifdef RUPTURE_BUILD
  struct ru_note_paint_budget ru_note_paint={0};
@@ -5601,12 +5658,14 @@ void fm1_cstart(void){
    ru_metronome_enabled=(uint8_t)(native_seq_recording &&
       (native_seq_run||ru_countin.active||ru_countin.force_seq) &&
       !native_updating && !native_safe && !native_tripped);
+   ru_bend_service();
+
    /* 25 ms main-loop service only: no MIDI, DSP, ISR, storage or OTA changes.
     * A note from hardware, USB MIDI, ARP or sequencer can hold the crack open.
     * Closing starts as soon as every note gate has released.
     * Never repaint other pages just to animate a hidden bar. */
    uint8_t ru_dam_changed=0u;
-   if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE) &&
+   if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE || ru_page==RU_PAGE_BEND) &&
       !ru_saver_active && !native_safe && !native_tripped && !native_updating){
     uint8_t gates=(uint8_t)(fm1_in.notes!=0u);
     for(uint32_t vi=0;vi<ETCH_NATIVE_VOICES;vi++){
@@ -5616,6 +5675,20 @@ void fm1_cstart(void){
      ru_dam_changed=ru_dam_update(&ru_dam_anim,etch_ms,gates,
                                   rupture_octave_display(native_controls.octave));
      ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=255u;
+    }else if(ru_page==RU_PAGE_BEND){
+     ru_dam_anim=(RuDamAnim){0};ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=255u;
+     /* V1.88 prepacked 1-bit frame swap + gentle UI-only panel shake.
+      * The close-up ship camera is stable (K3 S-CURVE). Shake only ticks
+      * at 85ms while a bend is active; audio-first LCD budget still owns
+      * all actual painting, and the 25ms control service stays unaffected. */
+     uint8_t frame=ru_bend_frame_from_live();
+     uint8_t active_shake=(uint8_t)(frame>0u && ru_bend_live>0u &&
+       ru_bend_curve!=RU_BEND_SCURVE);
+     uint8_t phase=(uint8_t)(active_shake?((etch_ms/85u)&3u):0u);
+     ru_dam_changed=(uint8_t)(frame!=ru_bend_last_visual_frame ||
+       phase!=ru_bend_last_visual_shake);
+     ru_bend_last_visual_frame=frame;
+     ru_bend_last_visual_shake=phase;
     }else{
      ru_dam_anim=(RuDamAnim){0};
      if(ru_panel_last_page!=ru_page){ru_panel_anim=(RuPanelAnim){0};ru_panel_last_page=ru_page;}

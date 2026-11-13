@@ -69,6 +69,7 @@ struct etch_native_controls {uint16_t morph,depth,gain;
  uint8_t cxs_weight,cxs_edge,cxs_bite,cxs_punch;
  uint8_t sub_type[2],sub_octave[2],sub_detune[2],sub_drift[2],sub_blend[2];
  uint8_t note_priority,note_legato,note_bend_range;uint16_t note_glide_ms;
+ uint32_t live_bend_q16;
 #endif
 int8_t octave;const struct etch_native_bank *bank;
  uint32_t attack_step,decay_step,release_step,mod_inc;
