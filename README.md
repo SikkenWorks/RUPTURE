@@ -161,3 +161,5 @@ On SEQUENCER, **REC alone never starts the sequencer**. If the sequencer is **al
 With the transport **stopped**, select a sequencer step and press **SEL** to clear the **entire step**, including every note, local HOLD event and parameter lock. Directed HOLD events on later steps that depend on those deleted triggers are unlinked. Other notes and other steps remain untouched. Step clearing is blocked while playing or recording.
 
 The ENV wall now lets airborne dust and falling fragments settle in eight exact 1-bit PNG frames, while a 1-pixel tremble remains throughout Note HOLD. Note OFF retains the original closing artwork.
+
+You can also try RUPTURE in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
