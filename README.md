@@ -1,20 +1,3 @@
-# RUPTURE V1.89
-
-**V1.89 speaker startup pop mitigation:** Based on the complete V1.88.3 firmware, with the three isolated startup changes from the user-supplied V1.88.2 POPFIX source. The codec and silent DMA clock start before the LED bank. Codec control pins PC0/PC2/PC1 are enabled after the silent I2S clock and receive a 2 ms step and 5 ms settling delay. A watchdog-fed 300 ms quiet interval precedes LED startup; the existing PC6 analog gate still requires the LED bank to have been stable for 400 ms and the USB/clock settle conditions. The 20-frame ENV and reverse release from V1.88.3 remain intact. Trusted OTA loader, protected bootheader, Web MIDI connection fix and both FM1 flash-chip IDs are preserved. Physical speaker-pop performance is not yet independently verified on hardware.
-
-**V1.88.3 ENV animation:** The eruption now plays all 20 native 1-bit frames, including the smoke settling into an exposed jagged hole. While a note is held the hole remains, with no frozen smoke plume. On key release the exact animation reverses from its current frame back to the intact wall. The OTA connection fix, trusted loader, protected bootheader and compatibility with both FM1 flash-chip batches are retained. Physical FM1 validation remains pending.
-
-**V1.88.2 BEND crop correction:** All 40 frames use 1:1 source pixel crops centered in the unchanged 224×30 viewport. No stretching. Audio and OTA retained.
-
-
-**V1.88.1 poster-frame correction:** V1.88 unintentionally shipped 40 newly drawn substitute sprites instead of the approved 5 × 8 illustrations. V1.88.1 takes the exact artwork cells from the approved JPEG reference, crops and downscales them once into FM1-native 224×30 1-bit read-only bitmap assets. The source poster, cropped cells, repeatable converter and byte-for-byte header parity test are included. Existing K1/K2/K3 bend operation, 4-of-5 shake, pre-FX audio processing and OTA/connection fix are unchanged. The poster does not contain lossless individual source sprites, so there is unavoidable detail loss at 30 pixels high.
-
-**V1.88 BEND visuals:** K3 now controls five distinct 8-frame monochrome animations: LINEAR Everest, SOFT Monolith, HARD pirate flagship erupting from a meadow, S-CURVE close-up camera rising from hull to pirate flag, EXP Kraken. Four eruptions shake; the ship close-up stays stable. All frames are packed read-only 1-bit ROM bitmaps with no additional audio/DSP/ISR work. The V1.86 connection/OTA fix and dual JEDEC ID support are retained.
-
-**Installer connection note (V1.86.1, retains the V1.86 connection fix):** Use desktop Chrome/Edge on HTTPS or `http://localhost`. After clicking **CONNECT FM1**, approve Web MIDI / SysEx access. The installer reads the running FM1 identity, including on both supported flash-chip batches; generic Windows MIDI port names are now probed by read-only identity query. If no FM1 appears, confirm that Windows shows a MIDI input and output for the powered-on FM1, close software holding the port, and use manual port selection. The V1.86.1 firmware adds only BEND K3 response shaping; the verified V1.86 Web MIDI connection fix and trusted OTA protocol are retained.
-**A monophonic bass synthesizer for the M-VAVE FM1.**  
-Cycle Exchange Synthesis (CXS), a selectable bandlimited SAW oscillator, two suboscillators, modulation, sound shaping and effects.
-
 **SikkenWorks. Born out of passion.**
 
 ## Getting started
