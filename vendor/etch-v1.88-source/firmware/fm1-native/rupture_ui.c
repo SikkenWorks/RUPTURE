@@ -13,6 +13,7 @@
 #include "rupture_dam_sprites.h"
 #include "rupture_dam_anim.h"
 #include "rupture_panel_sprites.h"
+#include "rupture_tunnel_sprites.h"
 #include "rupture_volcano_sprites.h"
 #include "rupture_hold_sprites.h"
 #include "rupture_crt_vcr.h"
@@ -79,7 +80,7 @@
 #define RU_PAGE_COUNT 55
 #include "rupture_tutorial.h"
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO","GLIDE","FX LIBRARY","DISTORTION","WAH WAH"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t glide_frame,glide_shake;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
@@ -460,6 +461,8 @@ static uint8_t ru_knob_normal(const RuState *v,int i){
  case RU_PAGE_GUIDE:case RU_PAGE_KEYLOCK:
   if(i==0)val=val*100u/11u;
   else if(i==1)val=val*100u/8u;
+  else if(i==2 && v->page==RU_PAGE_GUIDE)
+   val=val==0u?0u:val==1u?33u:val==3u?67u:100u;
   else val=val*50u;
   break;
  case RU_PAGE_PROJECTS:if(i==0)val=(val<=1u?0u:(val-1u)*100u/11u);break;
@@ -493,7 +496,9 @@ static const char *const ru_knob_labels[RU_PAGE_COUNT][4]={
 static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==RU_PAGE_LOADING||v->page==RU_PAGE_MENU)return;char buf[4][12];for(int i=0;i<4;i++){if((v->page==RU_PAGE_HELP&&i==3)||(v->page==RU_PAGE_SETTINGS&&i>0))continue;ru_uint(v->k[i],buf[i]);const char *txt=buf[i];
  if((v->page==RU_PAGE_GUIDE||v->page==RU_PAGE_KEYLOCK)&&i==0)txt=ru_notes[v->root%12];
  if((v->page==RU_PAGE_GUIDE||v->page==RU_PAGE_KEYLOCK)&&i==1)txt=ru_scale[v->mode%9];
- if(v->page==RU_PAGE_KEYLOCK&&i==2){static const char *const lock[]={"OFF","GUIDE","LOCK"};txt=lock[v->keylock%3];}
+ /* Stored modes: 0 OFF, 1 GUIDE, 3 STRICT, 2 LOCK.
+  * K3 already cycles OFF -> GUIDE -> STRICT -> LOCK. */
+ if((v->page==RU_PAGE_GUIDE||v->page==RU_PAGE_KEYLOCK)&&i==2){static const char *const lock[]={"OFF","GUIDE","LOCK","STRICT"};txt=lock[v->keylock<4u?v->keylock:0u];}
  if(v->page==RU_PAGE_EQ){if(i<3){ru_uint(v->k[i],buf[i]);int l=ru_strlen(buf[i]);if(l<10){buf[i][l]='%';buf[i][l+1]=0;}}else{
   int air=(int)v->k[i]-100;
   buf[i][0]=(air<0?'-':'+');if(air<0)air=-air;
@@ -1038,7 +1043,15 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("SELECT CHOOSE  SEL ADD  HOME BACK");return;
  }
  if(page==RU_PAGE_GLIDE){
-  ru_center("PORTAMENTO",120,54,1);
+  /* Twelve 224x30 monochrome tunnel shots, walking toward the exit light.
+   * A tiny hand-held offset gives the GLIDE page a found-footage POV.
+   * Static ROM frames, existing packed blitter, no extra DSP or buffers. */
+  static const int8_t shake_x[8]={0,-1,1,2,-1,0,-2,1};
+  static const int8_t shake_y[8]={0,1,-1,0,1,-1,0,1};
+  uint8_t shake=(uint8_t)(v->glide_shake&7u);
+  ru_panel_blit_shaken(ru_tunnel_sprites[v->glide_frame%RU_TUNNEL_FRAMES],
+                      shake_x[shake],shake_y[shake]);
+  ru_center("PORTAMENTO",120,82,1);
   ru_draw_knobs(v);ru_footer("OFF / LEGATO / ALWAYS");return;
  }
  if(page==RU_PAGE_BEND){
@@ -1229,7 +1242,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.93","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.99","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

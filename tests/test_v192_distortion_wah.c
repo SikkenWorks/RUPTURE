@@ -8,6 +8,7 @@ static struct etch_native_fx fx;
 static uint32_t play(uint8_t mode){
  struct etch_fx_settings c;etch_fx_defaults(&c);
  struct rupture_fx_chain chain;ru_chain_clear(&chain);
+ chain.independent=0u; /* Preserve V1.92 exact PCM reference path */
  etch_fx_reset(&fx);
  c.folder_fold=27000u;c.folder_symmetry=27000u;
  c.folder_tone=24000u;c.folder_mix=27000u;
@@ -35,6 +36,7 @@ static uint32_t play(uint8_t mode){
 }
 static void no_premature_wah(void){
  struct rupture_fx_chain chain;ru_chain_clear(&chain);
+ chain.independent=0u; /* Historical legacy globals */
  assert(ru_chain_insert(&chain,0u,RU_FX_COMP));
  assert(ru_chain_insert(&chain,1u,RU_FX_TILT));
  assert(ru_chain_insert(&chain,2u,RU_FX_FUZZ));

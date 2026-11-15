@@ -1,3 +1,56 @@
+# RUPTURE V1.99 — note-gated GLIDE animation + GUIDE labels
+
+## V1.99 (2026-11-15)
+
+- GLIDE tunnel walking and found-footage shake advance only while a synth note is held. The idle frame is stationary and the camera resets after note release. Hardware, MIDI, sequencer and arpeggiator note sources use the existing synth voice gates.
+- SCALE GUIDE K3 now shows OFF, GUIDE, STRICT or LOCK instead of raw 0–3 values. Encoder order and existing project mode values remain intact.
+- Preserved V1.98 four-parameter GLIDE SAVE/AUTO SAVE and all unaffected UI/audio paths. Added focused host regression tests; no extra DSP or flash writes.
+
+
+## V1.98 (2026-11-15)
+
+- Stage all four GLIDE settings (TIME MS, MODE, CURVE, ENV RETRIG) directly in the currently edited preset's existing project bank on each actual change.
+- Preserve pending changes during fast preset switching, including older projects until they can be safely saved. The shared NOTE MEMORY glide-time control also updates the same preset bank.
+- Continue using the single existing CRC-verified project write path for both explicit SAVE and guarded AUTO SAVE; no new flash partitions, project records, or flash write on knob turn.
+- Prevent no-op GLIDE knob turns at a limit from unnecessarily restarting the autosave timer.
+- Retain the V1.97 GLIDE found-footage tunnel, all other screens, all FX, synth/audio processing, and protected OTA loader unchanged. Hardware validation is still pending.
+
+---
+
+# RUPTURE V1.97 — GLIDE railway tunnel POV
+
+## V1.97 (2026-11-15)
+
+- Added the twelve approved **224×30, 1-bit** railway-tunnel frames to **GLIDE only**, progressing toward the distant light.
+- Applied subtle found-footage camera shake (up to 2 pixels) every ~85 ms; animation advances one keyframe after three shake ticks. The picture shifts but the GLIDE controls do not.
+- Reused the packed bitmap blitter; 10,080 extra bytes of static flash ROM, **zero extra audio PCM buffers or per-sample DSP work**.
+- Left all four GLIDE parameters, the audio engine, FX, project saving, LEDs, MIDI, all other animated pages and safety/OTA paths intact. Firmware build, host regression suite and loader integrity audit are included; FM1 physical playback has not yet been tested.
+
+---
+
+# RUPTURE V1.96 — STRICT scale mode
+
+## V1.96 (2026-11-15)
+
+- Added **STRICT** after GUIDE in scale mode selection. Order: OFF, GUIDE, STRICT, LOCK. Presses outside the chosen scale are silent, do not light performance LEDs, and cannot be recorded as live sequencer notes.
+- Blocked out-of-scale USB/TRS MIDI note-ons in STRICT, retaining note-off handling. GUIDE still allows all notes, and LOCK still quantizes out-of-scale notes.
+- Preserved old saved project mode values: LOCK remains encoded as 2; STRICT encodes as 3. No project format expansion.
+- Built the 27-key filter once per DMA buffer instead of adding DSP per audio sample. Oscillator, FX, EQ and GLIDE algorithms remain unchanged.
+- Added audio PCM, MIDI, LED, mode-order and persistence regressions. Kept trusted FM1 OTA, flash IDs and bootheader.
+- Software validation only. Physical FM1 performance and live-stage stability still require hardware tests.
+
+## V1.95 (2026-11-15)
+
+- Cache the exact WAH attack and resonance control conversions separately for every slot; refresh only when its own relevant knob changes. This adds a small fixed amount of scalar state, never another PCM delay line.
+- Replace both WAH response `*15000/24000` calculations with the mathematically identical `*5>>3`; no rounding changes.
+- Keep the old hidden-modulation coefficient cache warm even when independent FX are active: an attempted shortcut altered the first sample when hidden modulation was activated and was therefore rejected.
+- Add a PCM oracle fixed to V1.94 for all ten effects, both 1x and 8x, each slot with separate parameter values and realtime bypass/reordering; all 20 cases must match bit-for-bit. Additional oracles cover legacy FX settings, hidden-modulation transitions and live WAH knob edits.
+- All effects, individual FX control banks, GLIDE, MIDI, project saving, EQ, USB audio, first-run flow, OTA and hardware bring-up remain present.
+- No extra delay, chorus or reverb history buffers; no new per-sample allocations or floating-point DSP.
+- Physical FM1 CPU/DMA margin and live reliability are not yet independently verified. Host benchmarks are diagnostic, not a hardware certification.
+
+---
+
 # RUPTURE V1.93 — Repeatable FX Slots
 
 ## V1.93 (2026-11-15)
@@ -961,3 +1014,11 @@
 - Preserved PJT33 project data, CXS DSP, eight live effects, dual SUB BLEND, OTA loader and initial bootheader. All new user-visible behaviour requires physical FM1 confirmation.
 
 # CHANGELOG
+# RUPTURE V1.94: per-slot FX parameters (software candidate)
+
+- Each of eight FX slots stores independent K1–K4 values. Repeat types no longer share displayed/editable parameter values. Moving a slot moves its values, and saves/loads preserve them.
+- Separate state for Distortion, Wah, Compressor, Tilt, Fuzz and Sandpaper. MOSFET is stateless. Chorus and Delay expose separate tap/modulation/mix controls but share one PCM history each. Reverb still shares one tank for all slots; only MIX is fully independent between Reverb slots.
+- The old single-effect DSP retains sample-exact output when parameter values match. Zero additional large PCM ring buffers. Extra simultaneous active processors still require extra CPU and are not physically verified for FM1 live use.
+- PJT35 receives a tagged 66-byte optional tail; previously saved PJT35 files remain readable. V1.93 rejects the new extended files.
+- Preserved stock-derived protected bootheader and trusted OTA. Physical installation and stress testing pending.
+

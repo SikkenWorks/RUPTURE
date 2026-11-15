@@ -17,6 +17,21 @@ static inline void ru_v190_defaults(struct rupture_v190_project *p){
   p->seq_slide[i]=0u;
  }
 }
+/* Stage one preset's complete GLIDE settings in the existing PJT35 bytes.
+ * This is RAM-only; the project journal commits later on manual/auto SAVE. */
+static inline uint8_t ru_v190_glide_stage(struct rupture_v190_project *p,
+ uint8_t slot,uint16_t time_ms,uint8_t mode,uint8_t curve,uint8_t retrigger){
+ if(!p||slot>=32u)return 0u;
+ if(time_ms>2000u)time_ms=2000u;
+ if(mode>2u)mode=2u;
+ uint8_t time=(uint8_t)(time_ms/10u);
+ uint8_t flags=(uint8_t)((mode&3u)|((curve&1u)<<2u)|((retrigger&1u)<<4u));
+ uint8_t changed=(uint8_t)(p->glide_patch[slot][0]!=time||
+                           p->glide_patch[slot][1]!=flags);
+ p->glide_patch[slot][0]=time;
+ p->glide_patch[slot][1]=flags;
+ return changed;
+}
 static inline uint8_t ru_v190_valid(const struct rupture_v190_project *p){
  if(!ru_chain_valid(&p->chain))return 0u;
  if(p->legacy_chain>1u)return 0u;

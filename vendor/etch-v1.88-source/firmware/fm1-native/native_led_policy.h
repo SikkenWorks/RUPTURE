@@ -46,15 +46,6 @@ static inline uint32_t etch_led_keylock_targets(uint32_t held_keys,int8_t octave
  * Pure control-thread helper: never called from the realtime audio ISR. */
 static inline uint32_t etch_led_scale_guide_targets(int8_t octave,
                                          const struct etch_harmony_settings *h){
- if(!h||h->keylock!=1u)return 0u;
- struct etch_harmony_guide guide;
- if(etch_harmony_guide_build(h,60u,&guide))return 0u;
- const int base=53+12*(int)octave;
- uint32_t result=0u;
- for(uint8_t key=0;key<27u;key++){
-  const int note=base+(int)key;
-  if(note>=0&&note<=127&&(guide.scale_mask&(uint16_t)(1u<<(note%12))))
-   result|=(uint32_t)1u<<key;
- }
- return result;
+ if(!h||(h->keylock!=1u&&h->keylock!=3u))return 0u;
+ return etch_harmony_live_key_mask(octave,h);
 }

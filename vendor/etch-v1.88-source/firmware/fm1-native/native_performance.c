@@ -184,6 +184,23 @@ static int allowed(uint8_t note,const struct etch_harmony_settings *h){
  for(uint8_t k=0;k<7;k++)if(pc==intervals[mode][k])return 1;
  return 0;
 }
+uint8_t etch_harmony_note_in_scale(uint8_t note,const struct etch_harmony_settings *h){
+ return (uint8_t)(h&&note<=127u&&h->root<12u&&h->mode<9u&&allowed(note,h));
+}
+/* Resolve the 27 live keys once per DMA block (or UI tick), never per PCM
+ * sample. This mask is also used by the LEDs and live SEQ recorder. */
+uint32_t etch_harmony_live_key_mask(int8_t octave,const struct etch_harmony_settings *h){
+ if(!h||h->root>=12u||h->mode>=9u)return 0u;
+ uint16_t scale=0u;
+ for(uint8_t k=0u;k<7u;k++)scale|=(uint16_t)(1u<<((h->root+intervals[h->mode][k])%12u));
+ const int base=53+12*(int)octave;
+ uint32_t mask=0u;
+ for(uint8_t key=0u;key<27u;key++){
+  const int pitch=base+(int)key;
+  if(pitch>=0&&pitch<=127&&(scale&(uint16_t)(1u<<(pitch%12))))mask|=(uint32_t)1u<<key;
+ }
+ return mask;
+}
 uint8_t etch_quantize_note(uint8_t note,const struct etch_harmony_settings *h){
  if(!h||h->keylock!=2||note>127)return note;
  if(allowed(note,h))return note;
@@ -398,7 +415,7 @@ static int bake_transform(const struct etch_seq_step *src,
 int etch_seq_bake_harmony(struct etch_native_pattern *p,uint16_t length,
  uint16_t selected,uint8_t scope,const struct etch_harmony_settings *h,uint8_t commit){
  if(!p||!h||!length||length>ETCH_SEQ_STEPS||selected>=length||scope>1||
-    h->root>11||h->mode>8||h->keylock>2||h->chord>2)return -1;
+    h->root>11||h->mode>8||h->keylock>3||h->chord>2)return -1;
  uint16_t begin=scope?0:selected,end=scope?length:(uint16_t)(selected+1);
  int changed=0;
  /* Validate all candidates before mutating a single step. */
@@ -423,7 +440,7 @@ int etch_seq_bake_harmony(struct etch_native_pattern *p,uint16_t length,
 
 int etch_harmony_guide_build(const struct etch_harmony_settings *h,
  uint8_t note,struct etch_harmony_guide *out){
- if(!h||!out||h->root>11||h->mode>8||h->chord>2||h->keylock>2||note>127)return -1;
+ if(!h||!out||h->root>11||h->mode>8||h->chord>2||h->keylock>3||note>127)return -1;
  out->scale_mask=out->chord_mask=0;
  for(uint8_t i=0;i<7;i++)out->scale_mask|=(uint16_t)(1u<<((h->root+intervals[h->mode][i])%12u));
  out->count=etch_chord_notes(note,h,out->notes);

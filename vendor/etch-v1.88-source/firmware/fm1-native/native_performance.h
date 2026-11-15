@@ -87,6 +87,10 @@ uint16_t etch_seq_hold_source_cycle(const struct etch_native_pattern *p,uint16_t
 /* Bake chord to one step atomically, without discarding existing notes; returns 0 on lack of space. */
 uint8_t etch_seq_bake_chord(struct etch_native_pattern *p,uint16_t step,uint8_t note,const struct etch_harmony_settings *h,uint8_t velocity,uint8_t length);
 uint8_t etch_quantize_note(uint8_t note,const struct etch_harmony_settings *h);
+/* Strict scale (internal value 3) silences non-scale live keys. Value 2
+ * remains the historic quantizing LOCK for backwards project compatibility. */
+uint8_t etch_harmony_note_in_scale(uint8_t note,const struct etch_harmony_settings *h);
+uint32_t etch_harmony_live_key_mask(int8_t octave,const struct etch_harmony_settings *h);
 uint8_t etch_chord_notes(uint8_t note,const struct etch_harmony_settings *h,uint8_t out[4]);
 
 /* Non-destructive harmony preview and transactional pattern BAKE.  `scope` is

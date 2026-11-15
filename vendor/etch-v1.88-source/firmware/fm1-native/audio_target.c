@@ -298,7 +298,12 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   native_midi_drain(native_output_enabled?1u:0u);
 #endif
 #if ETCH_NATIVE_PANEL_MIDI
-  etch_panel_midi_update(&native_panel_out,keys,c.octave,(uint8_t)(usb.config && !native_suspended),native_panel_usb_emit,0);
+  /* STRICT must not transmit disabled keys to an attached USB MIDI synth.
+   * Keep the panel's note-off handler active for previously held notes. */
+  uint32_t panel_keys=keys;
+  if(c.harmony.keylock==3u)
+   panel_keys&=etch_harmony_live_key_mask(c.octave,&c.harmony);
+  etch_panel_midi_update(&native_panel_out,panel_keys,c.octave,(uint8_t)(usb.config && !native_suspended),native_panel_usb_emit,0);
 #endif
 #if ETCH_NATIVE_UAC
   uac_render_start();

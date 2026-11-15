@@ -29,6 +29,8 @@ int main(void){
  assert(loaded.source_version==34 && ru_chain_valid(&loaded.v190.chain));
  assert(loaded.v190.chain.type[0]==RU_FX_EMPTY);
  assert(ru_chain_insert(&project.v190.chain,0,RU_FX_DELAY));
+ project.v190.chain.parameter[0][0]=28000u;
+ project.v190.chain.parameter[0][1]=9000u;
  assert(ru_chain_insert(&project.v190.chain,5,RU_FX_MOSFET));
  ru_chain_toggle(&project.v190.chain,5);
  project.v190.glide_patch[0][0]=199u;
@@ -37,17 +39,33 @@ int main(void){
  ru_slide_set(&project.v190,3u,1u);
  ru_slide_set(&project.v190,127u,1u);
  uint32_t size=save(35);
- assert(size==old_size+106u);
+ assert(size==old_size+106u+66u);
  assert(packet[0]=='P'&&packet[1]=='J'&&packet[2]=='T'&&packet[3]=='S');
  assert(etch_project_decode(packet,size,&decoded,&seq_loaded,&loaded)==0);
  assert(loaded.source_version==35u);
  assert(memcmp(&project.v190,&loaded.v190,sizeof(project.v190))==0);
- packet[size-106u]=RU_FX_TYPES; /* reject unknown FX id */
+ /* The old V1.93 record still decodes and runs with shared parameters. */
+ assert(etch_project_decode(packet,size-66u,&decoded,&seq_loaded,&loaded)==0);
+ assert(loaded.v190.chain.independent==0u);
+ assert(loaded.v190.chain.type[0]==RU_FX_DELAY);
+ packet[size-172u]=RU_FX_TYPES; /* reject unknown FX id */
  assert(etch_project_decode(packet,size,&decoded,&seq_loaded,&loaded)!=0);
  assert(ru_chain_insert(&project.v190.chain,1u,RU_FX_DELAY));
+ project.v190.chain.parameter[1][0]=11000u;
+ project.v190.chain.parameter[1][1]=26000u;
  size=save(35); /* V1.93: repeated processor IDs are valid project data */
  assert(etch_project_decode(packet,size,&decoded,&seq_loaded,&loaded)==0);
  assert(loaded.v190.chain.type[0]==RU_FX_DELAY&&loaded.v190.chain.type[1]==RU_FX_DELAY);
+ assert(loaded.v190.chain.parameter[0][0]==28000u);
+ assert(loaded.v190.chain.parameter[1][0]==11000u);
+ assert(loaded.v190.chain.parameter[1][1]==26000u);
+ /* V1.96 STRICT is a new persisted value 3; original LOCK=2 never changes. */
+ project.harmony.keylock=3u;
+ size=save(35);assert(etch_project_decode(packet,size,&decoded,&seq_loaded,&loaded)==0);
+ assert(loaded.harmony.keylock==3u);
+ project.harmony.keylock=2u;
+ size=save(35);assert(etch_project_decode(packet,size,&decoded,&seq_loaded,&loaded)==0);
+ assert(loaded.harmony.keylock==2u);
  size=save(35);assert(etch_project_decode(packet,size-1u,&decoded,&seq_loaded,&loaded)!=0);
  puts("PASS PJT35: full FX order/enables, per-patch glide, step slide, legacy PJT34");
  return 0;

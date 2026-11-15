@@ -137,6 +137,37 @@ struct etch_native_fx {
  int32_t rupture_fuzz_drive_slew,rupture_fuzz_anti_slew,rupture_fuzz_oct_slew,rupture_fuzz_tone_slew;
  uint8_t rupture_fuzz_tick;
  int32_t rupture_chain_fade[RU_FX_SLOTS]; /* independent sample-rate bypass ramp per slot */
+#ifdef RUPTURE_BUILD
+ /* Small, isolated modulation/nonlinear states for each independently
+  * editable insert. No PCM delay/chorus/reverb rings are duplicated. */
+ struct {
+  int32_t wah_env,wah_lp,wah_hp,wah_mix;
+  /* Two Q15 controls are converted only when their knob values change.
+   * No PCM history; 9 bytes of bounded scalar state per WAH-capable slot. */
+  uint16_t wah_attack_param,wah_reso_param;
+  uint16_t wah_attack_cached,wah_resonance_cached;
+  uint8_t wah_cache_valid;
+  int32_t distortion_tone,distortion_mix;
+  int32_t comp_env,comp_gain,comp_target;
+  uint8_t comp_tick;
+ } ru_slot_small[RU_FX_SLOTS];
+ struct {int32_t lp,mix;} ru_slot_tilt[RU_FX_SLOTS];
+ struct {
+  int32_t dc,tone,mix,in_env,wet_env,makeup,makeup_target;
+  int32_t drive_slew,anti_slew,oct_slew,tone_slew,input_lp;
+  uint8_t tick;
+ } ru_slot_fuzz[RU_FX_SLOTS];
+ struct {
+  int32_t pole1,pole2,body,mix,soft_slew,warm_slew,smooth_slew;
+ } ru_slot_sand[RU_FX_SLOTS];
+ uint32_t ru_slot_chorus_phase[RU_FX_SLOTS];
+ uint16_t ru_slot_delay_samples[RU_FX_SLOTS],ru_slot_delay_time[RU_FX_SLOTS];
+ uint16_t ru_slot_chorus_rate[RU_FX_SLOTS],ru_slot_chorus_depth[RU_FX_SLOTS];
+ uint16_t ru_slot_chorus_step[RU_FX_SLOTS],ru_slot_chorus_span[RU_FX_SLOTS];
+ int32_t ru_slot_chorus_mix[RU_FX_SLOTS],ru_slot_delay_mix[RU_FX_SLOTS],ru_slot_reverb_mix[RU_FX_SLOTS];
+ uint16_t ru_reverb_last_size,ru_reverb_last_decay;
+ uint8_t ru_reverb_last_type;
+#endif
  /* Pre-nonlinearity anti-alias smoothing, two Q15 poles, no delay lines. */
  int32_t rupture_fuzz_input_lp,rupture_folder_input_lp;
  /* Sandpaper: two smoothing poles, sub-bass body, zero-delay wet slew. */

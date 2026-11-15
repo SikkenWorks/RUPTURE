@@ -10,6 +10,7 @@ static struct etch_fx_settings settings;
 
 static uint32_t render(uint8_t type,uint8_t repeats,uint8_t bypass_second){
  struct rupture_fx_chain chain;ru_chain_clear(&chain);
+ chain.independent=0u; /* V1.93 legacy processor regression oracle */
  assert(ru_chain_insert(&chain,0u,type));
  if(repeats){
   assert(ru_chain_insert(&chain,1u,type));
@@ -37,6 +38,7 @@ static uint32_t render(uint8_t type,uint8_t repeats,uint8_t bypass_second){
 }
 static void live_control_stress(uint8_t type){
  struct rupture_fx_chain chain;ru_chain_clear(&chain);
+ chain.independent=0u; /* V1.93 legacy processor regression oracle */
  for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++)
   assert(ru_chain_insert(&chain,slot,type));
  etch_fx_defaults(&settings);etch_fx_reset(&state);
@@ -59,6 +61,7 @@ static void live_control_stress(uint8_t type){
 
 int main(void){
  struct rupture_fx_chain chain;ru_chain_clear(&chain);
+ chain.independent=0u; /* V1.93 legacy processor regression oracle */
  for(uint8_t i=0u;i<RU_FX_SLOTS;i++)assert(ru_chain_insert(&chain,i,RU_FX_DELAY));
  assert(ru_chain_valid(&chain)&&chain.enabled==0xffu);
  ru_chain_toggle(&chain,4u);

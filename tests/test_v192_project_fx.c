@@ -46,7 +46,7 @@ int main(void){
  assert(decoded.global_fx.wah_attack==project.global_fx.wah_attack);
  assert(decoded.global_fx.wah_reso==project.global_fx.wah_reso);
  assert(decoded.global_fx.wah_mix==project.global_fx.wah_mix);
- buf[len-106u]=RU_FX_TYPES;
+ buf[len-172u]=RU_FX_TYPES; /* 106-byte PJT35 core + 66-byte V1.94 tail */
  assert(etch_project_decode(buf,len,&read_lib,&read_seq,&decoded)!=0);
  puts("PASS V1.92 PJT35: distortion/wah parameters and 8-slot order roundtrip");
  return 0;

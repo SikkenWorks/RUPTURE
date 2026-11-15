@@ -93,7 +93,7 @@ static uint32_t get32(struct reader *r){uint32_t x=get16(r);return x|((uint32_t)
 static int validsettings(const struct etch_project_settings *s){
  return s->seq_length>=1&&s->seq_length<=ETCH_SEQ_STEPS&&s->tempo>=1&&
  s->seq_gate<=100&&s->seq_swing<=75&&s->clock_follow<=1&&s->mono_mode<=1&&
- s->harmony.root<12&&s->harmony.mode<9&&s->harmony.keylock<=2&&s->harmony.chord<=2&&
+ s->harmony.root<12&&s->harmony.mode<9&&s->harmony.keylock<=3&&s->harmony.chord<=2&&
  etch_fx_valid_route_and_type(s->global_fx.routing)&&s->global_fx.chorus_rate<=32767&&s->global_fx.chorus_depth<=32767&&
  s->global_fx.delay_time<=32767&&s->global_fx.delay_feedback<=32767&&
  s->global_fx.reverb_size<=32767&&s->global_fx.reverb_decay<=32767&&
@@ -551,6 +551,11 @@ int etch_project_encode(const struct etch_wave_library *l,const struct etch_nati
   put8(&w,s->v190.legacy_chain);
   put(&w,s->v190.glide_patch,sizeof(s->v190.glide_patch));
   put(&w,s->v190.seq_slide,sizeof(s->v190.seq_slide));
+  /* Backwards-readable PJT35 prefix, followed by a strict, tagged V1.94
+   * extension. No old blob is reinterpreted as a different struct layout. */
+  put8(&w,0x94u);put8(&w,s->v190.chain.independent);
+  for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++)
+   for(uint8_t k=0u;k<4u;k++)put16(&w,s->v190.chain.parameter[slot][k]);
  }
 #endif
  if(w.error)return -2;
@@ -835,6 +840,15 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   s->v190.legacy_chain=get8(&r);
   get(&r,s->v190.glide_patch,sizeof(s->v190.glide_patch));
   get(&r,s->v190.seq_slide,sizeof(s->v190.seq_slide));
+  /* Unextended V1.90..1.93 records read their original shared globals.
+   * A truncated/unknown extension is rejected, never partially accepted. */
+  if(!r.error&&r.pos==len)s->v190.chain.independent=0u;
+  else if(!r.error){
+   if(len-r.pos!=66u||get8(&r)!=0x94u)return -1;
+   s->v190.chain.independent=get8(&r);
+   for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++)
+    for(uint8_t k=0u;k<4u;k++)s->v190.chain.parameter[slot][k]=get16(&r);
+  }
   if(r.error||!ru_v190_valid(&s->v190))return -1;
  }
 #else

@@ -433,6 +433,9 @@ void etch_native_midi(struct etch_native_audio *s,uint8_t status,uint8_t d1,uint
    if(!(s->sustain&(1u<<ch)))v->held=0;
   }
  }else if(kind==0x90){
+  /* STRICT shares GUIDE's scale but rejects forbidden live note-ons.
+   * Note-offs above remain untouched, so existing voices cannot stick. */
+  if(s->harmony.keylock==3u&&!etch_harmony_note_in_scale(d1,&s->harmony))return;
   /* Preserve previous same-pitch attacks as separate voice instances.
    * Their note-off matching is FIFO and bounded by the 8-voice allocator. */
   uint8_t tuned=etch_quantize_note(d1,&s->harmony);
@@ -842,6 +845,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
  s->mono_bend_range=c->note_bend_range>12u?12u:c->note_bend_range;
 #endif
  keys&=0x7ffffffu;
+ /* Build the strict live-key mask once per DMA block, not per PCM sample.
+  * This also filters arpeggiator source keys and handles mode changes. */
+ if(c->harmony.keylock==3u)
+  keys&=etch_harmony_live_key_mask(c->octave,&c->harmony);
  uint8_t has_groups=(uint8_t)(active_groups &&
     (active_groups->group[0].enabled || active_groups->group[1].enabled));
 #ifdef RUPTURE_BUILD

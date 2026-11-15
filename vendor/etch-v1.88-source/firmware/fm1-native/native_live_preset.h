@@ -33,7 +33,7 @@ static inline uint8_t etch_live_validate(const struct etch_live_preset *v){
     v->dsp.blend_a>=32u||v->dsp.blend_b>=32u||v->dsp.blend_pct>100u||v->dsp.blend_on>1u||
     !etch_organic_valid(&v->dsp.organic)||!etch_living_valid(&v->dsp.living)||
     v->mono_mode>1u||v->arp_octaves>4u||v->seq_gate>100u||v->seq_swing>75u||
-    v->harmony.root>=12u||v->harmony.mode>=9u||v->harmony.keylock>2u||
+    v->harmony.root>=12u||v->harmony.mode>=9u||v->harmony.keylock>3u||
     v->global_fx.routing>1u)return 0u;
  return 1u;
 }

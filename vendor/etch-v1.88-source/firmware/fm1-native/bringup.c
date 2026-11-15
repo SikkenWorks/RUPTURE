@@ -29,6 +29,7 @@
 #include "rupture_bend_sprites.h"
 #include "rupture_bend_curves.h"
 #include "rupture_bend_storyboard.h"
+#include "rupture_glide_tunnel_playback.h"
 #endif
 #include "hal/fm1_timer.h"
 #include "hal/fm1_audio.h"
@@ -726,6 +727,9 @@ static uint8_t ru_saver_frame=0u,ru_saver_active=0u,ru_saver_reverse=0u;
 static RuDamAnim ru_dam_anim={0};
 static RuPanelAnim ru_panel_anim={0};
 static uint8_t ru_panel_last_page=255u;
+/* GLIDE-only POV tunnel cadence: display service, never the audio callback. */
+static uint32_t ru_tunnel_last_tick_ms=0u;
+static uint8_t ru_tunnel_frame=0u,ru_tunnel_tick=0u;
 
 static uint32_t ru_saver_hold_until_ms=0u;
 static uint32_t ru_global_gain_changed_ms=0u,ru_global_gain_attempt_ms=0u;
@@ -796,6 +800,9 @@ static int32_t ru_battery_filtered=-1;
 static uint8_t ru_fx_selected=0u;
 static uint8_t ru_fx_picker=0u,ru_fx_pick_error=0u;
 static uint8_t ru_glide_mode=0u,ru_glide_curve=0u,ru_glide_retrigger=1u;
+/* In-session GLIDE edits on older projects must survive a preset switch
+ * before the next guarded SAVE/autosave promotes the project to PJT35. */
+static uint32_t ru_glide_staged_mask=0u;
 /* Project-scoped PJT33 persistence; saved on manual SAVE and guarded autosave. */
 /* Transient Shaper removed from RUPTURE. Old PJT33 bytes are reused for SUB BLEND. */
 static uint8_t ru_tilt[4]={50u,50u,65u,50u},ru_fuzz[4]={55u,75u,65u,65u};
@@ -889,6 +896,7 @@ static void ru_fx_migrate_legacy(void){
    }
    if(active){ru_chain_insert(&native_project_cfg.v190.chain,index,t);index++;}
   }
+  native_project_cfg.v190.chain.independent=0u;
  }
 }
 static uint8_t ru_fx_page_for_selection(uint8_t selected){
@@ -896,6 +904,39 @@ static uint8_t ru_fx_page_for_selection(uint8_t selected){
   (selected==4u?RU_PAGE_COMP:selected==5u?RU_PAGE_TILT:
    selected==6u?RU_PAGE_FUZZ:selected==7u?RU_PAGE_SANDPAPER:
    selected==RU_FX_DISTORTION?RU_PAGE_DISTORTION:RU_PAGE_WAH);
+}
+static uint8_t ru_fx_slot_edit=0u;
+/* Migrate the V1.93 shared control values only on the first actual FX edit.
+ * This keeps an untouched older project on its proven, identical DSP path. */
+static void ru_fx_enable_independent_parameters(void){
+ struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
+ if(chain->independent)return;
+ for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++){
+  uint8_t type=chain->type[slot];
+  ru_chain_slot_defaults(chain,slot,type);
+  uint16_t *p=chain->parameter[slot];
+  switch(type){
+   case RU_FX_REVERB:p[0]=ru_reverb_type;p[1]=native_fx_settings.reverb_decay;
+    p[2]=native_fx_settings.reverb_size;p[3]=native_reverb;break;
+   case RU_FX_DELAY:p[0]=native_fx_settings.delay_time;p[1]=native_fx_settings.delay_feedback;
+    p[2]=etch_fx_route(&native_fx_settings);p[3]=native_delay;break;
+   case RU_FX_CHORUS:p[0]=native_fx_settings.chorus_rate;p[1]=native_fx_settings.chorus_depth;
+    p[2]=etch_fx_route(&native_fx_settings);p[3]=native_chorus;break;
+   case RU_FX_MOSFET:p[0]=native_drive;break;
+   case RU_FX_COMP:p[0]=native_fx_settings.comp_threshold;p[1]=native_fx_settings.comp_ratio;
+    p[2]=native_fx_settings.comp_attack;p[3]=native_fx_settings.comp_release;break;
+   case RU_FX_TILT:case RU_FX_FUZZ:case RU_FX_SAND:{
+    const uint8_t *old=type==RU_FX_TILT?ru_tilt:type==RU_FX_FUZZ?ru_fuzz:ru_sand;
+    for(uint8_t k=0u;k<4u;k++)p[k]=old[k];break;
+   }
+   case RU_FX_DISTORTION:p[0]=native_fx_settings.folder_fold;
+    p[1]=native_fx_settings.folder_symmetry;p[2]=native_fx_settings.folder_tone;
+    p[3]=native_fx_settings.folder_mix;break;
+   case RU_FX_WAH:p[0]=native_fx_settings.wah_sens;p[1]=native_fx_settings.wah_attack;
+    p[2]=native_fx_settings.wah_reso;p[3]=native_fx_settings.wah_mix;break;
+  }
+ }
+ chain->independent=1u;
 }
 static void ru_fx_sync_chain(void){
  struct rupture_fx_chain *c=&native_project_cfg.v190.chain;
@@ -1151,6 +1192,7 @@ static void native_restore_project_bpm(void){
 }
 static void native_project_restore(void){
  if(native_store_status!=ETCH_STORE_OK)return;
+ ru_glide_staged_mask=0u; /* A loaded project cannot inherit unsaved edits. */
  if(native_project_cfg.source_version<26u){
   for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++){
    native_preset_dsp.slot[i]=(struct etch_preset_dsp){0};
@@ -1256,7 +1298,7 @@ static void native_seq_led_refresh(void){
  /* GUIDE highlights all playable scale pitches, not only held keys.
   * Preserve GRID/NOTES/HOLD and diagnostic LED ownership. Existing LOCK
   * indicators still follow the audible quantized note. */
- if(native_harmony.keylock==1u&&!native_panel_capture&&
+ if((native_harmony.keylock==1u||native_harmony.keylock==3u)&&!native_panel_capture&&
     !(native_page==ETCH_UI_SYSTEM&&native_system_tab==3)&&
     native_page!=ETCH_UI_GRID&&native_page!=6&&
     native_page!=10&&native_page!=20)
@@ -1271,7 +1313,14 @@ static void native_seq_led_refresh(void){
   solid|=(uint32_t)(1u<<ru_white_step_key(current));
  }
 #endif
- solid|=fm1_in.notes&0x07ffffffu;
+ /* STRICT: a forbidden pressed note stays dark on performance pages.
+  * Editor, grid and diagnostic LEDs still indicate their own controls. */
+ uint32_t pressed_live=fm1_in.notes&0x07ffffffu;
+ if(native_harmony.keylock==3u&&!native_panel_capture&&
+    !(native_page==ETCH_UI_SYSTEM&&native_system_tab==3)&&
+    native_page!=ETCH_UI_GRID&&native_page!=6&&native_page!=10&&native_page!=20)
+  pressed_live&=etch_harmony_live_key_mask(native_controls.octave,&native_harmony);
+ solid|=pressed_live;
  dim&=~solid;
  mid&=~solid;
  fm1_irq_off();
@@ -1529,6 +1578,7 @@ static void native_new_project(void){
  native_project_cfg.source_version=35u;
  ru_tilt_enabled=ru_fuzz_enabled=ru_sand_enabled=0u;ru_fx_apply_extra();
  ru_note_glide_ms=0u;ru_glide_mode=0u;ru_glide_curve=0u;ru_glide_retrigger=1u;
+ ru_glide_staged_mask=0u;
  native_fx_bypass_mask|=ETCH_FXB_BIT(ETCH_FXB_EQ);
  ru_eq2_apply();
 #endif
@@ -1623,6 +1673,13 @@ static void native_patch_blend_apply(int32_t *m,int32_t *d){
  native_reverb=native_blend_u16(a->reverb,b->reverb,pct);
  native_editor.dirty=1u;++native_editor.revision;
 }
+/* Store the complete 4-knob GLIDE state directly in the existing PJT35
+ * per-preset bank. In-memory staging never writes flash or touches audio.
+ * Project SAVE and guarded autosave use this exact same bank. */
+static uint8_t ru_glide_stage_preset(uint8_t slot){
+ return ru_v190_glide_stage(&native_project_cfg.v190,slot,ru_note_glide_ms,
+                           ru_glide_mode,ru_glide_curve,ru_glide_retrigger);
+}
 static void native_preset_dsp_capture(uint8_t slot){
  if(slot>=ETCH_PATCH_SLOTS)return;
  struct etch_preset_dsp *v=&native_preset_dsp.slot[slot];
@@ -1639,9 +1696,7 @@ static void native_preset_dsp_capture(uint8_t slot){
  ru_sub_state_store(v,ru_sub_type,ru_sub_oct,ru_sub_detune,ru_sub_drift);
  ru_main_state_store(v,ru_main_wave);
  ru_perf_store(v,rupture_master_pct,ru_note_priority,ru_note_legato,ru_note_glide_ms,ru_note_bend);
- native_project_cfg.v190.glide_patch[slot][0]=(uint8_t)(ru_note_glide_ms/10u);
- native_project_cfg.v190.glide_patch[slot][1]=(uint8_t)((ru_glide_mode&3u)|
-   ((ru_glide_curve&1u)<<2u)|((ru_glide_retrigger&1u)<<4u));
+ (void)ru_glide_stage_preset(slot);
 #endif
 }
 static void native_preset_dsp_restore(uint8_t slot){
@@ -1665,7 +1720,7 @@ static void native_preset_dsp_restore(uint8_t slot){
  uint8_t ignored_legacy_master=100u;
  (void)ru_perf_restore(v,&native_library.patches[slot],&ignored_legacy_master,
     &ru_note_priority,&ru_note_legato,&ru_note_glide_ms,&ru_note_bend);
- if(native_project_cfg.source_version>=35u){
+ if(native_project_cfg.source_version>=35u || (ru_glide_staged_mask&(1u<<slot))){
   ru_note_glide_ms=(uint16_t)native_project_cfg.v190.glide_patch[slot][0]*10u;
   uint8_t settings=native_project_cfg.v190.glide_patch[slot][1];
   ru_glide_mode=settings&3u;ru_glide_curve=(settings>>2u)&1u;
@@ -1914,6 +1969,8 @@ static void native_patch_save(uint8_t muted){
 static void native_patch_change(uint8_t next){
  if(next==native_patch_slot||next>=ETCH_PATCH_SLOTS||!native_library.patches[next].valid)return;
  if(!native_cache_pattern(native_patch_slot))return;
+ /* A rapid preset switch must not discard edits before autosave is due. */
+ (void)ru_glide_stage_preset(native_patch_slot);
  if(native_project_cfg.source_version>=4){
   if(etch_patch_prepare(&native_patch_swap,&native_project_cfg.patterns,next)<0){native_seq_warning=1;return;}
  }else etch_pattern_clear(etch_patch_staging(&native_patch_swap));
@@ -2898,7 +2955,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);v.bend_live=ru_bend_live;v.bend_target=ru_bend_target;v.bend_curve=ru_bend_curve;v.bend_shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);v.bend_frame=ru_bend_frame_from_live();v.bend_shake_phase=(uint8_t)((etch_ms/85u)&3u);v.bend_releasing=(uint8_t)(ru_bend_live && (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);v.glide_frame=ru_tunnel_frame;v.glide_shake=(uint8_t)(ru_tunnel_tick&7u);v.bend_live=ru_bend_live;v.bend_target=ru_bend_target;v.bend_curve=ru_bend_curve;v.bend_shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);v.bend_frame=ru_bend_frame_from_live();v.bend_shake_phase=(uint8_t)((etch_ms/85u)&3u);v.bend_releasing=(uint8_t)(ru_bend_live && (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
  v.welcome_phase=ru_welcome.phase;v.welcome_choice=ru_welcome.choice;
  v.welcome_lesson=ru_welcome.lesson;v.welcome_overlay=ru_welcome.overlay;
  v.welcome_crt=ru_welcome.crt;v.welcome_status=ru_welcome.status;
@@ -3102,6 +3159,24 @@ static void rupture_native_screen(void){
   }break;
  case RU_PAGE_NOTE_MEMORY:v.k[0]=ru_note_priority;v.k[1]=ru_note_legato;v.k[2]=ru_note_glide_ms;v.k[3]=ru_note_bend;break;
  default:break;
+ }
+ /* The parameter panel shows the selected INSERT, never global parameters
+  * from another instance of the same effect. */
+ if(ru_fx_slot_edit && native_project_cfg.v190.chain.independent &&
+    ru_page==ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected])){
+  uint8_t type=native_project_cfg.v190.chain.type[ru_fx_selected];
+  const uint16_t *p=native_project_cfg.v190.chain.parameter[ru_fx_selected];
+  for(uint8_t k=0u;k<4u;k++){
+   if((type==RU_FX_TILT||type==RU_FX_FUZZ||type==RU_FX_SAND)||
+      (type==RU_FX_REVERB&&k==0u)||
+      ((type==RU_FX_DELAY||type==RU_FX_CHORUS)&&k==2u))v.k[k]=p[k];
+   else v.k[k]=(uint16_t)((uint32_t)p[k]*100u/32767u);
+  }
+  if(type==RU_FX_MOSFET){
+   v.k[1]=(uint16_t)(native_cutoff*100u/8192u);
+   v.k[2]=(uint16_t)(native_resonance*100u/32767u);
+   v.k[3]=native_filter_type;
+  }
  }
  if(ru_welcome.phase==RU_WELCOME_TOUR && ru_welcome.lesson<RU_TUTORIAL_COUNT){
   const RuTutorialLesson *lesson=&ru_tutorial_lessons[ru_welcome.lesson];
@@ -3891,6 +3966,7 @@ static void ru_nav_to(uint8_t page){
    * on the new page. Physical detents remain one-to-one after navigation. */
   for(uint8_t k=0u;k<4u;k++)ru_knob_feel[k]=(RuEncoderFeel){0};
  }
+ if(page!=ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected]))ru_fx_slot_edit=0u;
  ru_prev=ru_page;ru_page=page;ru_knob_focus_until=0u;ru_focus=0u;ru_seq_confirm=0u;ru_seq_feedback=0u;ru_project_confirm=0u;ru_project_feedback=0u;first_frame=1u;
 }
 static void ru_begin_name(uint8_t sequence,uint8_t save_after){
@@ -4247,6 +4323,28 @@ static void ru_adjust(uint8_t control,int32_t amount){
   return;
  }
  if(ru_page==RU_PAGE_FX_PICK)return;
+ /* A slot editor writes only its OWN parameter bank. No other insert,
+  * including another instance of the same algorithm, is ever modified. */
+ if(ru_fx_slot_edit &&
+    native_project_cfg.v190.chain.independent &&
+    ru_page==ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected]) &&
+    !(native_project_cfg.v190.chain.type[ru_fx_selected]==RU_FX_MOSFET&&control!=0u)){
+  struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
+  uint8_t type=chain->type[ru_fx_selected];
+  uint16_t *value=&chain->parameter[ru_fx_selected][control];
+  uint16_t previous=*value;
+  if(type==RU_FX_REVERB&&control==0u)
+   *value=(uint16_t)ui_bound((int32_t)*value+amount,0,2);
+  else if((type==RU_FX_CHORUS||type==RU_FX_DELAY)&&control==2u)
+   *value=(uint16_t)ui_bound((int32_t)*value+amount,0,1);
+  else if(type==RU_FX_TILT||type==RU_FX_FUZZ||type==RU_FX_SAND)
+   *value=(uint16_t)ui_bound((int32_t)*value+amount,0,100);
+  else *value=etch_encoder_pct(*value,amount);
+  if(previous!=*value){ru_fx_sync_chain();ru_mark_dirty();}
+  ru_knob_focused=control;ru_knob_focus_page=ru_page;
+  ru_knob_focus_until=etch_ms+950u;first_frame=1u;
+  return;
+ }
  uint8_t *undo_target=ru_undo_target(ru_page,control);
  uint8_t undo_previous=undo_target?*undo_target:0u;
  /* Knob acceleration applies exclusively to continuous parameters; never
@@ -4275,10 +4373,20 @@ static void ru_adjust(uint8_t control,int32_t amount){
   else if(control==3u)ru_sub_drift[z]=(uint8_t)ui_bound((int32_t)ru_sub_drift[z]+amount,0,100);
  }
  else if(ru_page==RU_PAGE_GLIDE){
+  uint16_t old_time=ru_note_glide_ms;
+  uint8_t old_mode=ru_glide_mode,old_curve=ru_glide_curve;
+  uint8_t old_retrigger=ru_glide_retrigger;
   if(control==0u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
   if(control==1u)ru_glide_mode=(uint8_t)ui_bound((int32_t)ru_glide_mode+amount,0,2);
   if(control==2u)ru_glide_curve=(uint8_t)ui_bound((int32_t)ru_glide_curve+amount,0,1);
   if(control==3u)ru_glide_retrigger=(uint8_t)ui_bound((int32_t)ru_glide_retrigger+amount,0,1);
+  if(old_time!=ru_note_glide_ms || old_mode!=ru_glide_mode ||
+     old_curve!=ru_glide_curve || old_retrigger!=ru_glide_retrigger){
+   (void)ru_glide_stage_preset(native_patch_slot);
+   if(native_patch_slot<ETCH_PATCH_SLOTS)
+    ru_glide_staged_mask|=1u<<native_patch_slot;
+   ru_mark_dirty();
+  }
  }
  else if(ru_page==RU_PAGE_EQ){
   struct rupture_eq2_params *e=&native_project_cfg.eq2;
@@ -4335,7 +4443,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
  }else if(ru_page==RU_PAGE_GUIDE||ru_page==RU_PAGE_KEYLOCK){
   if(control==0u)native_harmony.root=(uint8_t)ui_bound((int32_t)native_harmony.root+amount,0,11);
   if(control==1u)native_harmony.mode=(uint8_t)ui_bound((int32_t)native_harmony.mode+amount,0,8);
-  if(control==2u)native_harmony.keylock=(uint8_t)ui_bound((int32_t)native_harmony.keylock+amount,0,2);
+  if(control==2u)native_harmony.keylock=etch_lock_step(native_harmony.keylock,amount);
   if(control==3u)native_harmony.chord=(uint8_t)ui_bound((int32_t)native_harmony.chord+amount,0,2);
   }else if(ru_page==RU_PAGE_SAVER_OPTIONS&&control==0u&&ru_saver_options_selected==1u){
   uint8_t index=(uint8_t)ui_bound((int32_t)ru_saver_delay_index+amount,0,7);
@@ -4353,7 +4461,15 @@ static void ru_adjust(uint8_t control,int32_t amount){
  else if(ru_page==RU_PAGE_NOTE_MEMORY){
   if(control==0u)ru_note_priority=(uint8_t)ui_bound((int32_t)ru_note_priority+amount,0,2);
   if(control==1u)ru_note_legato=(uint8_t)ui_bound((int32_t)ru_note_legato+amount,0,1);
-  if(control==2u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
+  if(control==2u){
+   uint16_t old_time=ru_note_glide_ms;
+   ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
+   if(old_time!=ru_note_glide_ms){
+    (void)ru_glide_stage_preset(native_patch_slot);
+    if(native_patch_slot<ETCH_PATCH_SLOTS)
+     ru_glide_staged_mask|=1u<<native_patch_slot;
+   }
+  }
   if(control==3u)ru_note_bend=(uint8_t)ui_bound((int32_t)ru_note_bend+amount,0,12);
  }
  else if(ru_page==RU_PAGE_ARP){if(control==0u)native_arp_mode=(uint8_t)ui_bound((int32_t)native_arp_mode+amount,0,7);if(control==1u)native_arp_rate=(uint8_t)ui_bound((int32_t)native_arp_rate+amount,0,7);if(control==2u)native_arp_octaves=(uint8_t)ui_bound((int32_t)native_arp_octaves+amount,1,4);if(control==3u)native_arp_gate_index=(uint8_t)ui_bound((int32_t)native_arp_gate_index+amount,0,3);}
@@ -4454,7 +4570,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
   ru_undo_capture(ru_page,control,undo_previous,etch_ms);
  /* At a clamped endpoint, a click has not changed the project. */
  if((!undo_target || *undo_target!=undo_previous) &&
-    ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD && ru_page!=RU_PAGE_BEND)ru_mark_dirty();
+    ru_page!=RU_PAGE_GLO && ru_page!=RU_PAGE_HELP && ru_page!=RU_PAGE_MENU && ru_page!=RU_PAGE_SETTINGS && ru_page!=RU_PAGE_SAVER_OPTIONS && ru_page!=RU_PAGE_AUTOLOAD && ru_page!=RU_PAGE_BEND && ru_page!=RU_PAGE_GLIDE)ru_mark_dirty();
  /* Apply after all FX forwarding: the visible FX panel, not its temporary
   * internal effect page, owns the active-knob marker. Force an immediate
   * UI redraw even when the parameter is already at its endpoint. */
@@ -4965,7 +5081,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(pressed&(1u<<3)){
    struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
    if(ru_fx_picker==RU_FX_REMOVE){ru_chain_remove(chain,ru_fx_selected);ru_fx_sync_chain();ru_nav_to(RU_PAGE_FX);}
-   else if(ru_chain_insert(chain,ru_fx_selected,ru_fx_picker)){
+   else {ru_fx_enable_independent_parameters();if(ru_chain_insert(chain,ru_fx_selected,ru_fx_picker)){
     uint8_t type=ru_fx_picker;
     if(type==RU_FX_REVERB&&!native_reverb)native_reverb=12000u;
     if(type==RU_FX_DELAY&&!native_delay)native_delay=12000u;
@@ -4981,7 +5097,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
      if(!native_fx_settings.wah_sens)native_fx_settings.wah_sens=24000u;
     }
     ru_fx_sync_chain();ru_nav_to(RU_PAGE_FX);
-   }else{ru_fx_pick_error=1u;first_frame=1u;}
+   }else{ru_fx_pick_error=1u;first_frame=1u;}}
   }
  }
  else if(ru_page==RU_PAGE_FX){
@@ -4991,6 +5107,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   }
   if(alg){
    int8_t direction=alg>0?1:-1;
+   ru_fx_enable_independent_parameters();
    if(ru_chain_move(&native_project_cfg.v190.chain,ru_fx_selected,direction)){
     ru_fx_selected=(uint8_t)((int)ru_fx_selected+direction);
     ru_fx_sync_chain();
@@ -5000,7 +5117,9 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    if(native_project_cfg.v190.chain.type[ru_fx_selected]==RU_FX_EMPTY){
     ru_fx_picker=0u;ru_fx_pick_error=0u;ru_nav_to(RU_PAGE_FX_PICK);
    }else{
+    ru_fx_enable_independent_parameters();ru_fx_sync_chain();
     ru_nav_to(ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected]));
+    ru_fx_slot_edit=1u;
    }
   }
  }
@@ -5020,13 +5139,17 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    * step editor. Once the ISR starts step 1, force_seq also gates capture
    * before the next 25ms UI publication updates native_seq_run. */
   const uint8_t ru_live_running=(uint8_t)(native_seq_run||ru_countin.force_seq);
+  /* The sequencer's piano entry and REC must agree with the sound engine:
+   * a STRICT-muted key neither sounds nor creates a step/held note. */
+  const uint32_t ru_scale_keys=native_harmony.keylock==3u?
+     etch_harmony_live_key_mask(native_controls.octave,&native_harmony):0x07ffffffu;
   if(native_seq_recording && ru_live_running && !native_updating && !native_safe){
    uint16_t now=etch_seq_actual_step(ru_live_running,native_audio.perf_last_seq,
       native_audio.perf_played,native_audio.perf_current_step,native_seq_length,native_seq_step);
    /* ISR keeps reading the active pointer; only one note length is updated
     * at a time. Match the existing editing IRQ guard. */
    fm1_irq_off();uint8_t extended=ru_live_advance(&native_pattern,&ru_live_capture,
-                           now,native_seq_length,fm1_in.notes);fm1_irq_enable_all();
+                           now,native_seq_length,fm1_in.notes&ru_scale_keys);fm1_irq_enable_all();
    if(extended){ru_mark_dirty();first_frame=1u;}
   }
   if(alg && !native_updating && !native_safe){
@@ -5052,7 +5175,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    if(removed)ru_mark_dirty();
    first_frame=1u;
   }
-  uint32_t new_keys=new_note_keys&0x07ffffffu;
+  uint32_t new_keys=new_note_keys&ru_scale_keys&0x07ffffffu;
   if(native_seq_recording && ru_countin.active && new_keys){
    /* Record only the LAST 50ms of the final count-in beat as a
     * non-destructive pre-roll latch. TIMER4 records the actual physical
@@ -5073,7 +5196,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    /* Consume the latched note at the first playable downbeat, provided
     * it is still held. It must not be lost merely because the UI handled
     * the note edge in the final 25ms before the audio transition. */
-   new_keys|=ru_countin_prekeys&fm1_in.notes;
+   new_keys|=ru_countin_prekeys&fm1_in.notes&ru_scale_keys;
    ru_countin_prekeys=0u;
   }
   if(new_keys && !(native_seq_recording && !ru_live_running) &&
@@ -5844,11 +5967,33 @@ void fm1_cstart(void){
    ru_bend_service();
 
    /* 25 ms main-loop service only: no MIDI, DSP, ISR, storage or OTA changes.
-    * A note from hardware, USB MIDI, ARP or sequencer can hold the crack open.
-    * Closing starts as soon as every note gate has released.
     * Never repaint other pages just to animate a hidden bar. */
    uint8_t ru_dam_changed=0u;
-   if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE || ru_page==RU_PAGE_BEND) &&
+   if(ru_page==RU_PAGE_GLIDE &&
+      !ru_saver_active && !native_safe && !native_tripped && !native_updating){
+    /* The camera moves only while a real synth voice is being held. This
+     * includes played keys, USB/TRS MIDI, arp and sequencer note gates, but
+     * excludes STRICT-muted keys and idle playback between notes. */
+    uint8_t glide_playing=0u;
+    for(uint32_t vi=0;vi<ETCH_NATIVE_VOICES;vi++){
+     if(native_audio.voice[vi].active && native_audio.voice[vi].held){
+      glide_playing=1u;break;
+     }
+    }
+    /* On entry and after the last release, show the still first frame with
+     * no found-footage shake. Each new held note begins a fresh walk. */
+    if(ru_panel_last_page!=RU_PAGE_GLIDE){
+     ru_panel_last_page=RU_PAGE_GLIDE;
+     ru_tunnel_frame=0u;
+     ru_tunnel_tick=0u;
+     ru_tunnel_last_tick_ms=etch_ms;
+     ru_dam_changed=1u;
+    }else{
+     ru_dam_changed=ru_glide_tunnel_play_step(etch_ms,glide_playing,
+        &ru_tunnel_frame,&ru_tunnel_tick,&ru_tunnel_last_tick_ms,
+        RU_TUNNEL_FRAMES);
+    }
+   }else if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE || ru_page==RU_PAGE_BEND) &&
       !ru_saver_active && !native_safe && !native_tripped && !native_updating){
     uint8_t gates=(uint8_t)(fm1_in.notes!=0u);
     for(uint32_t vi=0;vi<ETCH_NATIVE_VOICES;vi++){
@@ -6694,7 +6839,7 @@ void fm1_cstart(void){
     }else if(native_page==11){
       native_harmony.root=(uint8_t)ui_bound((int32_t)native_harmony.root+dm,0,11);
       native_harmony.mode=(uint8_t)ui_bound((int32_t)native_harmony.mode+dd,0,8);
-      native_harmony.keylock=(uint8_t)ui_bound((int32_t)native_harmony.keylock+up,0,2);
+      native_harmony.keylock=etch_lock_step(native_harmony.keylock,up);
       native_harmony.chord=(uint8_t)ui_bound((int32_t)native_harmony.chord+down,0,2);
      }else if(native_page==12){
       native_lock_sel=(uint8_t)ui_bound((int32_t)native_lock_sel+dm,0,5);
@@ -6707,7 +6852,7 @@ void fm1_cstart(void){
       native_bake_scope=(uint8_t)ui_bound((int32_t)native_bake_scope+dm,0,1);
       native_seq_step=(uint16_t)ui_bound((int32_t)native_seq_step+select+dd,0,native_seq_length-1);
       native_harmony.chord=(uint8_t)ui_bound((int32_t)native_harmony.chord+up,0,2);
-      native_harmony.keylock=(uint8_t)ui_bound((int32_t)native_harmony.keylock+down,0,2);
+      native_harmony.keylock=etch_lock_step(native_harmony.keylock,down);
       if(pressed&(1u<<13)){
        int changed=etch_seq_bake_harmony(&native_pattern,native_seq_length,native_seq_step,native_bake_scope,&native_harmony,0);
        if(changed<0){native_edit_feedback=3;native_bake_confirm=0;}
@@ -6737,12 +6882,12 @@ void fm1_cstart(void){
      }else if(native_page==26){
       native_harmony.root=etch_ui_fifths_move(native_harmony.root,dm);
       native_harmony.mode=(uint8_t)ui_bound((int32_t)native_harmony.mode+dd,0,8);
-      native_harmony.keylock=(uint8_t)ui_bound((int32_t)native_harmony.keylock+up,0,2);
+      native_harmony.keylock=etch_lock_step(native_harmony.keylock,up);
       native_harmony.chord=(uint8_t)ui_bound((int32_t)native_harmony.chord+down,0,2);
      }else if(native_page==19){
       native_harmony.root=(uint8_t)ui_bound((int32_t)native_harmony.root+dm,0,11);
       native_harmony.mode=(uint8_t)ui_bound((int32_t)native_harmony.mode+dd,0,8);
-      native_harmony.keylock=(uint8_t)ui_bound((int32_t)native_harmony.keylock+up,0,2);
+      native_harmony.keylock=etch_lock_step(native_harmony.keylock,up);
       native_guide_note=(uint8_t)ui_bound((int32_t)native_guide_note+down,0,127);
       /* SEQ -> GUIDE may still bake chords. GLO -> GUIDE is read-only
        * with respect to the sequencer even when REC or keys are pressed. */

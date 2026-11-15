@@ -95,6 +95,13 @@ void etch_fx_reset(struct etch_native_fx *s){
  s->eq_gain_smooth[0]=s->eq_gain_smooth[1]=s->eq_gain_smooth[2]=16384;
 #ifdef RUPTURE_BUILD
  s->eq2_enabled=0u;
+ s->ru_reverb_last_type=0xffu;
+ for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++){
+  s->ru_slot_fuzz[slot].makeup=32767;
+  s->ru_slot_fuzz[slot].makeup_target=32767;
+  s->ru_slot_small[slot].comp_gain=32767;
+  s->ru_slot_small[slot].comp_target=32767;
+ }
  s->eq2.current_headroom=32767u;
  s->eq2.headroom_q15[0]=s->eq2.headroom_q15[1]=32767u;
  s->eq2.initialized=1u;
@@ -112,10 +119,13 @@ void etch_fx_reset(struct etch_native_fx *s){
  * No heap, no trigonometry, no flash access inside the audio ISR. */
 /* Fractional mono tap shared by the two chorus output phases. This avoids
  * 1-sample read-address jumps on slow chorus modulation (Q8 position). */
-static int32_t etch_fx_chorus_read(const struct etch_native_fx *s,uint32_t offset_q8){
- uint32_t idx=(s->chorus_pos-(offset_q8>>8))&(ETCH_CHORUS_SIZE-1u);
+static int32_t etch_fx_chorus_read_at(const struct etch_native_fx *s,uint32_t pos,uint32_t offset_q8){
+ uint32_t idx=(pos-(offset_q8>>8))&(ETCH_CHORUS_SIZE-1u);
  int32_t a=s->chorus[idx],b=s->chorus[(idx-1u)&(ETCH_CHORUS_SIZE-1u)];
  return a+(((b-a)*(int32_t)(offset_q8&255u))/256);
+}
+static int32_t etch_fx_chorus_read(const struct etch_native_fx *s,uint32_t offset_q8){
+ return etch_fx_chorus_read_at(s,s->chorus_pos,offset_q8);
 }
 static int32_t etch_fx_slew(int32_t current,int32_t target){
  int32_t delta=target-current;
@@ -605,7 +615,8 @@ static int16_t fx_v102_process(struct etch_native_fx *s,int16_t sample,const str
   s->wah_env+=(int32_t)(((int32_t)(mag-s->wah_env)*(int32_t)(mag>s->wah_env?attack:rel))/32768);
   int32_t response=(int32_t)(((int32_t)s->wah_env*qclamp(c->wah_sens))/32767);
   if(response>24000)response=24000;
-  uint32_t alpha=300u+(uint32_t)response*15000u/24000u;
+  /* 15000 / 24000 == 5 / 8: exact integer result, no division. */
+  uint32_t alpha=300u+(((uint32_t)response*5u)>>3u);
   s->wah_lp+=(int32_t)(((int32_t)(x-s->wah_lp)*(int32_t)alpha)/32768);
   s->wah_hp+=(int32_t)(((int32_t)(s->wah_lp-s->wah_hp)*(int32_t)((alpha>>2)+100u))/32768);
   int32_t band=s->wah_lp-s->wah_hp;
@@ -1166,7 +1177,7 @@ int16_t etch_fx_process(struct etch_native_fx *s,int16_t in,uint16_t chorus,uint
 }
 
 #ifdef RUPTURE_BUILD
-/* V1.93: real ordered chain with repeatable effect types. Time-based types
+/* V1.94: real ordered chain with repeatable effect types. Time-based types
  * share their original fixed-size tank; calculate each tank's current wet
  * return once per PCM frame and reuse it at later occurrences. This avoids
  * corrupting ring timing or allocating extra PCM memory. Other types apply
@@ -1237,8 +1248,9 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
   eq=fx_v102_process(s,eq,&hidden,1u);
  }
  l=r=eq;
- /* Only update conversion/cache values when controls change, never compute
-  * a new delay length, modulation span or network geometry for every sample. */
+ /* Even independent chains keep the dormant legacy caches warm. Older
+  * hidden modulation can be switched on mid-note and reads these cached
+  * coefficients BEFORE the refresh below. This preserves V1.94 PCM. */
  if(!s->applied_valid||s->applied.chorus_rate!=c->chorus_rate||
     s->applied.chorus_depth!=c->chorus_depth||s->applied.delay_time!=c->delay_time||
     s->applied.reverb_size!=c->reverb_size||s->applied.reverb_decay!=c->reverb_decay||
@@ -1283,6 +1295,7 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
    uint8_t count=etch_fx_reverb_type(c)==0u?2u:4u;
    for(uint8_t k=0u;k<count;k++)if(s->reverb_line_cursor[k]>=lengths[k])s->reverb_line_cursor[k]=0u;
   }
+  s->ru_reverb_last_type=0xffu; /* independent insert will refresh geometry */
  }
  uint8_t wet_active=0u;
  /* Local returns, not new audio buffers. Reverb, chorus and delay each own
@@ -1291,6 +1304,8 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
   * We deliberately do not feed a ring twice per PCM frame, which would
   * halve its effective delay time and cause pitch/phase artefacts. */
  uint16_t shared_fx_done=0u;
+ int32_t combined_delay_feedback=0,delay_input=0;
+ uint8_t combined_delay_count=0u;
  int32_t chorus_wl=0,chorus_wr=0,delay_wl=0,delay_wr=0,reverb_wl=0,reverb_wr=0;
  int32_t wah_wet=0,tilt_delta=0,fuzz_delta=0,sand_delta=0;
  for(uint8_t slot=0;slot<RU_FX_SLOTS;slot++){
@@ -1299,7 +1314,7 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
    * fully faded-in, no hidden ETCH engines run, and the signal is still
    * mono. Distinct order, bypass or stereo input uses the real per-slot
    * processors below. No DSP is skipped or reordered by this shortcut. */
-  if(slot==0u && l==r && !hidden_processing &&
+  if(slot==0u && l==r && !hidden_processing && !chain->independent &&
      (chain->enabled&15u)==15u &&
      chain->type[0]==RU_FX_COMP && chain->type[1]==RU_FX_TILT &&
      chain->type[2]==RU_FX_FUZZ && chain->type[3]==RU_FX_SAND &&
@@ -1312,12 +1327,16 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
   }
   uint8_t type=chain->type[slot];
   if(type==RU_FX_EMPTY)continue;
+  const uint16_t *p=chain->parameter[slot];
+  const uint8_t separated=chain->independent;
   int32_t target=(chain->enabled&(1u<<slot))?32767:0;
   int32_t fade=s->rupture_chain_fade[slot]=etch_fx_slew(s->rupture_chain_fade[slot],target);
   if(!fade)continue;
   /* Zero-wet custom FX must be genuinely cheap when inserted but silent. */
-  if((type==RU_FX_WAH&&!c->wah_mix&&!s->wah_mix_smooth)||
-     (type==RU_FX_DISTORTION&&!c->folder_mix&&!s->folder_mix_smooth))continue;
+  if((type==RU_FX_WAH&&!(separated?p[3]:c->wah_mix)&&
+      !(separated?s->ru_slot_small[slot].wah_mix:s->wah_mix_smooth))||
+     (type==RU_FX_DISTORTION&&!(separated?p[3]:c->folder_mix)&&
+      !(separated?s->ru_slot_small[slot].distortion_mix:s->folder_mix_smooth)))continue;
   wet_active=1u;
   int32_t dry_l=l,dry_r=r;
   int16_t in=clip16((l+r)/2);
@@ -1326,21 +1345,27 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
     /* Hard-edged, asymmetrical clipping with one-pole tone and direct mix.
      * Distinct from the soft MOSFET transfer and with no division by a
      * variable, heap allocation, or extra audio ring buffer. */
-    uint32_t gain_q8=256u+((uint32_t)qclamp(c->folder_fold)*15u>>7u);
-    int32_t bias=((int32_t)qclamp(c->folder_symmetry)-16384)*3/8;
+    uint32_t gain_q8=256u+((uint32_t)qclamp(separated?p[0]:c->folder_fold)*15u>>7u);
+    int32_t bias=((int32_t)qclamp(separated?p[1]:c->folder_symmetry)-16384)*3/8;
     int32_t driven=((int32_t)in*(int32_t)gain_q8>>8u)+bias;
     int32_t shaped=(int32_t)clip16(driven)-(int32_t)clip16(bias);
-    uint32_t alpha=1024u+((uint32_t)qclamp(c->folder_tone)*31743u>>15u);
+    uint32_t alpha=1024u+((uint32_t)qclamp(separated?p[2]:c->folder_tone)*31743u>>15u);
     /* Half-scale Q14 avoids costly 64-bit multiplies on the FM1 core;
      * state/PCM differences remain bounded to the signed 32-bit range. */
-    int32_t tone=s->folder_tone_state+
-      ((((shaped-s->folder_tone_state)>>1)*(int32_t)alpha)>>14);
-    if(!(shared_fx_done&256u)){
+    int32_t tone_state=separated?s->ru_slot_small[slot].distortion_tone:s->folder_tone_state;
+    int32_t tone=tone_state+
+      ((((shaped-tone_state)>>1)*(int32_t)alpha)>>14);
+    if(separated || !(shared_fx_done&256u)){
      shared_fx_done|=256u;
-     s->folder_tone_state=tone;
-     s->folder_mix_smooth=etch_fx_slew(s->folder_mix_smooth,qclamp(c->folder_mix));
+     if(separated){
+      s->ru_slot_small[slot].distortion_tone=tone;
+      s->ru_slot_small[slot].distortion_mix=etch_fx_slew(s->ru_slot_small[slot].distortion_mix,qclamp(p[3]));
+     }else{
+      s->folder_tone_state=tone;
+      s->folder_mix_smooth=etch_fx_slew(s->folder_mix_smooth,qclamp(c->folder_mix));
+     }
     }
-    int32_t delta=(((tone-in)>>1)*s->folder_mix_smooth)>>14;
+    int32_t delta=(((tone-in)>>1)*(separated?s->ru_slot_small[slot].distortion_mix:s->folder_mix_smooth))>>14;
     l=clip16(l+delta);r=clip16(r+delta);
     break;
    }
@@ -1348,23 +1373,46 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
     /* The envelope/filter must not advance eight times per real PCM sample
      * when eight WAH slots are used: that would shift its cutoff response.
      * Reuse the same frame's wet output, but apply it at each chain position. */
-    if(!(shared_fx_done&8u)){
+    if(separated || !(shared_fx_done&8u)){
      shared_fx_done|=8u;
      int32_t mag=in<0?-(int32_t)in:in;
-     uint32_t attack=4u+((uint32_t)qclamp(c->wah_attack)*1000u>>15u);
-     int32_t speed=mag>s->wah_env?(int32_t)attack:16;
-     s->wah_env+=((mag-s->wah_env)*speed)>>15;
-     int32_t response=(s->wah_env*(int32_t)qclamp(c->wah_sens))>>15;
+     uint32_t attack;
+     int32_t resonance;
+     if(separated){
+      /* Independent WAH slots carry their own tiny parameter cache. Knob
+       * edits are very rare compared with audio samples. Refresh without
+       * interpolation changes, including after moving/replacing a slot. */
+      if(!s->ru_slot_small[slot].wah_cache_valid||
+         s->ru_slot_small[slot].wah_attack_param!=p[1]||
+         s->ru_slot_small[slot].wah_reso_param!=p[2]){
+       s->ru_slot_small[slot].wah_attack_param=p[1];
+       s->ru_slot_small[slot].wah_reso_param=p[2];
+       s->ru_slot_small[slot].wah_attack_cached=(uint16_t)(4u+((uint32_t)qclamp(p[1])*1000u>>15u));
+       s->ru_slot_small[slot].wah_resonance_cached=(uint16_t)(16384u+((uint32_t)qclamp(p[2])*16383u>>15u));
+       s->ru_slot_small[slot].wah_cache_valid=1u;
+      }
+      attack=s->ru_slot_small[slot].wah_attack_cached;
+      resonance=s->ru_slot_small[slot].wah_resonance_cached;
+     }else{
+      attack=4u+((uint32_t)qclamp(c->wah_attack)*1000u>>15u);
+      resonance=16384+(int32_t)((uint32_t)qclamp(c->wah_reso)*16383u>>15u);
+     }
+     int32_t *env=separated?&s->ru_slot_small[slot].wah_env:&s->wah_env;
+     int32_t *lp=separated?&s->ru_slot_small[slot].wah_lp:&s->wah_lp;
+     int32_t *hp=separated?&s->ru_slot_small[slot].wah_hp:&s->wah_hp;
+     int32_t speed=mag>*env?(int32_t)attack:16;
+     *env+=((mag-*env)*speed)>>15;
+     int32_t response=(*env*(int32_t)qclamp(separated?p[0]:c->wah_sens))>>15;
      if(response>24000)response=24000;
-     uint32_t alpha=300u+((uint32_t)response*15000u/24000u);
-     s->wah_lp+=((in-s->wah_lp)*(int32_t)alpha)>>15;
-     s->wah_hp+=((s->wah_lp-s->wah_hp)*(int32_t)((alpha>>2u)+100u))>>15;
-     int32_t band=s->wah_lp-s->wah_hp;
-     int32_t resonance=16384+(int32_t)((uint32_t)qclamp(c->wah_reso)*16383u>>15u);
+     uint32_t alpha=300u+(((uint32_t)response*5u)>>3u);
+     *lp+=((in-*lp)*(int32_t)alpha)>>15;
+     *hp+=((*lp-*hp)*(int32_t)((alpha>>2u)+100u))>>15;
+     int32_t band=*lp-*hp;
      wah_wet=clip16((band*resonance)>>14);
-     s->wah_mix_smooth=etch_fx_slew(s->wah_mix_smooth,qclamp(c->wah_mix));
+     if(separated)s->ru_slot_small[slot].wah_mix=etch_fx_slew(s->ru_slot_small[slot].wah_mix,qclamp(p[3]));
+     else s->wah_mix_smooth=etch_fx_slew(s->wah_mix_smooth,qclamp(c->wah_mix));
     }
-    int32_t delta=((wah_wet-in)*s->wah_mix_smooth)>>15;
+    int32_t delta=((wah_wet-in)*(separated?s->ru_slot_small[slot].wah_mix:s->wah_mix_smooth))>>15;
     l=clip16(l+delta);r=clip16(r+delta);
     break;
    }
@@ -1372,58 +1420,237 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
     /* Post-mix MOSFET shaping preserves real chain ordering and stereo.
      * Previous code used two variable divisions per PCM frame. The ROM
      * transfer avoids software division on the pi32v2 audio interrupt. */
-    if(mosfet){
-     uint16_t gain_q8=(uint16_t)(256u+(((uint32_t)qclamp(mosfet)*3u)>>7));
+    if(separated?p[0]:mosfet){
+     uint16_t gain_q8=(uint16_t)(256u+(((uint32_t)qclamp(separated?p[0]:mosfet)*3u)>>7));
      l=ru_mosfet_shaper(l,gain_q8);
      r=ru_mosfet_shaper(r,gain_q8);
     }
     break;
    }
    case RU_FX_COMP:{
-    if(!(shared_fx_done&16u)){
-     shared_fx_done|=16u;
+    if(separated){
+     /* Each compressor gets its own envelope and gain reduction. The
+      * controls are simple scalar values; no large history buffers. */
+     int32_t *env=&s->ru_slot_small[slot].comp_env;
+     int32_t *gain=&s->ru_slot_small[slot].comp_gain;
+     int32_t *target_gain=&s->ru_slot_small[slot].comp_target;
+     uint8_t *tick=&s->ru_slot_small[slot].comp_tick;
+     if(!*gain){*gain=32767;*target_gain=32767;}
      int32_t mag=in<0?-(int32_t)in:in;
-     s->comp_env+=((mag-s->comp_env)*(mag>s->comp_env?s->comp_attack_step:s->comp_release_step))/32768;
-     if(++s->comp_tick>=16u){s->comp_tick=0u;s->comp_target=32767;
-      if(s->comp_env>s->comp_threshold_cached&&c->comp_ratio){
-       int32_t limited=s->comp_threshold_cached+(s->comp_env-s->comp_threshold_cached)/s->comp_ratio_cached;
-       s->comp_target=limited*32767/s->comp_env;
+     uint8_t attack_step=(uint8_t)(2u+(32767u-qclamp(p[2]))/512u);
+     uint8_t release_step=(uint8_t)(1u+(32767u-qclamp(p[3]))/2048u);
+     *env+=((mag-*env)*(mag>*env?attack_step:release_step))/32768;
+     if(++*tick>=16u){
+      *tick=0u;*target_gain=32767;
+      uint16_t threshold=(uint16_t)(2000u+(32767u-qclamp(p[0]))*25000u/32767u);
+      uint8_t ratio=(uint8_t)(1u+qclamp(p[1])*11u/32767u);
+      if(*env>threshold&&p[1]){
+       int32_t limited=threshold+(*env-threshold)/ratio;
+       *target_gain=limited*32767/(*env);
       }
      }
-     s->comp_gain=etch_fx_slew(s->comp_gain,s->comp_target);
+     *gain=etch_fx_slew(*gain,*target_gain);
+     l=(l*(*gain))/32767;r=(r*(*gain))/32767;
+    }else{
+     if(!(shared_fx_done&16u)){
+      shared_fx_done|=16u;
+      int32_t mag=in<0?-(int32_t)in:in;
+      s->comp_env+=((mag-s->comp_env)*(mag>s->comp_env?s->comp_attack_step:s->comp_release_step))/32768;
+      if(++s->comp_tick>=16u){s->comp_tick=0u;s->comp_target=32767;
+       if(s->comp_env>s->comp_threshold_cached&&c->comp_ratio){
+        int32_t limited=s->comp_threshold_cached+(s->comp_env-s->comp_threshold_cached)/s->comp_ratio_cached;
+        s->comp_target=limited*32767/s->comp_env;
+       }
+      }
+      s->comp_gain=etch_fx_slew(s->comp_gain,s->comp_target);
+     }
+     l=(l*s->comp_gain)/32767;r=(r*s->comp_gain)/32767;
     }
-    l=(l*s->comp_gain)/32767;r=(r*s->comp_gain)/32767;break;
+    break;
    }
    /* These three mono-state effects process the mid signal. Apply their
     * transfer delta to both channels so a preceding stereo echo/reverb does
     * not suddenly collapse to mono when a saturation/EQ slot follows it. */
    case RU_FX_TILT:{
-    if(!(shared_fx_done&32u)){shared_fx_done|=32u;tilt_delta=rupture_tilt_process(s,in)-in;}
+    if(separated){
+     int32_t target=(uint32_t)p[2]*32767u/100u;
+     int32_t *mix=&s->ru_slot_tilt[slot].mix;
+     *mix=etch_fx_slew(*mix,target);
+     if(!*mix)s->ru_slot_tilt[slot].lp=0;
+     else{
+      int32_t alpha=250+(uint32_t)p[1]*p[1]*2u;
+      int32_t *lp=&s->ru_slot_tilt[slot].lp;
+      *lp+=((in-*lp)*alpha)/32768;
+      int32_t bass=*lp,treble=in-bass;
+      int32_t wet=clip16(in+(clip16(treble-bass)*((int32_t)p[0]-50))/60);
+      int32_t output=(int32_t)p[3];
+      int32_t gain=output<=50?8192+output*(32767-8192)/50:
+       32767+(output-50)*(65534-32767)/50;
+      wet=clip16((wet*gain)/32767);
+      tilt_delta=rupture_q15_mix(in,wet,(uint16_t)*mix)-in;
+     }
+    }else if(!(shared_fx_done&32u)){
+     shared_fx_done|=32u;tilt_delta=rupture_tilt_process(s,in)-in;
+    }
     l=clip16(l+tilt_delta);r=clip16(r+tilt_delta);break;}
    case RU_FX_FUZZ:{
-    if(!(shared_fx_done&64u)){shared_fx_done|=64u;fuzz_delta=rupture_fuzz_process(s,in)-in;}
+    if(separated){
+     /* Isolated octave fuzz envelope, DC tracker, antialias and makeup.
+      * Same bounded transfer curve and reciprocal table as the legacy FX. */
+     int32_t *mix=&s->ru_slot_fuzz[slot].mix;
+     *mix=etch_fx_slew(*mix,(uint32_t)p[3]*32767u/100u);
+     if(!*mix){
+      s->ru_slot_fuzz[slot].dc=s->ru_slot_fuzz[slot].tone=0;
+      s->ru_slot_fuzz[slot].input_lp=0;
+      s->ru_slot_fuzz[slot].in_env=s->ru_slot_fuzz[slot].wet_env=0;
+      s->ru_slot_fuzz[slot].makeup=s->ru_slot_fuzz[slot].makeup_target=32767;
+      s->ru_slot_fuzz[slot].drive_slew=32767+(int32_t)p[0]*1000;
+      s->ru_slot_fuzz[slot].anti_slew=32767-(int32_t)p[0]*120;
+      s->ru_slot_fuzz[slot].oct_slew=((int32_t)p[1]*32767+50)/100;
+      s->ru_slot_fuzz[slot].tone_slew=600+(int32_t)p[2]*320;
+      s->ru_slot_fuzz[slot].tick=0;
+     }else{
+      int32_t *drive=&s->ru_slot_fuzz[slot].drive_slew;
+      int32_t *anti=&s->ru_slot_fuzz[slot].anti_slew;
+      int32_t *oct=&s->ru_slot_fuzz[slot].oct_slew;
+      int32_t *tone_slew=&s->ru_slot_fuzz[slot].tone_slew;
+      *drive=etch_fx_slew(*drive,32767+(int32_t)p[0]*1000);
+      *anti=etch_fx_slew(*anti,32767-(int32_t)p[0]*120);
+      *oct=etch_fx_slew(*oct,((int32_t)p[1]*32767+50)/100);
+      *tone_slew=etch_fx_slew(*tone_slew,600+(int32_t)p[2]*320);
+      int32_t *input_lp=&s->ru_slot_fuzz[slot].input_lp;
+      *input_lp+=((in-*input_lp)*(*anti))/32768;
+      int32_t driven=clip16(((*input_lp)*((*drive)>>2))/8192);
+      int32_t rect=rupture_fuzz_soft_rect(driven);
+      int32_t *dc=&s->ru_slot_fuzz[slot].dc;
+      *dc+=(rect-*dc)/128;
+      int32_t octave=clip16((rect-*dc)*2);
+      int32_t mixoct=driven+((octave-driven)*(*oct))/32767;
+      int32_t *tone=&s->ru_slot_fuzz[slot].tone;
+      *tone+=((mixoct-*tone)*(*tone_slew))/32768;
+      int32_t wet=clip16(*tone);
+      int32_t in_mag=in<0?-(int32_t)in:in,wet_mag=wet<0?-wet:wet;
+      int32_t *in_env=&s->ru_slot_fuzz[slot].in_env;
+      int32_t *wet_env=&s->ru_slot_fuzz[slot].wet_env;
+      *in_env+=(in_mag-*in_env)/256;
+      *wet_env+=(wet_mag-*wet_env)/256;
+      int32_t *makeup_target=&s->ru_slot_fuzz[slot].makeup_target;
+      int32_t *makeup=&s->ru_slot_fuzz[slot].makeup;
+      if(++s->ru_slot_fuzz[slot].tick>=32u){
+       s->ru_slot_fuzz[slot].tick=0u;
+       *makeup_target=rupture_fuzz_ratio_q15(*in_env+256,*wet_env+256);
+      }
+      *makeup+=(*makeup_target-*makeup)/256;
+      if(*makeup!=*makeup_target)*makeup+=*makeup_target>*makeup?1:-1;
+      wet=(wet*(*makeup))/32767;
+      fuzz_delta=rupture_q15_mix(in,wet,(uint16_t)*mix)-in;
+     }
+    }else if(!(shared_fx_done&64u)){
+     shared_fx_done|=64u;fuzz_delta=rupture_fuzz_process(s,in)-in;
+    }
     l=clip16(l+fuzz_delta);r=clip16(r+fuzz_delta);break;}
    case RU_FX_SAND:{
-    if(!(shared_fx_done&128u)){shared_fx_done|=128u;sand_delta=rupture_sandpaper_process(s,in)-in;}
+    if(separated){
+     int32_t *mix=&s->ru_slot_sand[slot].mix;
+     *mix=etch_fx_slew(*mix,(uint32_t)p[3]*32767u/100u);
+     if(!*mix){
+      s->ru_slot_sand[slot].pole1=s->ru_slot_sand[slot].pole2=s->ru_slot_sand[slot].body=0;
+      s->ru_slot_sand[slot].soft_slew=s->ru_slot_sand[slot].warm_slew=s->ru_slot_sand[slot].smooth_slew=0;
+     }else{
+      int32_t *smooth=&s->ru_slot_sand[slot].smooth_slew;
+      *smooth=etch_fx_slew(*smooth,(int32_t)p[0]*256);
+      int32_t a=26000-(uint32_t)(*smooth>>8)*22000u/100u;
+      int32_t *pole1=&s->ru_slot_sand[slot].pole1;
+      int32_t *pole2=&s->ru_slot_sand[slot].pole2;
+      int32_t *body=&s->ru_slot_sand[slot].body;
+      *pole1+=((in-*pole1)*a)>>15;
+      *pole2+=((*pole1-*pole2)*a)>>15;
+      *body+=((in-*body)*650)>>15;
+      int32_t *soft=&s->ru_slot_sand[slot].soft_slew;
+      int32_t *warm=&s->ru_slot_sand[slot].warm_slew;
+      *soft=etch_fx_slew(*soft,(int32_t)p[1]*256);
+      *warm=etch_fx_slew(*warm,(int32_t)p[2]*256);
+      int32_t wet=*pole2;
+      int32_t mag=wet<0?-wet:wet;
+      int32_t reduction=((*soft>>8)*(3000+(mag>>1)))/100;
+      int32_t factor=32767-reduction;
+      if(factor<12000)factor=12000;
+      wet=(wet*factor)/32767;
+      wet+=(*body*(*warm>>8)*3)/500;
+      wet=clip16(wet);
+      sand_delta=rupture_q15_mix(in,wet,(uint16_t)*mix)-in;
+     }
+    }else if(!(shared_fx_done&128u)){
+     shared_fx_done|=128u;sand_delta=rupture_sandpaper_process(s,in)-in;
+    }
     l=clip16(l+sand_delta);r=clip16(r+sand_delta);break;}
    case RU_FX_CHORUS:{
-    uint16_t wet=qclamp(chorus);
-    if(!(shared_fx_done&1u)){
-     shared_fx_done|=1u;
-     s->chorus_mix_smooth=etch_fx_slew(s->chorus_mix_smooth,wet);
-     uint32_t phase=s->chorus_phase;
-     s->chorus_phase=(phase+s->rate_step)&65535u;
+    if(separated){
+     int32_t *mix=&s->ru_slot_chorus_mix[slot];
+     *mix=etch_fx_slew(*mix,qclamp(p[3]));
+     if(!s->ru_slot_chorus_step[slot]||s->ru_slot_chorus_rate[slot]!=p[0]||s->ru_slot_chorus_depth[slot]!=p[1]){
+      s->ru_slot_chorus_rate[slot]=p[0];s->ru_slot_chorus_depth[slot]=p[1];
+      s->ru_slot_chorus_step[slot]=(uint16_t)(1u+(uint32_t)qclamp(p[0])*9u/32768u);
+      s->ru_slot_chorus_span[slot]=(uint16_t)((uint32_t)qclamp(p[1])*924u/32767u);
+     }
+     uint32_t phase=s->ru_slot_chorus_phase[slot];
+     s->ru_slot_chorus_phase[slot]=(phase+s->ru_slot_chorus_step[slot])&65535u;
      uint32_t tri=phase<32768u?phase:65535u-phase;
-     uint32_t shift_l=(tri*s->chorus_span)>>7u;
-     uint32_t shift_r=((32767u-tri)*s->chorus_span)>>7u;
-     chorus_wl=etch_fx_chorus_read(s,264u*256u+shift_l);
-     chorus_wr=etch_fx_chorus_read(s,281u*256u+shift_r);
-     s->chorus[s->chorus_pos]=in;s->chorus_pos=(s->chorus_pos+1u)&(ETCH_CHORUS_SIZE-1u);
+     uint32_t shift_l=(tri*s->ru_slot_chorus_span[slot])>>7u;
+     uint32_t shift_r=((32767u-tri)*s->ru_slot_chorus_span[slot])>>7u;
+     /* Every chorus slot uses independently modulated taps on the existing
+      * single input history, which is written exactly once per PCM frame. */
+     uint32_t pos=(s->chorus_pos-((shared_fx_done&1u)?1u:0u))&(ETCH_CHORUS_SIZE-1u);
+     chorus_wl=etch_fx_chorus_read_at(s,pos,264u*256u+shift_l);
+     chorus_wr=etch_fx_chorus_read_at(s,pos,281u*256u+shift_r);
+     if(!(shared_fx_done&1u)){
+      shared_fx_done|=1u;
+      s->chorus[s->chorus_pos]=in;s->chorus_pos=(s->chorus_pos+1u)&(ETCH_CHORUS_SIZE-1u);
+     }
+     l=clip16(l+((chorus_wl-in)*(*mix))/32767);
+     r=clip16(r+((chorus_wr-in)*(*mix))/32767);
+    }else{
+     uint16_t wet=qclamp(chorus);
+     if(!(shared_fx_done&1u)){
+      shared_fx_done|=1u;
+      s->chorus_mix_smooth=etch_fx_slew(s->chorus_mix_smooth,wet);
+      uint32_t phase=s->chorus_phase;
+      s->chorus_phase=(phase+s->rate_step)&65535u;
+      uint32_t tri=phase<32768u?phase:65535u-phase;
+      uint32_t shift_l=(tri*s->chorus_span)>>7u;
+      uint32_t shift_r=((32767u-tri)*s->chorus_span)>>7u;
+      chorus_wl=etch_fx_chorus_read(s,264u*256u+shift_l);
+      chorus_wr=etch_fx_chorus_read(s,281u*256u+shift_r);
+      s->chorus[s->chorus_pos]=in;s->chorus_pos=(s->chorus_pos+1u)&(ETCH_CHORUS_SIZE-1u);
+     }
+     l=clip16(l+((chorus_wl-in)*s->chorus_mix_smooth)/32767);
+     r=clip16(r+((chorus_wr-in)*s->chorus_mix_smooth)/32767);
     }
-    l=clip16(l+((chorus_wl-in)*s->chorus_mix_smooth)/32767);
-    r=clip16(r+((chorus_wr-in)*s->chorus_mix_smooth)/32767);break;
+    break;
    }
    case RU_FX_DELAY:{
+    if(separated){
+     if(!s->ru_slot_delay_samples[slot]||s->ru_slot_delay_time[slot]!=p[0]){
+      s->ru_slot_delay_time[slot]=p[0];
+      s->ru_slot_delay_samples[slot]=(uint16_t)(384u+(uint32_t)qclamp(p[0])*15488u/32767u);
+     }
+     int32_t *mix=&s->ru_slot_delay_mix[slot];
+     *mix=etch_fx_slew(*mix,qclamp(p[3]));
+     uint32_t idx=(s->delay_pos-s->ru_slot_delay_samples[slot])&(ETCH_DELAY_SIZE-1u);
+     delay_wl=s->delay[idx];delay_wr=s->delay[(idx-97u)&(ETCH_DELAY_SIZE-1u)];
+     if(!(shared_fx_done&2u)){
+      shared_fx_done|=2u;
+      delay_input=in;
+     }
+     /* Each slot's FEEDBACK contributes to a single shared return. This
+      * is not an independent echo tank, but a second FEEDBACK knob now
+      * genuinely affects the sound without more PCM buffers. */
+     combined_delay_feedback+=(delay_wl*(int32_t)qclamp(p[1]))>>15;
+     combined_delay_count++;
+     l=clip16(l+(delay_wl*(*mix))/32767);
+     r=clip16(r+(delay_wr*(*mix))/32767);
+     break;
+    }
     if(!(shared_fx_done&2u)){
      shared_fx_done|=2u;
      s->delay_mix_smooth=etch_fx_slew(s->delay_mix_smooth,qclamp(delay));
@@ -1437,6 +1664,49 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
     r=clip16(r+(delay_wr*s->delay_mix_smooth)/32767);break;
    }
    case RU_FX_REVERB:{
+    if(separated){
+     /* Shared FDN tank is advanced only once. Per-slot wet level is
+      * independent; truly independent decays would require more audio RAM. */
+     if(!(shared_fx_done&4u)){
+      shared_fx_done|=4u;
+      uint16_t decay=qclamp(p[1]);
+      uint8_t engine=(uint8_t)p[0];
+      uint16_t span=qclamp(p[2]);
+      if(s->ru_reverb_last_type!=engine||s->ru_reverb_last_size!=span||
+         s->ru_reverb_last_decay!=decay){
+       s->ru_reverb_last_type=engine;s->ru_reverb_last_size=span;
+       s->ru_reverb_last_decay=decay;
+       switch(engine){
+        case 0u:s->tap1=(uint16_t)(641u+(uint32_t)span*1398u/32767u);
+         s->tap2=(uint16_t)(803u+(uint32_t)span*1254u/32767u);
+         s->reverb_spring_feedback=(uint16_t)(18500u+(uint32_t)decay*10200u/32767u);break;
+        case 2u:s->tap1=(uint16_t)(241u+(uint32_t)span*486u/32767u);
+         s->tap2=(uint16_t)(283u+(uint32_t)span*598u/32767u);
+         s->tap3=(uint16_t)(377u+(uint32_t)span*636u/32767u);
+         s->reverb_room_line4=(uint16_t)(489u+(uint32_t)span*986u/32767u);
+         s->reverb_room_feedback=(uint16_t)(20000u+(uint32_t)decay*10000u/32767u);break;
+        default:s->tap1=(uint16_t)(521u+(uint32_t)span*727u/32767u);
+         s->tap2=(uint16_t)(1471u+(uint32_t)span*1201u/32767u);
+         s->tap3=(uint16_t)(2897u+(uint32_t)span*1133u/32767u);break;
+       }
+       if(engine!=1u){
+        uint16_t lengths[4]={s->tap1,s->tap2,s->tap3,s->reverb_room_line4};
+        for(uint8_t k=0u;k<(engine==0u?2u:4u);k++)
+         if(s->reverb_line_cursor[k]>=lengths[k])s->reverb_line_cursor[k]=0u;
+       }
+      }
+      switch(engine){
+       case 0u:ru_reverb_spring(s,in,decay,&reverb_wl,&reverb_wr);break;
+       case 2u:ru_reverb_room(s,in,decay,&reverb_wl,&reverb_wr);break;
+       default:ru_reverb_hall(s,in,decay,&reverb_wl,&reverb_wr);break;
+      }
+     }
+     int32_t *mix=&s->ru_slot_reverb_mix[slot];
+     *mix=etch_fx_slew(*mix,qclamp(p[3]));
+     l=ru_fx_reverb_lerp(l,reverb_wl,(uint16_t)*mix);
+     r=ru_fx_reverb_lerp(r,reverb_wr,(uint16_t)*mix);
+     break;
+    }
     if(!(shared_fx_done&4u)){
      shared_fx_done|=4u;
      uint16_t decay=qclamp(c->reverb_decay);
@@ -1456,6 +1726,14 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
    l=clip16(dry_l+(int32_t)(((int64_t)(l-dry_l)*fade)/32767));
    r=clip16(dry_r+(int32_t)(((int64_t)(r-dry_r)*fade)/32767));
   }
+ }
+ if(chain->independent&&combined_delay_count){
+  /* Control count 1..8: Q9 reciprocal avoids a variable integer divide in
+   * the audio IRQ. A single delay remains exactly sample-identical. */
+  static const uint16_t reciprocal_q9[9]={0,512,256,171,128,102,85,73,64};
+  int32_t feedback=(combined_delay_feedback*reciprocal_q9[combined_delay_count])>>9;
+  s->delay[s->delay_pos]=clip16(delay_input+(feedback*27)/32);
+  s->delay_pos=(s->delay_pos+1u)&(ETCH_DELAY_SIZE-1u);
  }
  *left=wet_active?etch_fx_wet_safety(l,1u):clip16(l);
  *right=wet_active?etch_fx_wet_safety(r,1u):clip16(r);

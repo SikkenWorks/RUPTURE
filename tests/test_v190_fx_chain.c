@@ -21,6 +21,7 @@ static int32_t play(const struct rupture_fx_chain *chain){
 static void stereo_after_drive(void){
  struct rupture_fx_chain c;ru_chain_clear(&c);
  assert(ru_chain_insert(&c,0,RU_FX_DELAY));
+ c.parameter[0][0]=0u; /* V1.94: shortest tap belongs to this slot */
  assert(ru_chain_insert(&c,1,RU_FX_MOSFET));
  struct etch_native_fx fx;struct etch_fx_settings cfg;
  etch_fx_defaults(&cfg);etch_fx_reset(&fx);

@@ -3,7 +3,7 @@
 #include <string.h>
 #include "../vendor/etch-v1.88-source/firmware/fm1-native/rupture_ui.c"
 int main(void){
- assert(RU_HELP_CARD_COUNT==17u);
+ assert(RU_HELP_CARD_COUNT==18u);
  for(unsigned i=0;i<RU_HELP_CARD_COUNT;i++){
   assert(ru_help_cards[i].title[0]);
   for(unsigned j=0;j<5;j++)assert(ru_help_cards[i].line[j][0]);
@@ -17,6 +17,6 @@ int main(void){
  RuState s={0};s.page=RU_PAGE_PROJECTS;s.project=1;s.selected=1;
  for(int state=1;state<=4;state++){s.project_status=(uint8_t)state;ru_render(&s);assert(ru_get(8,73));}
  s.page=RU_PAGE_SEQ_SLOTS;s.seq_slot=1;s.seq_status=2;ru_render(&s);
- puts("PASS V1.92: 17 scrollable help cards; saved, failed and confirm feedback in both libraries");
+ puts("PASS V1.96: 18 scrollable help cards including STRICT scale; library feedback retained");
  return 0;
 }

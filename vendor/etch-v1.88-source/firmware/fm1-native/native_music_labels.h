@@ -13,8 +13,19 @@ static inline const char *etch_mode_name(uint8_t mode){
  return names[mode<9u?mode:0u];
 }
 static inline const char *etch_lock_name(uint8_t lock){
- static const char *const names[3]={"OFF","GUIDE","LOCK"};
- return names[lock<3u?lock:0u];
+ static const char *const names[4]={"OFF","GUIDE","LOCK","STRICT"};
+ return names[lock<4u?lock:0u];
+}
+/* User-facing order OFF -> GUIDE -> STRICT -> LOCK. Keep the persisted
+ * legacy LOCK value 2 unchanged; STRICT is encoded as 3. */
+static inline uint8_t etch_lock_step(uint8_t current,int32_t delta){
+ static const uint8_t order[4]={0u,1u,3u,2u};
+ int32_t pos=0;
+ for(uint8_t i=0u;i<4u;i++)if(order[i]==current){pos=i;break;}
+ pos+=delta;
+ if(pos<0)pos=0;
+ if(pos>3)pos=3;
+ return order[pos];
 }
 
 /* Four physical-parameter cells are only 60 pixels wide at 8px glyphs. */

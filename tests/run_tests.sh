@@ -333,7 +333,7 @@ python3 tests/test_v179_pcm_parity.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v1883_env_animation.c -o /tmp/rupture_v1883_env && /tmp/rupture_v1883_env
 python3 tests/test_v165_png_parity.py
 python3 tests/test_v170_hold_png_parity.py
-python3 tests/test_v193_release_ota.py
+python3 tests/test_v199_release_ota.py
 bash tests/pop_fix/run_pop_tests.sh
 
 # V1.90: ordered fixed-memory insert chain, per-patch GLIDE and step SLIDE,
@@ -385,3 +385,70 @@ bash tests/pop_fix/run_pop_tests.sh
  vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
  -lm -o /tmp/rupture_v193_repeat && /tmp/rupture_v193_repeat
+
+"$cc" -std=c11 -O2 -w -fsanitize=undefined -fno-sanitize-recover=all \
+ -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v194_independent_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v194_independent && /tmp/rupture_v194_independent
+
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v194_unique_pcm_parity.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v194_parity && /tmp/rupture_v194_parity
+
+# Exact V1.94 PCM oracle: each of the ten FX types in 1 and 8 slots,
+# each with independent parameter banks; bypass + reorder while sounding.
+"$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v195_pcm_oracle.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v195_oracle_test && /tmp/rupture_v195_oracle_test
+
+"$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v195_legacy_hidden_pcm.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v195_hidden_test && /tmp/rupture_v195_hidden_test
+
+"$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v195_live_wah_knobs.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v195_knobs_test && /tmp/rupture_v195_knobs_test
+
+# V1.96: new STRICT after GUIDE, legacy LOCK compatibility, LEDs, hardware
+# key suppression, MIDI note suppression and unaltered audible GUIDE notes.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v196_strict_scale.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/audio_core.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
+ -lm -o /tmp/rupture_v196_strict && /tmp/rupture_v196_strict
+
+# V1.97: GLIDE-only camera shake, bit-exact 224x30 panels and visual isolation.
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function \
+ tests/test_v197_glide_tunnel.c -o /tmp/rupture_v197_glide && /tmp/rupture_v197_glide
+
+# V1.98: immediate per-preset GLIDE staging and the existing manual/autosave
+# PJT35 codec roundtrip, without any new storage records or audio work.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v198_glide_save_autosave.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v198_glide_save && /tmp/rupture_v198_glide_save
+
+# V1.99: GLIDE sprites/camera freeze without a sounding note; resume on a
+# real voice gate, plus exact 1-bit GUIDE text in the advertised mode order.
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function \
+ tests/test_v199_glide_gate_guide_labels.c \
+ -o /tmp/rupture_v199_glide_guide && /tmp/rupture_v199_glide_guide
