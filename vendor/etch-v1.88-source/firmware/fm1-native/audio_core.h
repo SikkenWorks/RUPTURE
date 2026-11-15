@@ -23,6 +23,7 @@ extern struct etch_native_bank native_banks[3]; /* shared preallocated mip banks
 #define ETCH_MONO_STACK 6u /* exactly six notes remembered, one audible voice */
 #include "native_cxs_q15.h"
 #include "rupture_subosc.h"
+#include "rupture_fx_chain.h"
 #else
 #define ETCH_MONO_STACK 48u
 #endif
@@ -42,6 +43,8 @@ struct etch_native_audio {
  uint32_t cxs_lfo_phase;int32_t cxs_body_low;int32_t saw_low;uint16_t main_saw_mix;
  uint32_t mono_current_inc,mono_target_inc,mono_glide_left;
  uint16_t mono_glide_ms;uint8_t mono_priority,mono_legato,mono_bend_range;
+ uint8_t mono_glide_mode,mono_glide_curve,mono_env_retrigger;
+ uint8_t mono_force_slide;
 #endif
  struct etch_native_voice voice[ETCH_NATIVE_VOICES];
  uint32_t keys;int32_t morph,depth;uint32_t alloc_serial;uint8_t steal;uint16_t sustain;uint32_t bend[16];
@@ -69,6 +72,11 @@ struct etch_native_controls {uint16_t morph,depth,gain;
  uint8_t cxs_weight,cxs_edge,cxs_bite,cxs_punch;
  uint8_t sub_type[2],sub_octave[2],sub_detune[2],sub_drift[2],sub_blend[2];
  uint8_t note_priority,note_legato,note_bend_range;uint16_t note_glide_ms;
+ uint8_t note_glide_mode,note_glide_curve,note_env_retrigger;
+ struct rupture_fx_chain fx_chain;
+ uint8_t fx_chain_active;
+ uint16_t fx_chain_drive;
+ const uint8_t *seq_slide_bits;
  uint32_t live_bend_q16;
 #endif
 int8_t octave;const struct etch_native_bank *bank;

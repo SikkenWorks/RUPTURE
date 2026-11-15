@@ -13,7 +13,7 @@ ui=(N/'rupture_ui.c').read_text()
 assert 'PRESETS: BPM EVEN IN REC' in help and 'ALGORITHM: CLICK VOL 0-100' in help
 assert 'ALG EXTENDS HOLD WHEN NOT REC' in help and 'HOLD SEQ TURN PRESETS' in help
 assert 'SEQ+PRESETS: SHIFT ALL STEPS' in tour and 'REC HOLD KEY FOR SUSTAIN' in tour
-assert 'SEQ+PRESETS SHIFT / SAVE SEQUENCES' in ui
+assert 'SEQ+K4 SLIDE / SAVE SEQUENCES' in ui
 assert 'line_pitch=lesson->page==RU_PAGE_SEQ?8:11' in ui
 readme=(R/'README.md').read_text()
 cheat=(R/'CHEAT-SHEET.html').read_text()

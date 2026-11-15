@@ -281,12 +281,17 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
  struct etch_native_voice *v=&s->voice[0];
  uint32_t target=etch_note_inc[m->pitch];
 #ifdef RUPTURE_BUILD
- if(!fresh && s->mono_legato && v->active && v->held){
+ uint8_t was_playing=(uint8_t)(v->active&&v->held);
+ uint8_t should_glide=(uint8_t)(s->mono_glide_ms &&
+  ((s->mono_force_slide && v->active) ||
+  (s->mono_glide_mode && was_playing &&
+   (s->mono_glide_mode==2u || (!fresh&&s->mono_glide_mode==1u)))));
+ if(should_glide && (!s->mono_env_retrigger || !fresh)){
   /* Preserve one CXS voice, its envelope and filter state. A bounded glide
    * moves only the pitch increment, not a second oscillator. */
   if(!s->mono_current_inc)s->mono_current_inc=v->inc?v->inc:target;
   s->mono_target_inc=target;
-  s->mono_glide_left=s->mono_glide_ms?(uint32_t)s->mono_glide_ms*44u:0u;
+  s->mono_glide_left=(uint32_t)s->mono_glide_ms*44u;
   if(!s->mono_glide_left)s->mono_current_inc=target;
   v->note=m->id;v->inc=target;
   v->velocity=m->velocity;v->down=m->down;v->gate_left=m->gate_left;
@@ -295,6 +300,7 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
 #endif
  on(s,m->pitch,m->id);
 #ifdef RUPTURE_BUILD
+ uint32_t old_pitch=s->mono_current_inc;
  rupture_q15_init(&s->cxs,target);
  /* On a new note begin in the selected engine; no extra transition CPU. */
  s->main_saw_mix=0u;
@@ -302,6 +308,9 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
  ru_sub_init(&s->sub[0],target,0x3c102acd);
  ru_sub_init(&s->sub[1],target,0xd477629f);
  s->mono_current_inc=s->mono_target_inc=target;s->mono_glide_left=0u;
+ if(should_glide && old_pitch){
+  s->mono_current_inc=old_pitch;s->mono_glide_left=(uint32_t)s->mono_glide_ms*44u;
+ }
 #endif
  v->velocity=m->velocity;v->down=m->down;v->gate_left=m->gate_left;
 }
@@ -737,6 +746,10 @@ static uint8_t perf_tick(struct etch_native_audio *s,const struct etch_native_co
    * was reduced while the sequence was running. */
   uint16_t length=(c->seq_length==4||c->seq_length==8||c->seq_length==16||c->seq_length==32||c->seq_length==64||c->seq_length==128||c->seq_length==256)?c->seq_length:16;
   uint16_t step=(uint16_t)(s->perf_step%length);
+#ifdef RUPTURE_BUILD
+  s->mono_force_slide=(uint8_t)(c->seq_slide_bits &&
+    (c->seq_slide_bits[step>>3u]&(1u<<(step&7u))));
+#endif
   s->perf_current_step=(uint8_t)step;
   s->perf_played=1u;
 #ifdef RUPTURE_BUILD
@@ -766,6 +779,9 @@ static uint8_t perf_tick(struct etch_native_audio *s,const struct etch_native_co
    if(note<=127)perf_on(s,note,127,s->perf_gate);
   }
   s->perf_step=(uint8_t)((step+1)%length);
+#ifdef RUPTURE_BUILD
+  s->mono_force_slide=0u;
+#endif
  }else {uint8_t note=arp_pick(s,c,keys);if(note<=127)perf_on(s,note,127,s->perf_gate);}
  return 1u; /* step boundary: recalculate oscillator rates this sample */
 }
@@ -819,7 +835,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
 #ifdef RUPTURE_BUILD
  s->mono_priority=c->note_priority<=2u?c->note_priority:0u;
  s->mono_legato=(uint8_t)(c->note_legato!=0u);
- s->mono_glide_ms=c->note_glide_ms>400u?400u:c->note_glide_ms;
+ s->mono_glide_ms=c->note_glide_ms>2000u?2000u:c->note_glide_ms;
+ s->mono_glide_mode=c->note_glide_mode;
+ s->mono_glide_curve=c->note_glide_curve;
+ s->mono_env_retrigger=c->note_env_retrigger;
  s->mono_bend_range=c->note_bend_range>12u?12u:c->note_bend_range;
 #endif
  keys&=0x7ffffffu;
@@ -1209,8 +1228,8 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
     * and uses a bounded integer ramp with no heap or extra voice. */
    if(i==0u && s->mono_current_inc){
     if(s->mono_glide_left){
-     s->mono_current_inc=rupture_glide_next(s->mono_current_inc,
-       s->mono_target_inc,s->mono_glide_left);
+     s->mono_current_inc=rupture_glide_next_curve(s->mono_current_inc,
+       s->mono_target_inc,s->mono_glide_left,s->mono_glide_curve);
      if(!--s->mono_glide_left)s->mono_current_inc=s->mono_target_inc;
     }
     /* RUPTURE disables legacy Organic drift. Apply the exact same
@@ -1496,8 +1515,17 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
     *destination=(uint16_t)(n<0?0:n>32767?32767:n);}
   }else if((f&31u)==0u)s->c_fx_smooth=0;
   if(matrix_global_done)locked.reverb=matrix_reverb;
+#ifdef RUPTURE_BUILD
+  if(!c->fx_chain_active)
+#endif
   etch_fxb_mask_master(c->fx_bypass_mask,&locked.fx_settings,&locked.chorus,&locked.delay,&locked.reverb);
   int16_t l=0,r=0;
+#ifdef RUPTURE_BUILD
+  if(c->fx_chain_active)rupture_fx_process_ordered(&s->fx,(int16_t)clamp15(mix),
+    locked.chorus,locked.delay,locked.reverb,c->fx_chain_drive,&locked.fx_settings,
+    &c->fx_chain,c->fx_bypass_mask,&l,&r);
+  else
+#endif
   etch_fx_process_stereo_masked(&s->fx,(int16_t)clamp15(mix),locked.chorus,locked.delay,locked.reverb,&locked.fx_settings,c->fx_bypass_mask,&l,&r);
   if(preview_mix){
    int32_t alpha=preview_mix;

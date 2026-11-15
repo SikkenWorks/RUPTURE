@@ -17,4 +17,15 @@ static inline uint32_t rupture_glide_next(uint32_t current,uint32_t target,uint3
  if(current>target){uint32_t step=(current-target)/remaining;return current-(step?step:1u);}
  return current;
 }
+/* Exponential portamento approaches the pitch more quickly at first,
+ * then eases into the target; final sample is exact, never asymptotic. */
+static inline uint32_t rupture_glide_next_curve(uint32_t current,uint32_t target,
+ uint32_t remaining,uint8_t curve){
+ if(!remaining)return target;
+ if(!curve)return rupture_glide_next(current,target,remaining);
+ uint32_t divisor=(remaining>>1u)+1u;
+ if(current<target){uint32_t step=(target-current)/divisor;return current+(step?step:1u);}
+ if(current>target){uint32_t step=(current-target)/divisor;return current-(step?step:1u);}
+ return current;
+}
 #endif

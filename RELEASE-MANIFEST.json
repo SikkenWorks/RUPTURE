@@ -1,13 +1,13 @@
 {
-  "version": "1.89",
+  "version": "1.93",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.89.fwsc",
+  "firmware_file": "RUPTURE-V1.93.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "4255049edb3003c1c0868e075a8c0a226aa8c33af838aa8cf447cac6c103d74b",
-  "app_bytes": 386368,
-  "app_sha256": "5789656a28746cac09428444098e7d029ae2ed813927eced5db2f720e6d18f80",
+  "firmware_sha256": "3f9bf16e6f6f456941593c88659582c9b617218078dc4a9a884e66765f295bc8",
+  "app_bytes": 395976,
+  "app_sha256": "e9a46ecb2f0806c912560fc4f592f12214a8426d476bb2ed35dd249d87ba1a15",
   "native_screens": 126,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -75,7 +75,16 @@
     "V1.86.1: K3 curve response is cross-built and unit/PCM-tested, but the encoder feel, CRT UI readability, real hardware DMA margin and post-USB-C power-on pop require physical FM1 validation. The K3 curve is performance/session state, not saved with a project.",
     "V1.87: More detailed Everest BEND sprite graphics are prepacked in ROM and require no extra DSP or audio ISR work, but FM1 LCD timings, UI refresh and actual real-time audio DMA stability require physical validation.",
     "V1.88: All five 8-frame BEND animations are packed in ROM; no extra DSP/audio interrupt processing, but FM1 LCD throughput, audio DMA stability, and physical OTA need device validation.",
-    "V1.88.1: Art is derived from an approved 1536x1024 JPEG composite, not lossless individual sprite sources; downsampling into the 224x30 1-bit BEND panel necessarily loses detail."
+    "V1.88.1: Art is derived from an approved 1536x1024 JPEG composite, not lossless individual sprite sources; downsampling into the 224x30 1-bit BEND panel necessarily loses detail.",
+    "V1.90 FX chain and GLIDE are host-tested only; test audio latency, maximum eight-FX CPU load, real sequencer slide and project SAVE/reboot on an FM1 before live use.",
+    "V1.90 FX chain and GLIDE are host-tested only; test audio latency, maximum eight-FX CPU load, real sequencer slide and project SAVE/reboot on an FM1 before live use.",
+    "V1.90 FX chain and GLIDE are host-tested only; test audio latency, maximum eight-FX CPU load, real sequencer slide and project SAVE/reboot on an FM1 before live use.",
+    "V1.91 reduces dry and MOSFET processing, but a maximum eight-effect chain may still cost more CPU than V1.89. Real FM1 DMA timing, rapid chain edits and eight-FX live stability require physical verification before performance use.",
+    "V1.91 reduces dry and MOSFET processing, but a maximum eight-effect chain may still cost more CPU than V1.89. Real FM1 DMA timing, rapid chain edits and eight-FX live stability require physical verification before performance use.",
+    "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
+    "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
+    "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
+    "V1.93 repeated effects share one parameter set per type. Repeat Chorus, Delay and Reverb inserts share one delay/chorus/reverb tank rather than being independent copies; this avoids additional SRAM but is not the same sound as two independent hardware effects. Each active insertion still adds processing; maximum FX CPU/DMA margin requires an FM1 test. V1.92 cannot decode PJT35 projects with repeated effect IDs."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -189,7 +198,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "Speaker POPFIX from user-provided V1.88.2 with full V1.88.3 ENV animation",
+  "release_feature": "Repeatable effects in eight real ordered slots; simpler Glide screen",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -321,7 +330,7 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "Clock silent I2S DMA before codec PC0/2/1; settle codec for 300 ms before LED activation; retain PC6 400 ms LED/USB/clock gating and soft PCM ramp. Original V1.88.3 20-frame ENV stays intact. Trusted OTA loader and protected header byte-identical to V1.88.3. Hardware acoustic test pending.",
+  "release_note": "The eight independently enabled/reorderable FX slots can contain the same type repeatedly. Every type still uses its project-wide parameters. Chorus, Delay and Reverb repeat the wet-return insert while sharing one native ring per type; they are not independent reverb or delay tanks. No additional voices or PCM rings. Existing unique FX routes retain exact V1.92 PCM parity. GLIDE now shows PORTAMENTO without explanatory subtitle. Hardware CPU/DMA validation remains mandatory before live use.",
   "headroom_qualification": "PCM-exact native candidate; actual FM1 89% DSP, DMA LATE 28, GUARD 23 must be remeasured after installation. No all-load stability guarantee until a full hardware soak passes.",
   "v180": {
     "reverb_engines": [
@@ -520,5 +529,93 @@
     "loader_sha256": "d71d1b7c12adede951605e758a3580dacccedc427d49e1fceaf51decccc68a4b",
     "bootheader_sha256": "a65e0e1a2fad1db943c00b529b45553c524257146145db61b69628cefcf2b2c9",
     "acoustic_pop_physically_verified": false
+  },
+  "fx_chain_glide_v190": {
+    "fx_slots": 8,
+    "fx_processors": [
+      "REVERB",
+      "DELAY",
+      "CHORUS",
+      "MOSFET",
+      "COMP",
+      "TILT",
+      "FUZZ",
+      "SAND"
+    ],
+    "new_project_fx_slots_empty": true,
+    "new_fx_enabled_by_default": true,
+    "fx_reorder_changes_pcm": true,
+    "fx_duplicate_instances_allowed": true,
+    "glide_time_max_ms": 2000,
+    "glide_modes": [
+      "OFF",
+      "LEGATO",
+      "ALWAYS"
+    ],
+    "glide_curves": [
+      "LINEAR",
+      "EXP"
+    ],
+    "step_slide": true,
+    "project_codec_version": 35,
+    "legacy_routing_preserved_until_edit": true,
+    "trusted_loader_sha256": "d71d1b7c12adede951605e758a3580dacccedc427d49e1fceaf51decccc68a4b",
+    "protected_bootheader_sha256": "a65e0e1a2fad1db943c00b529b45553c524257146145db61b69628cefcf2b2c9",
+    "physical_fm1_verified": false
+  },
+  "realtime_v191": {
+    "zero_slot_fast_dry": true,
+    "bounded_old_tank_flush": true,
+    "mosfet_division_free_runtime": true,
+    "mosfet_transfer_rom_points": 257,
+    "reuses_v189_four_fx_fastpath_when_safe": true,
+    "fx_sel_opens_parameters": true,
+    "fx_k4_on_off": true,
+    "no_additional_audio_voices": true,
+    "hardware_dma_margin_verified": false,
+    "eight_fx_not_heavier_than_v189_verified": false
+  },
+  "fx_expansion_v192": {
+    "available_types": 10,
+    "simultaneous_slots": 8,
+    "new_types": [
+      "DISTORTION",
+      "WAH WAH"
+    ],
+    "distortion_params": [
+      "DRIVE",
+      "BIAS",
+      "TONE",
+      "MIX"
+    ],
+    "wah_params": [
+      "SENS",
+      "SPEED",
+      "RESONANCE",
+      "MIX"
+    ],
+    "project_codec_version": 35,
+    "reuses_existing_persisted_fx_fields": true,
+    "no_new_pcm_rings": true,
+    "new_fx_cpu_idle_when_not_inserted": true,
+    "backward_firmware_can_read_new_type_ids": false,
+    "real_fm1_live_verified": false
+  },
+  "fx_repeat_v193": {
+    "simultaneous_slots": 8,
+    "available_types": 10,
+    "duplicate_type_in_slots_allowed": true,
+    "slot_bypass_ramps_independent": true,
+    "fx_type_parameters_shared": true,
+    "chorus_delay_reverb_single_shared_tank": true,
+    "time_fx_tank_updates_per_pcm_frame_max": 1,
+    "shared_wah_comp_tone_state_updates_per_frame_max": 1,
+    "new_pcm_buffers": 0,
+    "unchanged_unique_fx_pcm_oracle": true,
+    "glide_heading": "PORTAMENTO",
+    "glide_old_subtitle_removed": true,
+    "hardware_cpu_margin_verified": false,
+    "fully_independent_repeated_fx_implemented": false,
+    "v192_can_load_projects_with_duplicate_fx_types": false
   }
 }

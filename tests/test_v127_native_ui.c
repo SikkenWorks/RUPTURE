@@ -16,7 +16,7 @@ int main(void){
  ru_render(&s);assert(count_pixels(12,69,216,64)>0);
  s.selected=1;s.auto_save=1;ru_render(&s);
  s.settings_open=1;ru_render(&s);assert(count_pixels(12,72,216,111)>0);
- s.settings_open=0;s.auto_save=1;ru_render(&s);assert(count_pixels(166,110,14,14)>0); /* direct checkbox; legacy modal removed */
+ s.settings_open=0;s.auto_save=1;ru_render(&s);assert(count_pixels(187,87,19,13)>0); /* visible ON status; legacy modal removed */
  s.page=RU_PAGE_GLO;s.settings_open=0;s.selected=1;ru_render(&s);
  assert(ru_get(12,48)&&ru_get(12,82)&&ru_get(12,116)&&ru_get(12,150)&&ru_get(12,184));
  s.saver_active=1;s.saver_frame=0;ru_render(&s);

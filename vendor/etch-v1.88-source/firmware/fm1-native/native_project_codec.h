@@ -18,6 +18,7 @@
 #include "native_perf_scenes.h"
 #ifdef RUPTURE_BUILD
 #include "rupture_fx_memory.h"
+#include "rupture_v190_project.h"
 #endif
 #define ETCH_PROJECT_MAX_BYTES ((ETCH_P04_EXPANDED ? ETCH_STORE_EXT_BANK_BYTES : ETCH_STORE_SPARE_ENABLED ? ETCH_STORE_SPARE_BANK_BYTES : ETCH_STORE_BANK_BYTES)-256u)
 /* PJT26: independently saved, non-audio-IRQ state for each named preset.
@@ -66,6 +67,7 @@ struct etch_project_settings {
 #ifdef RUPTURE_BUILD
  struct rupture_fx_memory rupture_fx; /* PJT33: project-scoped, zero additional flash sectors */
  struct rupture_eq2_params eq2; /* PJT34: 7-byte EQ 2.0 frequency/Q and mode */
+ struct rupture_v190_project v190; /* PJT35: eight FX + per-patch GLIDE + step SLIDE */
 #endif
  uint8_t mono_mode; /* 0=POLY, 1=MONO; saved per project, V12+ */
  uint8_t source_version; /* read-only runtime metadata; not encoded */

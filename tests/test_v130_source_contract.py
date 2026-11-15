@@ -7,9 +7,9 @@ assert 'ru_legacy_empty_seq' in b and 'native_project_cfg.patterns.lengths[slot]
 assert 'ru_store_legacy_sequence_name' in (n/'wave_store.c').read_text()
 assert 'RU_PAGE_BUG_REPORT' in ui and 'SCAN TO REPORT A BUG' in ui
 assert 'ru_bug_qr_white' in ui and 'ru_bug_qr_black' not in ui
-assert 'ru_land_horizon' in ui and 'ru_fault_center' in ui
-assert 'ru_saver_frame<63u' in b
-assert 'RU_PAGE_BUG_REPORT' in b and 'ru_selected+select,0,4' in b
-assert 'ru_center(num,195,y+12,1)' in ui and 'ru_center(v->auto_save?"ON":"OFF",195,y+12,1)' in ui
+assert 'ru_city_fault_x' in ui and 'ru_crack_saver' in ui
+assert 'ru_saver_step(&ru_saver_frame' in b
+assert 'RU_PAGE_BUG_REPORT' in b and 'ru_selected+select,0,6' in b
+assert 'ru_center(num,195,y+9,1)' in ui and 'ru_center(v->auto_save?"ON":"OFF",195,y+9,1)' in ui
 assert not any(x in (r/'README.md').read_text() for x in ('# V1.29', '# V1.30', '# V1.31', '## Changelog'))
 print('PASS V1.30 native input + storage source contract')

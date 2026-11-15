@@ -1,3 +1,62 @@
+# RUPTURE V1.93 — Repeatable FX Slots
+
+## V1.93 (2026-11-15)
+
+- GLIDE panel now shows simply **PORTAMENTO**; removed the **MONO** qualifier and **PITCH ONLY / NO EXTRA VOICE** line.
+- Permit duplicate FX types in any of the eight slots. Insertion still enables the slot. Each slot independently stores its type, ON/OFF bit and short bypass fade; reordering changes the signal order. PJT35 archive size is unchanged and duplicates round-trip through save/load.
+- For CHORUS, DELAY and REVERB, read their original fixed-size tank once per sample and reuse its return for later occurrences in the chain. In particular, do **not** advance the same ring twice in one PCM frame, which would halve its delay timing. No additional PCM buffers or voices were added.
+- Likewise, repeated WAH, COMP, TILT, FUZZ and SAND do not advance their common envelope/filter state repeatedly within one PCM frame. DISTORTION repeats its clip stage, but updates the shared tone-smoothing memory at most once per frame. This protects envelope speeds and avoids gratuitous DSP work; shared per-type settings remain deliberate.
+- All repeated types currently use shared per-type parameters. The three time-based effects also share a processor history and are therefore layered insert applications, **not independent effect copies** with distinct tanks. Fully independent duplicate reverb/delay histories would require additional SRAM and CPU and are outside this conservative hardware budget.
+- Although the PJT35 record length is unchanged, older V1.92 builds reject repeated effect IDs. Save a backup and remove duplicates before downgrading.
+- Previous unique-type chains reproduce exactly the same PCM hashes as V1.92, including Distortion/Wah and their real order. Verified repeated types, individual bypass and unchanged tank cursor advance with host tests. This does not establish actual FM1 CPU margin, reliability on stage or equal worst-case cost when new inserts are active.
+- Preserved trusted OTA, two flash IDs, POPFIX and unchanged project codec format. Hardware validation is mandatory before live use.
+
+---
+
+# RUPTURE V1.92 — Distortion and Wah Wah
+
+## V1.92 (2026-11-15)
+
+- Expanded the FX library from eight to **ten algorithms**, with **eight ordered insert slots** unchanged. Added DISTORTION and WAH WAH; no change to supported simultaneous slot count.
+- DISTORTION: K1 DRIVE, K2 BIAS (asymmetry), K3 TONE and K4 MIX. Hard-clipping character with a smoothed one-pole tone stage and bounded output; separate from MOSFET and Octave Fuzz.
+- WAH WAH: K1 SENS, K2 SPEED, K3 RESONANCE and K4 MIX. Stable envelope-following auto-wah with one-pole bandpass sections. No additional delay buffer or filter state array.
+- Both effects are processed only at their real slot positions; FX-list SEL still opens parameters, K4 toggles ON/OFF and ALGORITHM reorders the actual signal path. Inserting a new effect automatically enables it.
+- Preserved the fast combined COMP/TILT/FUZZ/SAND DSP branch even when Wah or Distortion parameters are nonzero later in the chain. Avoids accidentally processing Wah twice and avoids a sizable unnecessary worst-case audio load. Both new MIX controls have smooth sample-rate transitions.
+- Reused the existing four persisted Q15 parameter fields for each effect, so the PJT35 and GLIDE record sizes are unchanged. Removed-effect fades are cleared outside the audio interrupt, avoiding stale fade states and keeping the idle DSP shortcut effective.
+- Updated HELP and the read-only 49-screen quick tour. Added full-range host arithmetic/routing tests and a real project save/load test for both effects.
+- **Hardware qualification pending:** maximum eight-insert CPU use may exceed V1.89, especially with the new algorithms. FM1 DMA margin and stage reliability still require physical measurements. **Downgrade warning:** V1.91 will refuse projects with the new effect IDs 8 and 9, even though both versions use PJT35. Back up projects before changing firmware.
+
+---
+
+# RUPTURE V1.91 — FX Reliability and Real-Time Optimizations
+
+## V1.91 (2026-11-15)
+
+- FX slot **SEL now opens parameters** for a filled slot; **turn K4 clockwise for ON, counterclockwise for OFF**. Empty-slot SEL still opens the effect picker. K1 opens the effect library, SELECT scrolls slots and ALGORITHM changes actual signal order.
+- Added the exact-PCM empty/bypassed-chain dry fastpath and bounded residual tail flushing. Processing cost drops in the common zero-FX case without changing the direct output.
+- Replaced per-sample variable integer division in the MOSFET output stage with a fixed 257-point ROM transfer function; host stress tests verify its symmetry, monotonicity and bounded arithmetic.
+- Reused the preexisting 4-processor combined DSP path where COMP/TILT/FUZZ/SAND appear in their historical order and audio state permits, while retaining arbitrary signal-chain ordering.
+- FX reordering, insertion and bypass now publish the nine-byte chain together with tone-effect enable switches in one short interrupt-guarded transaction, avoiding a half-updated signal route in the audio callback.
+- No added oscillators, sample voices, audio allocations, ISR waits, flash writes or UI calculations in the sample loop.
+- **Safety qualification:** Although the full eight-effect DSP path is faster on the host than V1.90, it is still more expensive in the worst case than the former V1.89 four-effect engine. FM1 hardware cycle/DMA margin and live performance remain **unverified**. This version is intended for controlled tests before show use.
+- Preserved PJT35 project and GLIDE compatibility, protected 16 KiB bootheader, trusted OTA, both supported JEDEC flash IDs and V1.89 speaker startup sequence.
+
+---
+
+# RUPTURE V1.90 — GLIDE and Eight-Slot FX Chain
+
+## V1.90 (2026-11-15)
+
+- Added a dedicated GLIDE synthesizer page after SUB OSC 2 with 0–2000 ms time, OFF/LEGATO/ALWAYS modes, LINEAR/EXP interpolation and envelope retrigger ON/OFF.
+- Added SEQ-held K4 to mark individual stopped-sequencer steps as SLIDE, using the patch's glide duration.
+- Reworked the FX menu into eight individually scrollable, initially empty insert slots. Add/replace/remove from the FX library; each new FX starts enabled. SEL toggles a filled slot, EDIT opens its existing parameter page, and ALGORITHM moves the selected effect and its ON/OFF status one slot at a time.
+- Implemented a genuine ordered PCM/DSP graph. REVERB, DELAY, CHORUS, MOSFET, COMP, TILT, FUZZ and SAND consume the same fixed native processor instances, so duplicate effect types are disallowed. Effect order now changes the audio signal, not just the list display.
+- Extended the project archive to **PJT35** with an additional 106 bytes for the FX chain, per-preset Glide settings and sequencer SLIDE flags. Legacy PJT34 projects retain their original audio processing order until the user edits the chain.
+- Updated HELP, native quick tour and UI controls; retained V1.89 POPFIX, full ENV/BEND art, dual JEDEC flash-chip recognition, Web MIDI connection fix and the trusted OTA loader and protected bootheader byte-identically.
+- Cross-compile and host codec/FX tests pass. Full hardware audio latency, highest FX CPU load and SAVE/reboot tests must be verified on a physical FM1 before regular use.
+
+---
+
 # RUPTURE V1.89 — Speaker Pop Fix
 
 ## V1.89 (2026-11-13)

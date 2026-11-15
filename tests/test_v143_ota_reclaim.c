@@ -4,6 +4,9 @@
  */
 #include <stdint.h>
 static void ota_progress_update(uint32_t done,uint32_t total) {(void)done;(void)total;}
+/* Production bringup.c owns this live flash probe; the isolated OTA simulator
+ * does not link bringup and must supply a known-supported JEDEC fixture. */
+static uint32_t native_flash_jedec_cached=0x856014u;
 #define main v143_unused_legacy_main
 #include "../vendor/etch-v1.88-source/tests/test_native_ota.c"
 #undef main

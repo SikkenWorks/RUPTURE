@@ -794,6 +794,8 @@ static uint8_t ru_home_used,ru_seq_used;
 static int16_t ru_battery_percent=-1;
 static int32_t ru_battery_filtered=-1;
 static uint8_t ru_fx_selected=0u;
+static uint8_t ru_fx_picker=0u,ru_fx_pick_error=0u;
+static uint8_t ru_glide_mode=0u,ru_glide_curve=0u,ru_glide_retrigger=1u;
 /* Project-scoped PJT33 persistence; saved on manual SAVE and guarded autosave. */
 /* Transient Shaper removed from RUPTURE. Old PJT33 bytes are reused for SUB BLEND. */
 static uint8_t ru_tilt[4]={50u,50u,65u,50u},ru_fuzz[4]={55u,75u,65u,65u};
@@ -801,6 +803,9 @@ static uint8_t ru_tilt_enabled=0u,ru_fuzz_enabled=0u;
 static uint8_t ru_sand[4]={60u,40u,45u,80u};
 static uint8_t ru_sand_enabled=0u;
 static void ru_fx_apply_extra(void);
+static void native_parameter_publish(void);
+static void ru_nav_to(uint8_t page);
+static uint8_t first_frame;
 /* EQ 2.0 coefficient generation is strictly outside the audio interrupt.
  * Recomputed only on parameter changes / after a native audio reset. */
 static uint8_t ru_eq_tab;
@@ -832,7 +837,7 @@ static void ru_fx_store_to_project(void){
  x->knobs[0][2]=60u;x->knobs[0][3]=65u;
  x->enabled=(uint8_t)(0x30u|(ru_tilt_enabled<<1u)|(ru_fuzz_enabled<<2u)|(ru_sand_enabled<<3u));
  x->bypass=native_fx_bypass_mask;
- native_project_cfg.source_version=34u;
+ native_project_cfg.source_version=35u;
 }
 static void ru_fx_restore_from_project(void){
  const struct rupture_fx_memory *x=&native_project_cfg.rupture_fx;
@@ -854,13 +859,75 @@ static void ru_fx_restore_from_project(void){
  ru_fuzz_enabled=(uint8_t)!!(x->enabled&4u);
  ru_sand_enabled=(uint8_t)!!(x->enabled&8u);
  native_fx_bypass_mask=x->bypass;
+ if(native_project_cfg.source_version<35u){
+  ru_v190_defaults(&native_project_cfg.v190);
+  native_project_cfg.v190.legacy_chain=1u;
+ }
  ru_eq_tab=0u;
  ru_eq2_apply();
  ru_fx_apply_extra();
 }
+static void ru_fx_migrate_legacy(void){
+ if(native_project_cfg.source_version<35u){
+  /* Unmodified historical projects stay on the old, sample-identical
+   * processor order. Their active effects appear as editable slots. */
+  static const uint8_t order[RU_FX_SLOTS]={RU_FX_COMP,RU_FX_TILT,RU_FX_FUZZ,
+      RU_FX_SAND,RU_FX_CHORUS,RU_FX_DELAY,RU_FX_REVERB,RU_FX_MOSFET};
+  ru_chain_clear(&native_project_cfg.v190.chain);
+  uint8_t index=0u;
+  for(uint8_t k=0u;k<RU_FX_SLOTS;k++){
+   uint8_t t=order[k],active=0u;
+   switch(t){
+    case RU_FX_COMP:active=(uint8_t)(native_fx_settings.comp_ratio && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_COMP)));break;
+    case RU_FX_TILT:active=ru_tilt_enabled;break;
+    case RU_FX_FUZZ:active=ru_fuzz_enabled;break;
+    case RU_FX_SAND:active=ru_sand_enabled;break;
+    case RU_FX_CHORUS:active=(uint8_t)(native_chorus && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_CHORUS)));break;
+    case RU_FX_DELAY:active=(uint8_t)(native_delay && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_DELAY)));break;
+    case RU_FX_REVERB:active=(uint8_t)(native_reverb && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_REVERB)));break;
+    case RU_FX_MOSFET:active=(uint8_t)(native_drive && !(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_DRIVE)));break;
+   }
+   if(active){ru_chain_insert(&native_project_cfg.v190.chain,index,t);index++;}
+  }
+ }
+}
 static uint8_t ru_fx_page_for_selection(uint8_t selected){
  return selected<4u?(uint8_t)(RU_PAGE_REVERB+selected):
-  (selected==4u?RU_PAGE_COMP:selected==5u?RU_PAGE_TILT:selected==6u?RU_PAGE_FUZZ:RU_PAGE_SANDPAPER);
+  (selected==4u?RU_PAGE_COMP:selected==5u?RU_PAGE_TILT:
+   selected==6u?RU_PAGE_FUZZ:selected==7u?RU_PAGE_SANDPAPER:
+   selected==RU_FX_DISTORTION?RU_PAGE_DISTORTION:RU_PAGE_WAH);
+}
+static void ru_fx_sync_chain(void){
+ struct rupture_fx_chain *c=&native_project_cfg.v190.chain;
+ ru_tilt_enabled=ru_fuzz_enabled=ru_sand_enabled=0u;
+ for(uint8_t k=0u;k<RU_FX_SLOTS;k++)if(c->enabled&(1u<<k)){
+  uint8_t type=c->type[k];
+  if(type==RU_FX_TILT)ru_tilt_enabled=1u;
+  if(type==RU_FX_FUZZ)ru_fuzz_enabled=1u;
+  if(type==RU_FX_SAND)ru_sand_enabled=1u;
+ }
+ native_project_cfg.v190.legacy_chain=0u;
+ /* Publish the entire nine-byte chain and its associated tone-enable
+  * switches together. The audio IRQ must never observe a newly moved
+  * slot paired with the previous ON/OFF bit or a half-written order.
+  * Keep the critical section tiny: no UI drawing, save or allocations. */
+ fm1_irq_off();
+ /* Every slot has its own bypass ramp. A changed/removed type cannot carry
+  * the previous algorithm's ramp into a new insertion; the other slots are
+  * left untouched. This also keeps two identical types independently ON. */
+ for(uint8_t slot=0u;slot<RU_FX_SLOTS;slot++)
+  if(native_controls.fx_chain.type[slot]!=c->type[slot] ||
+     c->type[slot]==RU_FX_EMPTY)
+   native_audio.fx.rupture_chain_fade[slot]=0;
+ ru_fx_apply_extra();
+ native_controls.fx_chain=*c;
+ native_controls.fx_chain_active=1u;
+ native_controls.fx_chain_drive=native_drive;
+ native_controls.drive=0u;
+ fm1_irq_enable_all();
+ /* The normal control publish in the UI tick refreshes parameter values.
+  * It repeats this now-stable chain without changing its topology. */
+ ru_mark_dirty();first_frame=1u;
 }
 static void ru_fx_apply_extra(void){
  rupture_tilt_controls(ru_tilt[0],ru_tilt[1],ru_tilt[2],ru_tilt[3],ru_tilt_enabled);
@@ -1279,6 +1346,13 @@ static void native_parameter_publish(void){
  }
  native_controls.note_priority=ru_note_priority;native_controls.note_legato=ru_note_legato;
  native_controls.note_glide_ms=ru_note_glide_ms;native_controls.note_bend_range=ru_note_bend;native_controls.live_bend_q16=ru_bend_live_q16();
+ native_controls.note_glide_mode=ru_glide_mode;
+ native_controls.note_glide_curve=ru_glide_curve;
+ native_controls.note_env_retrigger=ru_glide_retrigger;
+ native_controls.fx_chain=native_project_cfg.v190.chain;
+ native_controls.fx_chain_active=(uint8_t)!native_project_cfg.v190.legacy_chain;
+ native_controls.fx_chain_drive=native_drive;
+ native_controls.seq_slide_bits=native_project_cfg.v190.seq_slide;
 #endif
 
  native_controls.env_enabled=1;native_controls.attack_step=envelope_step(native_env_ms[0]);native_controls.decay_step=envelope_step(native_env_ms[1]);native_controls.release_step=envelope_step(native_env_ms[2]);native_controls.sustain_level=native_sustain;
@@ -1293,6 +1367,10 @@ static void native_parameter_publish(void){
  native_controls.fx_settings=effective_fx;
  native_controls.fx_bypass_mask=native_fx_bypass_mask;
  if(native_fx_bypass_mask&ETCH_FXB_BIT(ETCH_FXB_DRIVE))native_controls.drive=0u;
+#ifdef RUPTURE_BUILD
+ /* The new MOSFET is a post-mix slot, not an additional voice-level drive. */
+ if(native_controls.fx_chain_active)native_controls.drive=0u;
+#endif
  native_controls.arp_mode=native_arp_mode;native_controls.arp_rate=native_arp_rate;native_controls.arp_octaves=native_arp_octaves;
  native_controls.arp_gate=(uint8_t)(25u+25u*native_arp_gate_index);
  native_controls.arp_program=&native_project_cfg.arp_programs[native_patch_slot];
@@ -1447,6 +1525,10 @@ static void native_new_project(void){
  native_fx_settings.eq_high=16384u;
  native_fx_settings.eq_hpf=0u;
  rupture_eq2_defaults(&native_project_cfg.eq2,1u);
+ ru_v190_defaults(&native_project_cfg.v190);
+ native_project_cfg.source_version=35u;
+ ru_tilt_enabled=ru_fuzz_enabled=ru_sand_enabled=0u;ru_fx_apply_extra();
+ ru_note_glide_ms=0u;ru_glide_mode=0u;ru_glide_curve=0u;ru_glide_retrigger=1u;
  native_fx_bypass_mask|=ETCH_FXB_BIT(ETCH_FXB_EQ);
  ru_eq2_apply();
 #endif
@@ -1557,6 +1639,9 @@ static void native_preset_dsp_capture(uint8_t slot){
  ru_sub_state_store(v,ru_sub_type,ru_sub_oct,ru_sub_detune,ru_sub_drift);
  ru_main_state_store(v,ru_main_wave);
  ru_perf_store(v,rupture_master_pct,ru_note_priority,ru_note_legato,ru_note_glide_ms,ru_note_bend);
+ native_project_cfg.v190.glide_patch[slot][0]=(uint8_t)(ru_note_glide_ms/10u);
+ native_project_cfg.v190.glide_patch[slot][1]=(uint8_t)((ru_glide_mode&3u)|
+   ((ru_glide_curve&1u)<<2u)|((ru_glide_retrigger&1u)<<4u));
 #endif
 }
 static void native_preset_dsp_restore(uint8_t slot){
@@ -1580,6 +1665,15 @@ static void native_preset_dsp_restore(uint8_t slot){
  uint8_t ignored_legacy_master=100u;
  (void)ru_perf_restore(v,&native_library.patches[slot],&ignored_legacy_master,
     &ru_note_priority,&ru_note_legato,&ru_note_glide_ms,&ru_note_bend);
+ if(native_project_cfg.source_version>=35u){
+  ru_note_glide_ms=(uint16_t)native_project_cfg.v190.glide_patch[slot][0]*10u;
+  uint8_t settings=native_project_cfg.v190.glide_patch[slot][1];
+  ru_glide_mode=settings&3u;ru_glide_curve=(settings>>2u)&1u;
+  ru_glide_retrigger=(settings>>4u)&1u;
+ }else{
+  ru_glide_mode=ru_note_glide_ms?1u:0u;
+  ru_glide_curve=0u;ru_glide_retrigger=1u;
+ }
  /* The stored Organic bytes are a RUPTURE storage container, NOT pitch drift. */
  native_project_cfg.organic=(struct etch_organic_settings){0};
 #endif
@@ -1742,6 +1836,9 @@ static void native_patch_load(uint8_t pattern_prepared){
  native_env_ms[0]=p->attack_ms;native_env_ms[1]=p->decay_ms;native_env_ms[2]=p->release_ms;native_sustain=p->sustain;
  native_cutoff=p->cutoff;native_resonance=p->resonance;native_drive=p->drive;
  native_chorus=p->chorus;native_delay=p->delay;native_reverb=p->reverb;
+#ifdef RUPTURE_BUILD
+ ru_fx_migrate_legacy();
+#endif
  if(!pattern_prepared){native_seq_run=0;native_seq_recording=0;}native_library.reserved=native_patch_slot+1;
  native_morph_a=native_library.selection[0];native_morph_b=native_library.selection[1];
  /* Atomic ISR handoff: all new parameters and the output crossfade start
@@ -2834,6 +2931,10 @@ static void rupture_native_screen(void){
  v.manager_seq_mask=ru_manager_seq_mask;v.about_scroll=ru_about_scroll;
  for(uint8_t i=0u;i<8u;i++)for(uint8_t j=0u;j<13u;j++)v.manager_seq_names[i][j]=ru_manager_seq_names[i][j];
  v.project=ru_project_slot;v.seq_slot=ru_seq_slot;
+ v.fx_selected=ru_fx_selected;v.fx_picker=ru_fx_picker;v.fx_error=ru_fx_pick_error;
+ v.fx_legacy=native_project_cfg.v190.legacy_chain;
+ v.fx_enabled=native_project_cfg.v190.chain.enabled;
+ for(uint8_t i=0u;i<RU_FX_SLOTS;i++)v.fx_types[i]=native_project_cfg.v190.chain.type[i];
  v.active_project=(uint8_t)(etch_store_project_selected()+1u);
  v.active_seq_slot=ru_active_seq_slot;
  v.project_mask=native_project_present;
@@ -2882,6 +2983,7 @@ static void rupture_native_screen(void){
   v.k[2]=native_pattern.steps[native_seq_step].count?native_pattern.steps[native_seq_step].notes[0].velocity:ru_seq_velocity;
   v.k[3]=native_seq_gate;
   v.seq_current_step=native_seq_step;
+  v.seq_slide=ru_slide_at(&native_project_cfg.v190,native_seq_step);
   v.seq_playhead=etch_seq_actual_step(native_seq_run,native_audio.perf_last_seq,
      native_audio.perf_played,native_audio.perf_current_step,native_seq_length,native_seq_step);
   v.seq_length=native_seq_length;
@@ -2937,6 +3039,9 @@ static void rupture_native_screen(void){
   else if(ru_preview_fx==6u){for(uint8_t j=0;j<4u;j++)v.k[j]=ru_fuzz[j];v.fx_on=ru_fuzz_enabled;}
   else {for(uint8_t j=0;j<4u;j++)v.k[j]=ru_sand[j];v.fx_on=ru_sand_enabled;}
   break;
+ case RU_PAGE_GLIDE:
+  v.k[0]=ru_note_glide_ms;v.k[1]=ru_glide_mode;
+  v.k[2]=ru_glide_curve;v.k[3]=ru_glide_retrigger;break;
  case RU_PAGE_PROJECTS:v.k[0]=ru_project_slot;break;
  case RU_PAGE_REVERB:v.k[0]=ru_reverb_type;
   v.k[1]=(uint16_t)(native_fx_settings.reverb_decay*100u/32767u);
@@ -2956,6 +3061,16 @@ static void rupture_native_screen(void){
  case RU_PAGE_TILT:for(uint8_t j=0;j<4u;j++)v.k[j]=ru_tilt[j];break;
  case RU_PAGE_FUZZ:for(uint8_t j=0;j<4u;j++)v.k[j]=ru_fuzz[j];break;
  case RU_PAGE_SANDPAPER:for(uint8_t j=0;j<4u;j++)v.k[j]=ru_sand[j];break;
+ case RU_PAGE_DISTORTION:
+  v.k[0]=(uint16_t)(native_fx_settings.folder_fold*100u/32767u);
+  v.k[1]=(uint16_t)(native_fx_settings.folder_symmetry*100u/32767u);
+  v.k[2]=(uint16_t)(native_fx_settings.folder_tone*100u/32767u);
+  v.k[3]=(uint16_t)(native_fx_settings.folder_mix*100u/32767u);break;
+ case RU_PAGE_WAH:
+  v.k[0]=(uint16_t)(native_fx_settings.wah_sens*100u/32767u);
+  v.k[1]=(uint16_t)(native_fx_settings.wah_attack*100u/32767u);
+  v.k[2]=(uint16_t)(native_fx_settings.wah_reso*100u/32767u);
+  v.k[3]=(uint16_t)(native_fx_settings.wah_mix*100u/32767u);break;
  case RU_PAGE_DRIVE:v.k[0]=(uint16_t)(native_drive*100u/32767u);
   v.k[1]=(uint16_t)(native_cutoff*100u/8192u);
   v.k[2]=(uint16_t)(native_resonance*100u/32767u);
@@ -3769,7 +3884,7 @@ static void screen(void){
  }
 }
 #ifdef RUPTURE_BUILD
-static uint8_t ru_menu_pages[]={RU_PAGE_FILTER,RU_PAGE_ENV,RU_PAGE_LFO,RU_PAGE_FX,RU_PAGE_SEQ,RU_PAGE_ARP,RU_PAGE_GUIDE,RU_PAGE_KEYLOCK,RU_PAGE_NOTE_MEMORY,RU_PAGE_PROJECTS,RU_PAGE_MIDI};
+static uint8_t ru_menu_pages[]={RU_PAGE_FILTER,RU_PAGE_ENV,RU_PAGE_LFO,RU_PAGE_FX,RU_PAGE_SEQ,RU_PAGE_ARP,RU_PAGE_GUIDE,RU_PAGE_KEYLOCK,RU_PAGE_NOTE_MEMORY,RU_PAGE_GLIDE,RU_PAGE_PROJECTS,RU_PAGE_MIDI};
 static void ru_nav_to(uint8_t page){
  if(page!=ru_page){
   /* A fast turn on the previous page must not accelerate the first detent
@@ -4099,7 +4214,7 @@ static uint8_t ru_knob_focusable(uint8_t page,uint8_t control){
  case RU_PAGE_ARP:case RU_PAGE_REVERB:case RU_PAGE_DELAY:
  case RU_PAGE_CHORUS:case RU_PAGE_DRIVE:case RU_PAGE_COMP:
  case RU_PAGE_BEND:case RU_PAGE_TILT:case RU_PAGE_FUZZ:
- case RU_PAGE_SANDPAPER:return 1u;
+ case RU_PAGE_SANDPAPER:case RU_PAGE_DISTORTION:case RU_PAGE_WAH:return 1u;
  case RU_PAGE_PROJECTS:return (uint8_t)(control<=1u);
  case RU_PAGE_SETTINGS:return (uint8_t)(control==0u&&
   (ru_settings_open || ru_settings_selected==0u));
@@ -4109,6 +4224,29 @@ static uint8_t ru_knob_focusable(uint8_t page,uint8_t control){
 }
 static void ru_adjust(uint8_t control,int32_t amount){
  if(!amount)return;
+ if(ru_page==RU_PAGE_FX){
+  /* FX-slot page has no continuous audio controls: K1 = choose effect,
+   * K4 = explicit enable switch. Neither is processed in the ISR. */
+  if(control==0u){
+   uint8_t previous=native_project_cfg.v190.chain.type[ru_fx_selected];
+   ru_fx_picker=previous<RU_FX_TYPES?previous:0u;
+   ru_fx_pick_error=0u;ru_nav_to(RU_PAGE_FX_PICK);
+  }else if(control==3u){
+   struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
+   if(chain->type[ru_fx_selected]!=RU_FX_EMPTY){
+    uint8_t flag=(uint8_t)(1u<<ru_fx_selected);
+    uint8_t enabled=(uint8_t)!!(chain->enabled&flag);
+    uint8_t target=(uint8_t)(amount>0);
+    if(enabled!=target){
+     if(target)chain->enabled|=flag;
+     else chain->enabled&=(uint8_t)~flag;
+     ru_fx_sync_chain();
+    }
+   }
+  }
+  return;
+ }
+ if(ru_page==RU_PAGE_FX_PICK)return;
  uint8_t *undo_target=ru_undo_target(ru_page,control);
  uint8_t undo_previous=undo_target?*undo_target:0u;
  /* Knob acceleration applies exclusively to continuous parameters; never
@@ -4136,11 +4274,11 @@ static void ru_adjust(uint8_t control,int32_t amount){
   else if(control==2u)ru_sub_detune[z]=(uint8_t)ui_bound((int32_t)ru_sub_detune[z]+amount,0,100);
   else if(control==3u)ru_sub_drift[z]=(uint8_t)ui_bound((int32_t)ru_sub_drift[z]+amount,0,100);
  }
- else if(ru_page==RU_PAGE_FX){
-  uint8_t save_page=ru_page;
-  ru_page=ru_fx_page_for_selection(ru_fx_selected);
-  ru_adjust(control,amount);
-  ru_page=save_page;
+ else if(ru_page==RU_PAGE_GLIDE){
+  if(control==0u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
+  if(control==1u)ru_glide_mode=(uint8_t)ui_bound((int32_t)ru_glide_mode+amount,0,2);
+  if(control==2u)ru_glide_curve=(uint8_t)ui_bound((int32_t)ru_glide_curve+amount,0,1);
+  if(control==3u)ru_glide_retrigger=(uint8_t)ui_bound((int32_t)ru_glide_retrigger+amount,0,1);
  }
  else if(ru_page==RU_PAGE_EQ){
   struct rupture_eq2_params *e=&native_project_cfg.eq2;
@@ -4215,7 +4353,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
  else if(ru_page==RU_PAGE_NOTE_MEMORY){
   if(control==0u)ru_note_priority=(uint8_t)ui_bound((int32_t)ru_note_priority+amount,0,2);
   if(control==1u)ru_note_legato=(uint8_t)ui_bound((int32_t)ru_note_legato+amount,0,1);
-  if(control==2u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*5,0,400);
+  if(control==2u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
   if(control==3u)ru_note_bend=(uint8_t)ui_bound((int32_t)ru_note_bend+amount,0,12);
  }
  else if(ru_page==RU_PAGE_ARP){if(control==0u)native_arp_mode=(uint8_t)ui_bound((int32_t)native_arp_mode+amount,0,7);if(control==1u)native_arp_rate=(uint8_t)ui_bound((int32_t)native_arp_rate+amount,0,7);if(control==2u)native_arp_octaves=(uint8_t)ui_bound((int32_t)native_arp_octaves+amount,1,4);if(control==3u)native_arp_gate_index=(uint8_t)ui_bound((int32_t)native_arp_gate_index+amount,0,3);}
@@ -4293,6 +4431,18 @@ static void ru_adjust(uint8_t control,int32_t amount){
  else if(ru_page==RU_PAGE_TILT){ru_tilt[control]=(uint8_t)ui_bound((int32_t)ru_tilt[control]+amount,0,100);ru_fx_apply_extra();}
  else if(ru_page==RU_PAGE_FUZZ){ru_fuzz[control]=(uint8_t)ui_bound((int32_t)ru_fuzz[control]+amount,0,100);ru_fx_apply_extra();}
  else if(ru_page==RU_PAGE_SANDPAPER){ru_sand[control]=(uint8_t)ui_bound((int32_t)ru_sand[control]+amount,0,100);ru_fx_apply_extra();}
+ else if(ru_page==RU_PAGE_DISTORTION){
+  uint16_t *p=control==0u?&native_fx_settings.folder_fold:
+   control==1u?&native_fx_settings.folder_symmetry:
+   control==2u?&native_fx_settings.folder_tone:&native_fx_settings.folder_mix;
+  *p=etch_encoder_pct(*p,amount);
+ }
+ else if(ru_page==RU_PAGE_WAH){
+  uint16_t *p=control==0u?&native_fx_settings.wah_sens:
+   control==1u?&native_fx_settings.wah_attack:
+   control==2u?&native_fx_settings.wah_reso:&native_fx_settings.wah_mix;
+  *p=etch_encoder_pct(*p,amount);
+ }
  else if(ru_page==RU_PAGE_DRIVE){
   if(control==0u)native_drive=etch_encoder_pct(native_drive,amount);
   if(control==1u){native_cutoff=(uint16_t)etch_encoder_cutoff(native_cutoff,amount);
@@ -4484,12 +4634,18 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   else if(ru_page==RU_PAGE_PLAY)ru_nav_to(RU_PAGE_SHAPE);
   else if(ru_page==RU_PAGE_SHAPE)ru_nav_to(RU_PAGE_SUB1);
   else if(ru_page==RU_PAGE_SUB1)ru_nav_to(RU_PAGE_SUB2);
-  else if(ru_page==RU_PAGE_SUB2)ru_nav_to(RU_PAGE_PLAY);
+  else if(ru_page==RU_PAGE_SUB2)ru_nav_to(RU_PAGE_GLIDE);
+  else if(ru_page==RU_PAGE_GLIDE)ru_nav_to(RU_PAGE_PLAY);
   else{ru_page=(ru_prev==ru_page)?RU_PAGE_PLAY:ru_prev;first_frame=1;}
  }ru_home_since=0;ru_home_used=0;}
  /* SEQ long press no longer opens SEQ SLOTS. A tap/hold both open the
   * sequencer when released, except SEQ+PRESETS movement consumes the press. */
  if(buttons&(1u<<11)){if(!ru_seq_since)ru_seq_since=etch_ms?etch_ms:1u;}
+ if(ru_page==RU_PAGE_SEQ && (buttons&(1u<<11)) && down &&
+    !native_seq_run && !native_seq_recording){
+  ru_slide_set(&native_project_cfg.v190,native_seq_step,(uint8_t)(down>0));
+  down=0;ru_seq_used=1u;ru_mark_dirty();first_frame=1u;
+ }
  else if(ru_seq_since){if(!ru_seq_used){ru_nav_to(RU_PAGE_SEQ);native_seq_step=0u;ru_seq_velocity=110u;}
   ru_seq_since=0u;ru_seq_used=0u;}
  if((pressed&(1u<<2)) && !(buttons&(1u<<9))){
@@ -4510,11 +4666,14 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   /* EDIT owns Channel EQ navigation, just as other hardware pages own theirs.
    * First press enters EQ. Subsequent presses cycle GAIN / FREQ / Q.
    * Legacy EQ has only one view; EDIT there remains on that view. */
-  if(ru_page==RU_PAGE_EQ){
+  if(ru_page==RU_PAGE_FX){
+   uint8_t type=native_project_cfg.v190.chain.type[ru_fx_selected];
+   if(type<RU_FX_SLOTS)ru_nav_to(ru_fx_page_for_selection(type));
+  }else if(ru_page==RU_PAGE_EQ){
    if(native_project_cfg.eq2.enabled)ru_eq_tab=(uint8_t)((ru_eq_tab+1u)%3u);
    ru_knob_focus_until=0u;first_frame=1u;
   }else{ru_nav_to(RU_PAGE_EQ);ru_eq_tab=0u;}
- } /* EDIT = CHANNEL EQ */
+ } /* EDIT = selected FX parameters, or Channel EQ elsewhere */
  if(pressed&(1u<<10))ru_nav_to(RU_PAGE_ARP);
  if(pressed&(1u<<12)){
   if(ru_countin.active){
@@ -4801,26 +4960,48 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(select){ru_help_chapter=(uint8_t)ui_bound((int32_t)ru_help_chapter+select,0,RU_HELP_CARD_COUNT-1u);ru_help_scroll=0u;first_frame=1u;}
   if(alg){ru_help_scroll=(uint8_t)ui_bound((int32_t)ru_help_scroll+alg,0,2);first_frame=1u;}
  }
+ else if(ru_page==RU_PAGE_FX_PICK){
+  if(select){ru_fx_picker=(uint8_t)ui_bound((int32_t)ru_fx_picker+(select>0?1:-1),0,RU_FX_REMOVE);ru_fx_pick_error=0u;first_frame=1u;}
+  if(pressed&(1u<<3)){
+   struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
+   if(ru_fx_picker==RU_FX_REMOVE){ru_chain_remove(chain,ru_fx_selected);ru_fx_sync_chain();ru_nav_to(RU_PAGE_FX);}
+   else if(ru_chain_insert(chain,ru_fx_selected,ru_fx_picker)){
+    uint8_t type=ru_fx_picker;
+    if(type==RU_FX_REVERB&&!native_reverb)native_reverb=12000u;
+    if(type==RU_FX_DELAY&&!native_delay)native_delay=12000u;
+    if(type==RU_FX_CHORUS&&!native_chorus)native_chorus=12000u;
+    if(type==RU_FX_MOSFET&&!native_drive)native_drive=8000u;
+    if(type==RU_FX_COMP&&!native_fx_settings.comp_ratio)native_fx_settings.comp_ratio=11000u;
+    if(type==RU_FX_DISTORTION){
+     if(!native_fx_settings.folder_fold)native_fx_settings.folder_fold=15000u;
+     if(!native_fx_settings.folder_mix)native_fx_settings.folder_mix=22000u;
+    }
+    if(type==RU_FX_WAH){
+     if(!native_fx_settings.wah_mix)native_fx_settings.wah_mix=23500u;
+     if(!native_fx_settings.wah_sens)native_fx_settings.wah_sens=24000u;
+    }
+    ru_fx_sync_chain();ru_nav_to(RU_PAGE_FX);
+   }else{ru_fx_pick_error=1u;first_frame=1u;}
+  }
+ }
  else if(ru_page==RU_PAGE_FX){
   if(select){
-   uint8_t previous_fx=ru_fx_selected;
    ru_fx_selected=(uint8_t)ui_bound((int32_t)ru_fx_selected+(select>0?1:-1),0,7);
-   if(previous_fx!=ru_fx_selected)for(uint8_t k=0u;k<4u;k++)ru_knob_feel[k]=(RuEncoderFeel){0};
    ru_knob_focus_until=0u;first_frame=1u;
   }
+  if(alg){
+   int8_t direction=alg>0?1:-1;
+   if(ru_chain_move(&native_project_cfg.v190.chain,ru_fx_selected,direction)){
+    ru_fx_selected=(uint8_t)((int)ru_fx_selected+direction);
+    ru_fx_sync_chain();
+   }
+  }
   if(pressed&(1u<<3)){
-   if(ru_fx_selected<4u){
-    uint8_t bit=ru_fx_selected==0u?ETCH_FXB_REVERB:ru_fx_selected==1u?ETCH_FXB_DELAY:ru_fx_selected==2u?ETCH_FXB_CHORUS:ETCH_FXB_DRIVE;
-    uint16_t *wet=ru_fx_selected==0u?&native_reverb:ru_fx_selected==1u?&native_delay:ru_fx_selected==2u?&native_chorus:&native_drive;
-    if(*wet==0u){*wet=(uint16_t)(ru_fx_selected==3u?7000u:11000u);native_fx_bypass_mask&=~ETCH_FXB_BIT(bit);}
-    else native_fx_bypass_mask ^= ETCH_FXB_BIT(bit);
-   }else if(ru_fx_selected==4u){
-    if(!native_fx_settings.comp_ratio){native_fx_settings.comp_ratio=11000u;native_fx_settings.comp_threshold=24000u;native_fx_bypass_mask&=~ETCH_FXB_BIT(ETCH_FXB_COMP);}
-    else native_fx_bypass_mask^=ETCH_FXB_BIT(ETCH_FXB_COMP);
-   }else if(ru_fx_selected==5u){ru_tilt_enabled^=1u;ru_fx_apply_extra();}
-   else if(ru_fx_selected==6u){ru_fuzz_enabled^=1u;ru_fx_apply_extra();}
-   else{ru_sand_enabled^=1u;ru_fx_apply_extra();}
-   native_parameter_publish();first_frame=1u;ru_mark_dirty();
+   if(native_project_cfg.v190.chain.type[ru_fx_selected]==RU_FX_EMPTY){
+    ru_fx_picker=0u;ru_fx_pick_error=0u;ru_nav_to(RU_PAGE_FX_PICK);
+   }else{
+    ru_nav_to(ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected]));
+   }
   }
  }
  else if(ru_page==RU_PAGE_EQ){
@@ -4931,8 +5112,8 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    if(native_edit_feedback)ru_mark_dirty();
   }
  }
- else if(ru_page==RU_PAGE_PLAY && select){ru_nav_to(RU_PAGE_MENU);ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,10);}
- else if(ru_page==RU_PAGE_MENU){if(select){ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,10);first_frame=1;}if(pressed&(1u<<3))ru_nav_to(ru_menu_pages[ru_menu]);}
+ else if(ru_page==RU_PAGE_PLAY && select){ru_nav_to(RU_PAGE_MENU);ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,11);}
+ else if(ru_page==RU_PAGE_MENU){if(select){ru_menu=(uint8_t)ui_bound((int32_t)ru_menu+(select>0?1:-1),0,11);first_frame=1;}if(pressed&(1u<<3))ru_nav_to(ru_menu_pages[ru_menu]);}
  else if(ru_page==RU_PAGE_SEQ_SLOTS){
   if(select){ru_seq_slot=(uint8_t)ui_bound((int32_t)ru_seq_slot+(select>0?1:-1),1,8);ru_seq_confirm=0u;ru_seq_feedback=0u;first_frame=1u;}
   if(alg){ru_selected=(uint8_t)ui_bound((int32_t)ru_selected+(alg>0?1:-1),0,2);ru_seq_confirm=0u;ru_seq_feedback=0u;first_frame=1u;alg=0;}
@@ -5101,6 +5282,8 @@ void fm1_cstart(void){
  etch_perf_init(&native_preset_dsp.performance);
 #ifdef RUPTURE_BUILD
  ru_fxm_defaults(&native_project_cfg.rupture_fx);
+ ru_v190_defaults(&native_project_cfg.v190);
+ native_project_cfg.source_version=35u;
  /* Newly-created projects use Channel EQ 2.0; legacy decoded projects
   * explicitly override this with enabled=0 for unchanged historical audio. */
  rupture_eq2_defaults(&native_project_cfg.eq2,1u);

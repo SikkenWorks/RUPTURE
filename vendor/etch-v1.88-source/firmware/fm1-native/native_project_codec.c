@@ -47,6 +47,7 @@
 #define V32MAGIC 0x50544a50u /* PJT32: packed Wave AMP mode/depth per preset */
 #define V33MAGIC 0x51544a50u /* PJT33: fixed 21-byte project FX extension */
 #define V34MAGIC 0x52544a50u /* PJT34: 7-byte new EQ 2.0 metadata extension */
+#define V35MAGIC 0x53544a50u /* PJT35: ordered FX / glide / step slide */
 static const struct etch_project_settings *riff_owner;
 static uint16_t *riff_data;
 static const struct etch_project_settings *riff2_owner;
@@ -331,7 +332,8 @@ int etch_project_encode(const struct etch_wave_library *l,const struct etch_nati
  uint8_t write32=(uint8_t)(s->source_version>=32);
  uint8_t write33=(uint8_t)(s->source_version>=33);
  uint8_t write34=(uint8_t)(s->source_version>=34);
- put32(&w,write34?V34MAGIC:write33?V33MAGIC:write32?V32MAGIC:write31?V31MAGIC:write30?V30MAGIC:write29?V29MAGIC:write28?V28MAGIC:write27?V27MAGIC:write26?V26MAGIC:write25?V25MAGIC:write24?V24MAGIC:write23?V23MAGIC:write22?V22MAGIC:write21?V21MAGIC:write20?V20MAGIC:write19?V19MAGIC:write18?V18MAGIC:write17?V17MAGIC:write16?V16MAGIC:write15?V15MAGIC:write14?V14MAGIC:write13?V13MAGIC:V12MAGIC);put8(&w,l->reserved);put(&w,l->selection,3);
+ uint8_t write35=(uint8_t)(s->source_version>=35);
+ put32(&w,write35?V35MAGIC:write34?V34MAGIC:write33?V33MAGIC:write32?V32MAGIC:write31?V31MAGIC:write30?V30MAGIC:write29?V29MAGIC:write28?V28MAGIC:write27?V27MAGIC:write26?V26MAGIC:write25?V25MAGIC:write24?V24MAGIC:write23?V23MAGIC:write22?V22MAGIC:write21?V21MAGIC:write20?V20MAGIC:write19?V19MAGIC:write18?V18MAGIC:write17?V17MAGIC:write16?V16MAGIC:write15?V15MAGIC:write14?V14MAGIC:write13?V13MAGIC:V12MAGIC);put8(&w,l->reserved);put(&w,l->selection,3);
  put32(&w,l->valid[0]);put32(&w,l->valid[1]);
  put(&w,l->active,sizeof(l->active));put(&w,l->wave_names,sizeof(l->wave_names));
  uint32_t compact[2]={0,0},linear[2]={0,0};
@@ -543,6 +545,13 @@ int etch_project_encode(const struct etch_wave_library *l,const struct etch_nati
   if(!rupture_eq2_valid(&s->eq2))return -1;
   put8(&w,s->eq2.enabled);put(&w,s->eq2.freq,4u);put(&w,s->eq2.q,2u);
  }
+ if(write35){
+  if(!ru_v190_valid(&s->v190))return -1;
+  put(&w,s->v190.chain.type,8u);put8(&w,s->v190.chain.enabled);
+  put8(&w,s->v190.legacy_chain);
+  put(&w,s->v190.glide_patch,sizeof(s->v190.glide_patch));
+  put(&w,s->v190.seq_slide,sizeof(s->v190.seq_slide));
+ }
 #endif
  if(w.error)return -2;
  *used=w.pos;return 0;
@@ -551,14 +560,14 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
  struct etch_native_pattern *p,struct etch_project_settings *s){
  if(!src||!l||!p||!s||len>ETCH_PROJECT_MAX_BYTES)return -1;
  struct reader r={src,0,len,0};
- uint32_t magic=get32(&r);if(magic!=V3MAGIC&&magic!=V4MAGIC&&magic!=V5MAGIC&&magic!=V6MAGIC&&magic!=V7MAGIC&&magic!=V8MAGIC&&magic!=V9MAGIC&&(magic!=V10MAGIC&&magic!=V11MAGIC&&magic!=V12MAGIC&&magic!=V13MAGIC&&(magic!=V14MAGIC&&magic!=V15MAGIC&&magic!=V16MAGIC&&magic!=V17MAGIC&&magic!=V18MAGIC&&magic!=V19MAGIC&&magic!=V20MAGIC&&magic!=V21MAGIC && (magic!=V22MAGIC&&(magic!=V23MAGIC&&(magic!=V24MAGIC&&(magic!=V25MAGIC&&(magic!=V26MAGIC&&(magic!=V27MAGIC&&(magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&magic!=V34MAGIC))))))))))))))return -1;
+ uint32_t magic=get32(&r);if(magic!=V3MAGIC&&magic!=V4MAGIC&&magic!=V5MAGIC&&magic!=V6MAGIC&&magic!=V7MAGIC&&magic!=V8MAGIC&&magic!=V9MAGIC&&(magic!=V10MAGIC&&magic!=V11MAGIC&&magic!=V12MAGIC&&magic!=V13MAGIC&&(magic!=V14MAGIC&&magic!=V15MAGIC&&magic!=V16MAGIC&&magic!=V17MAGIC&&magic!=V18MAGIC&&magic!=V19MAGIC&&magic!=V20MAGIC&&magic!=V21MAGIC && (magic!=V22MAGIC&&(magic!=V23MAGIC&&(magic!=V24MAGIC&&(magic!=V25MAGIC&&(magic!=V26MAGIC&&(magic!=V27MAGIC&&(magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&(magic!=V34MAGIC&&magic!=V35MAGIC)))))))))))))))return -1;
  zeromem(l,sizeof(*l));etch_pattern_clear(p);zeromem(s,sizeof(*s));
  etch_fx_defaults(&s->global_fx);
  l->reserved=get8(&r);get(&r,l->selection,3);
  l->valid[0]=get32(&r);l->valid[1]=get32(&r);
  get(&r,l->active,sizeof(l->active));get(&r,l->wave_names,sizeof(l->wave_names));
  uint32_t compact[2]={0,0},linear[2]={0,0};
- if(magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){compact[0]=get32(&r);compact[1]=get32(&r);linear[0]=get32(&r);linear[1]=get32(&r);}
+ if(magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))){compact[0]=get32(&r);compact[1]=get32(&r);linear[0]=get32(&r);linear[1]=get32(&r);}
  if((linear[0]&~compact[0])||(linear[1]&~compact[1]))return -1;
  for(uint32_t i=0;i<ETCH_WAVE_SLOTS;i++){
   if(!bit(l,i)){if((compact[i>>5]>>(i&31))&1u)return -1;continue;}
@@ -591,7 +600,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
  if(r.error||occupied>ETCH_SEQ_STEPS||!validsettings(s))return -1;
  int last=-1;
  for(uint32_t i=0;i<occupied;i++){
-  uint32_t step=get8(&r);uint8_t count=get8(&r),mask=get8(&r),holds=(magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))))))?get8(&r):0;
+  uint32_t step=get8(&r);uint8_t count=get8(&r),mask=get8(&r),holds=(magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))))))?get8(&r):0;
   if(r.error||(int)step<=last||count>ETCH_SEQ_NOTES||holds>ETCH_SEQ_NOTES||(mask&~((1u<<ETCH_SEQ_LOCKS)-1u))||(!count&&!mask&&!holds))return -1;
   last=(int)step;
   struct etch_seq_step *st=&p->steps[step];st->count=count;st->lock_mask=mask;st->hold_count=holds;
@@ -599,7 +608,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
    get(&r,&st->notes[j],sizeof(st->notes[j]));
    if(!r.error&&(st->notes[j].note>127||!st->notes[j].velocity||!st->notes[j].length))return -1;
   }
-  if(magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))))))for(uint8_t j=0;j<holds;j++){st->holds[j]=get8(&r);st->hold_ago[j]=get8(&r);}
+  if(magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))))))for(uint8_t j=0;j<holds;j++){st->holds[j]=get8(&r);st->hold_ago[j]=get8(&r);}
   else get(&r,st->holds,holds);
   for(uint32_t j=0;j<holds;j++){
    if(st->holds[j]>127)return -1;
@@ -607,11 +616,11 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   }
   for(uint32_t j=0;j<ETCH_SEQ_LOCKS;j++)if(mask&(1u<<j))st->locks[j]=get16(&r);
  }
- if(magic==V4MAGIC||magic==V5MAGIC||magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){
+ if(magic==V4MAGIC||magic==V5MAGIC||magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))){
   s->patterns.used=get16(&r);
   if(s->patterns.used>ETCH_PATTERN_ARCHIVE_BYTES)return -1;
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)s->patterns.lengths[i]=get16(&r);
-  if((magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){
+  if((magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))){
    uint8_t mode=get8(&r);uint16_t packed=get16(&r);
    if(r.error||mode>1||packed>r.cap-r.pos||(mode==0&&packed!=s->patterns.used)||
        (mode==1&&packed>=s->patterns.used))return -1;
@@ -621,14 +630,14 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   get(&r,s->pattern_rate,ETCH_PATCH_SLOTS);get(&r,s->pattern_gate,ETCH_PATCH_SLOTS);get(&r,s->pattern_swing,ETCH_PATCH_SLOTS);
   if(r.error||etch_pattern_bank_validate(&s->patterns))return -1;
  }
- if(magic==V5MAGIC||magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){
+ if(magic==V5MAGIC||magic==V6MAGIC||magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))){
   s->global_fx.chorus_rate=get16(&r);s->global_fx.chorus_depth=get16(&r);
   s->global_fx.delay_time=get16(&r);s->global_fx.delay_feedback=get16(&r);
   s->global_fx.reverb_size=get16(&r);s->global_fx.reverb_decay=get16(&r);
   s->global_fx.routing=get8(&r);
   if(!etch_fx_valid_route_and_type(s->global_fx.routing))return -1;
  }else etch_fx_defaults(&s->global_fx);
- if(magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))){
+ if(magic==V7MAGIC||magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))){
   uint8_t count=get8(&r);int last=-1;
   if(count>ETCH_PATCH_SLOTS)return -1;
   for(uint8_t i=0;i<count;i++){
@@ -640,7 +649,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
    if(!etch_arp_program_valid(&s->arp_programs[slot]))return -1;
   }
  }
- if(magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))))){
+ if(magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))))){
   s->global_fx.ring_mix=get16(&r);s->global_fx.ring_rate=get16(&r);
   s->global_fx.ring_shape=get16(&r);s->global_fx.ring_bias=get16(&r);
   s->global_fx.eq_low=get16(&r);s->global_fx.eq_mid=get16(&r);
@@ -654,9 +663,9 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   s->global_fx.eq_low=defaults.eq_low;s->global_fx.eq_mid=defaults.eq_mid;
   s->global_fx.eq_high=defaults.eq_high;s->global_fx.eq_hpf=defaults.eq_hpf;
  }
- if((magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))))s->mono_mode=get8(&r);
+ if((magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))))s->mono_mode=get8(&r);
  else s->mono_mode=0; /* legacy projects default to POLY */
- if(magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))){
+ if(magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))){
   s->preset_valid=get32(&r);
   if(r.error||s->preset_valid&~patchbits)return -1;
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if(s->preset_valid&(1u<<i)){
@@ -681,13 +690,13 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
    }
   }
  }
- if((magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))))){
+ if((magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))))){
   fx14_get(&r,&s->global_fx);
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if(s->preset_valid&(1u<<i))fx14_get(&r,&s->preset_fx[i]);
   if(r.error||!fx14_valid(&s->global_fx))return -1;
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if((s->preset_valid&(1u<<i))&&!fx14_valid(&s->preset_fx[i]))return -1;
  }
- if(magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))){
+ if(magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))){
   s->global_fx.tape_wow=get16(&r);s->global_fx.tape_flutter=get16(&r);
   s->global_fx.tape_age=get16(&r);s->global_fx.tape_mix=get16(&r);
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if(s->preset_valid&(1u<<i)){
@@ -698,7 +707,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   if(r.error||!fx15_valid(&s->global_fx))return -1;
   for(uint32_t i=0;i<ETCH_PATCH_SLOTS;i++)if((s->preset_valid&(1u<<i))&&!fx15_valid(&s->preset_fx[i]))return -1;
  }
- if((magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))){
+ if((magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))){
   struct etch_fx_settings *fx=&s->global_fx;
   for(uint32_t i=0;i<16;i++)((&fx->reverse_time)[i])=get16(&r);
   for(uint32_t slot=0;slot<ETCH_PATCH_SLOTS;slot++)if(s->preset_valid&(1u<<slot)){
@@ -709,7 +718,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   for(uint32_t slot=0;slot<ETCH_PATCH_SLOTS;slot++)if(s->preset_valid&(1u<<slot))
    for(uint32_t i=0;i<16;i++)if((&s->preset_fx[slot].reverse_time)[i]>32767)return -1;
  }
- if((magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))))){
+ if((magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))))){
   struct etch_fx_settings *settings=&s->global_fx;
   for(uint32_t slot=0;slot<=ETCH_PATCH_SLOTS;slot++){
    if(slot){if(!(s->preset_valid&(1u<<(slot-1u))))continue;settings=&s->preset_fx[slot-1u];}
@@ -718,44 +727,44 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
     if(etch_pre_type(settings,(uint8_t)wave,(uint8_t)insert)>5u)return -1;
    }
    uint16_t packed=get16(&r);
-   if(magic!=V20MAGIC && magic!=V21MAGIC && (magic!=V22MAGIC&&(magic!=V23MAGIC&&(magic!=V24MAGIC&&(magic!=V25MAGIC&&(magic!=V26MAGIC&&(magic!=V27MAGIC&&(magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&magic!=V34MAGIC))))))))))) && (packed&7u)>6u)return -1;
-   settings->c_fx=(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))?packed:etch_c_fx_migrate_old(packed);
+   if(magic!=V20MAGIC && magic!=V21MAGIC && (magic!=V22MAGIC&&(magic!=V23MAGIC&&(magic!=V24MAGIC&&(magic!=V25MAGIC&&(magic!=V26MAGIC&&(magic!=V27MAGIC&&(magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&(magic!=V34MAGIC&&magic!=V35MAGIC)))))))))))) && (packed&7u)>6u)return -1;
+   settings->c_fx=(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))?packed:etch_c_fx_migrate_old(packed);
   }
  }
- if((magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))){
+ if((magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))){
   s->motion.length=get8(&r);s->motion.mask=get8(&r);
   if(r.error||s->motion.length>ETCH_MOTION_STEPS||s->motion.mask>15u)return -1;
   for(uint32_t k=0;k<4u;k++)for(uint32_t i=0;i<s->motion.length;i++)
    s->motion.lane[k][i]=get16(&r);
   if(r.error||!etch_motion_valid(&s->motion))return -1;
  }
- if((magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))))))){
+ if((magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))))))){
   s->evolution.depth=get8(&r);s->evolution.rate=get8(&r);
   s->evolution.mode=get8(&r);s->evolution.sync=get8(&r);
   if(r.error||!etch_evolution_valid(&s->evolution))return -1;
  }
- if((magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++){
+ if((magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++){
   uint16_t v=get16(&r);
   if(s==riff_owner&&riff_data)riff_data[i]=v;
  }else if(s==riff_owner&&riff_data)for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++)riff_data[i]=0;
- if((magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))){
+ if((magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))){
   s->organic.drift=get8(&r);s->organic.rate=get8(&r);
   s->organic.phase=get8(&r);s->organic.variance=get8(&r);
   if(r.error||!etch_organic_valid(&s->organic))return -1;
  }
- if((magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))))){
+ if((magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))))){
   s->living.depth=get8(&r);s->living.rate=get8(&r);
   s->living.color=get8(&r);s->living.vary=get8(&r);
   if(r.error||!etch_living_valid(&s->living))return -1;
  }
- if((magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))){
+ if((magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))){
   for(uint32_t i=0;i<ETCH_MATRIX_ROUTES;i++){
    s->matrix.route[i].source=get8(&r);s->matrix.route[i].target=get8(&r);s->matrix.route[i].amount=get8(&r);
   }
   if(r.error||!etch_matrix_valid(&s->matrix)||
-     ((magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&magic!=V34MAGIC))))&&!etch_matrix_valid_legacy(&s->matrix)))return -1;
+     ((magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&(magic!=V34MAGIC&&magic!=V35MAGIC)))))&&!etch_matrix_valid_legacy(&s->matrix)))return -1;
  }
- if((magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))))))){
+ if((magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))))))){
   for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++){
    uint16_t variant=get16(&r);uint8_t mutation=get8(&r),density=get8(&r);
    if(mutation>100u||density>100u)return -1;
@@ -765,7 +774,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
   riff2_data->riff_variants[i]=0;riff2_data->riff_mutations[i]=0;riff2_data->riff_densities[i]=50u;
  }
  if(r.error||!validsettings(s))return -1;
- if(magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))))))))))))))for(uint16_t step=0;step<ETCH_SEQ_STEPS;step++){
+ if(magic==V8MAGIC||magic==V9MAGIC||(magic==V10MAGIC||magic==V11MAGIC||(magic==V12MAGIC||magic==V13MAGIC||(magic==V14MAGIC||magic==V15MAGIC||(magic==V16MAGIC||(magic==V17MAGIC||(magic==V18MAGIC||(magic==V19MAGIC||(magic==V20MAGIC||(magic==V21MAGIC||(magic==V22MAGIC||(magic==V23MAGIC||(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))))))))))))))for(uint16_t step=0;step<ETCH_SEQ_STEPS;step++){
   const struct etch_seq_step *st=&p->steps[step];
   for(uint8_t k=0;k<st->hold_count;k++)if(st->hold_ago[k]){
    uint8_t source=(uint8_t)(step-st->hold_ago[k]);uint8_t found=0;
@@ -774,26 +783,26 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
    if(!found)return -1;
   }
  }
- if((magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))){
+ if((magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))){
   struct etch_preset_dsp_bank *bank=etch_dsp_bound(s);
   if(!bank)return -1;
   for(uint8_t i=0;i<ETCH_PATCH_SLOTS;i++){
    struct etch_preset_dsp *v=&bank->slot[i];
-   get(&r,v,(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))?sizeof(*v):(magic==V27MAGIC)?32u:30u);
-   if((magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&magic!=V34MAGIC))))))v->velocity_curve=0u;
+   get(&r,v,(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))?sizeof(*v):(magic==V27MAGIC)?32u:30u);
+   if((magic!=V28MAGIC&&magic!=V29MAGIC&&(magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&(magic!=V34MAGIC&&magic!=V35MAGIC)))))))v->velocity_curve=0u;
    if(magic==V26MAGIC){v->spectral_gain=50u;v->spectral_tilt=50u;}
-   if(r.error||((magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))&&ETCH_RUPTURE_ORPHAN_SHAPE(v->spectral_wave,l,i))||ETCH_RUPTURE_INVALID_SUB(v)||
+   if(r.error||((magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))&&ETCH_RUPTURE_ORPHAN_SHAPE(v->spectral_wave,l,i))||ETCH_RUPTURE_INVALID_SUB(v)||
      !etch_organic_valid(&v->organic)||!etch_living_valid(&v->living)||
-     ((magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&magic!=V34MAGIC))))&&!etch_matrix_valid_legacy(&v->matrix))||
+     ((magic!=V30MAGIC&&(magic!=V31MAGIC&&(magic!=V32MAGIC&&(magic!=V33MAGIC&&(magic!=V34MAGIC&&magic!=V35MAGIC)))))&&!etch_matrix_valid_legacy(&v->matrix))||
      !etch_matrix_valid(&v->matrix)||!etch_evolution_valid(&v->evolution)||
-     ((magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))?(ETCH_SPECTRAL_HI_INVALID(v->spectral_wave) || (v->spectral_wave&3u)>2u):v->spectral_wave>2u)||v->spectral_part>32u||v->blend_a>=32u||
+     ((magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))?(ETCH_SPECTRAL_HI_INVALID(v->spectral_wave) || (v->spectral_wave&3u)>2u):v->spectral_wave>2u)||v->spectral_part>32u||v->blend_a>=32u||
      v->blend_b>=32u||v->blend_pct>100u||v->blend_on>1u||
-     v->spectral_gain>100u||v->spectral_tilt>100u|| ((magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))?(v->velocity_curve&3u)>2u:v->velocity_curve>2u))return -1;
+     v->spectral_gain>100u||v->spectral_tilt>100u|| ((magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))?(v->velocity_curve&3u)>2u:v->velocity_curve>2u))return -1;
   }
  }
  {
   struct etch_preset_dsp_bank *bank=etch_dsp_bound(s);
-  if((magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))))){
+  if((magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))))){
    if(!bank)return -1;
    uint8_t packed[8];get(&r,packed,8u);
    if(r.error||!etch_key_groups_unpack(&bank->groups,packed))return -1;
@@ -801,7 +810,7 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
  }
  {
   struct etch_preset_dsp_bank *bank=etch_dsp_bound(s);
-  if((magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC)))){
+  if((magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))))){
    if(!bank)return -1;
    get(&r,&bank->performance,sizeof(bank->performance));
    if(r.error||!etch_perf_valid(&bank->performance))return -1;
@@ -810,21 +819,29 @@ int etch_project_decode(const uint8_t *src,uint32_t len,struct etch_wave_library
 #ifdef RUPTURE_BUILD
  ru_fxm_defaults(&s->rupture_fx); /* old projects never inherit effects from last LOAD */
  rupture_eq2_defaults(&s->eq2,0u); /* Legacy projects ALWAYS retain their EQ sound */
- if((magic==V33MAGIC||magic==V34MAGIC)){
+ ru_v190_defaults(&s->v190);
+ if((magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))){
   for(uint8_t e=0u;e<4u;e++)get(&r,s->rupture_fx.knobs[e],4u);
   s->rupture_fx.enabled=get8(&r);
   s->rupture_fx.bypass=get32(&r);
   if(r.error||!ru_fxm_valid(&s->rupture_fx))return -1;
  }
- if(magic==V34MAGIC){
+ if((magic==V34MAGIC||magic==V35MAGIC)){
   s->eq2.enabled=get8(&r);get(&r,s->eq2.freq,4u);get(&r,s->eq2.q,2u);
   if(r.error||!rupture_eq2_valid(&s->eq2))return -1;
  }
+ if(magic==V35MAGIC){
+  get(&r,s->v190.chain.type,8u);s->v190.chain.enabled=get8(&r);
+  s->v190.legacy_chain=get8(&r);
+  get(&r,s->v190.glide_patch,sizeof(s->v190.glide_patch));
+  get(&r,s->v190.seq_slide,sizeof(s->v190.seq_slide));
+  if(r.error||!ru_v190_valid(&s->v190))return -1;
+ }
 #else
- if((magic==V33MAGIC||magic==V34MAGIC))return -1; /* ETCH builds must never silently misread RUPTURE projects */
+ if((magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))return -1; /* ETCH builds must never silently misread RUPTURE projects */
 #endif
  if(r.error||r.pos!=len)return -1;
- s->source_version=magic==V34MAGIC?34:(magic==V33MAGIC||magic==V34MAGIC)?33:(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))?32:magic==V31MAGIC?31:magic==V30MAGIC?30:magic==V29MAGIC?29:(magic==V28MAGIC)?28:(magic==V27MAGIC)?27:magic==V26MAGIC?26:(magic==V25MAGIC)?25:(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||magic==V34MAGIC))))))))))?24:magic==V23MAGIC?23:magic==V22MAGIC?22:magic==V21MAGIC?21:magic==V20MAGIC?20:magic==V19MAGIC?19:magic==V18MAGIC?18:magic==V17MAGIC?17:magic==V16MAGIC?16:magic==V15MAGIC?15:magic==V14MAGIC?14:magic==V13MAGIC?13:magic==V12MAGIC?12:magic==V11MAGIC?11:magic==V10MAGIC?10:magic==V9MAGIC?9:magic==V8MAGIC?8:magic==V7MAGIC?7:magic==V6MAGIC?6:magic==V5MAGIC?5:magic==V4MAGIC?4:3;
+ s->source_version=magic==V35MAGIC?35:magic==V34MAGIC?34:(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC))?33:(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))?32:magic==V31MAGIC?31:magic==V30MAGIC?30:magic==V29MAGIC?29:(magic==V28MAGIC)?28:(magic==V27MAGIC)?27:magic==V26MAGIC?26:(magic==V25MAGIC)?25:(magic==V24MAGIC||(magic==V25MAGIC||(magic==V26MAGIC||(magic==V27MAGIC||(magic==V28MAGIC||(magic==V29MAGIC||(magic==V30MAGIC||(magic==V31MAGIC||(magic==V32MAGIC||(magic==V33MAGIC||(magic==V34MAGIC||magic==V35MAGIC)))))))))))?24:magic==V23MAGIC?23:magic==V22MAGIC?22:magic==V21MAGIC?21:magic==V20MAGIC?20:magic==V19MAGIC?19:magic==V18MAGIC?18:magic==V17MAGIC?17:magic==V16MAGIC?16:magic==V15MAGIC?15:magic==V14MAGIC?14:magic==V13MAGIC?13:magic==V12MAGIC?12:magic==V11MAGIC?11:magic==V10MAGIC?10:magic==V9MAGIC?9:magic==V8MAGIC?8:magic==V7MAGIC?7:magic==V6MAGIC?6:magic==V5MAGIC?5:magic==V4MAGIC?4:3;
  for(uint32_t w=0;w<3;w++)if(l->selection[w]>=ETCH_WAVE_SLOTS)return -1;
  return 0;
 }
@@ -833,7 +850,11 @@ void etch_project_legacy(const struct etch_wave_library *l,struct etch_native_pa
   uint8_t nonzero=0;for(uint32_t i=0;i<64;i++)if(l->sequence[i]){nonzero=1;break;}
   if(nonzero)for(uint32_t i=0;i<64;i++)if(l->sequence[i]<128)etch_seq_put(p,(uint16_t)i,l->sequence[i],127,1);
  }}
- if(s){zeromem(s,sizeof(*s));s->seq_length=64;s->seq_gate=75;s->tempo=120;s->source_version=2;etch_fx_defaults(&s->global_fx);}
+ if(s){zeromem(s,sizeof(*s));s->seq_length=64;s->seq_gate=75;s->tempo=120;s->source_version=2;etch_fx_defaults(&s->global_fx);
+#ifdef RUPTURE_BUILD
+  ru_v190_defaults(&s->v190);
+#endif
+ }
 }
 
 int etch_project_measure(const struct etch_wave_library *l,const struct etch_native_pattern *p,

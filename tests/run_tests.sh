@@ -333,5 +333,55 @@ python3 tests/test_v179_pcm_parity.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v1883_env_animation.c -o /tmp/rupture_v1883_env && /tmp/rupture_v1883_env
 python3 tests/test_v165_png_parity.py
 python3 tests/test_v170_hold_png_parity.py
-python3 tests/test_v189_popfix_ota.py
+python3 tests/test_v193_release_ota.py
 bash tests/pop_fix/run_pop_tests.sh
+
+# V1.90: ordered fixed-memory insert chain, per-patch GLIDE and step SLIDE,
+# PJT35 write/read compatibility with the complete PJT34 archive.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v190_fx_chain.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -o /tmp/rupture_v190_fx && /tmp/rupture_v190_fx
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v190_glide.c -o /tmp/rupture_v190_glide && /tmp/rupture_v190_glide
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v190_project_roundtrip.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v190_codec && /tmp/rupture_v190_codec
+
+# V1.91: test the fixed-size ROM MOSFET shaper under UBSan and the full eight-FX
+# audio loop with runtime reorder, enable/disable and bounded dry recovery.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ tests/test_v191_mosfet_rt.c -o /tmp/rupture_v191_mosfet && /tmp/rupture_v191_mosfet
+"$cc" -std=c11 -O2 -w -fsanitize=undefined -fno-sanitize-recover=all -DRUPTURE_BUILD \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v191_full_fx_rt.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -o /tmp/rupture_v191_full_fx && /tmp/rupture_v191_full_fx
+
+# V1.92: ten distinct algorithms in eight slots; Distortion and auto-Wah
+# produce real, reorderable PCM and persist knobs in the existing PJT35 codec.
+"$cc" -std=c11 -O2 -w -fsanitize=undefined -fno-sanitize-recover=all \
+ -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v192_distortion_wah.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v192_fx && /tmp/rupture_v192_fx
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v192_project_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v192_codec && /tmp/rupture_v192_codec
+
+# V1.93: same effect may occupy all eight slots. Large time FX advance
+# their global PCM tank once/frame; every placement still changes output.
+"$cc" -std=c11 -O2 -w -fsanitize=undefined -fno-sanitize-recover=all \
+ -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v193_repeat_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v193_repeat && /tmp/rupture_v193_repeat

@@ -3,6 +3,7 @@
  * Used identically by FM1 firmware AND the host PNG export. */
 #include <stdint.h>
 #include <stddef.h>
+#include "rupture_fx_chain.h"
 #include "rupture_help_cards.h"
 #include "rupture_welcome.h"
 #include "rupture_bug_qr.h"
@@ -71,9 +72,13 @@
 #define RU_PAGE_AUTOLOAD 48
 #define RU_PAGE_WELCOME 49
 #define RU_PAGE_SYS_INFO 50
-#define RU_PAGE_COUNT 51
+#define RU_PAGE_GLIDE 51
+#define RU_PAGE_FX_PICK 52
+#define RU_PAGE_DISTORTION 53
+#define RU_PAGE_WAH 54
+#define RU_PAGE_COUNT 55
 #include "rupture_tutorial.h"
-static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO"};
+static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO","GLIDE","FX LIBRARY","DISTORTION","WAH WAH"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
@@ -90,6 +95,7 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  uint8_t diag_view;uint8_t diag_midi_batch;
  uint16_t diag_control,diag_nested,diag_live_slack;
  uint32_t diag_midi_queue,diag_midi_deferred,diag_postlate;
+ uint8_t fx_types[8],fx_enabled,fx_picker,fx_error,fx_legacy,seq_slide;
 } RuState;
 #ifdef RU_BITS_EXTERNAL
 /* Display scratch is unused while drawing RUPTURE. */
@@ -446,6 +452,7 @@ static uint8_t ru_knob_normal(const RuState *v,int i){
  case RU_PAGE_LFO:if(i==0)val=(v->k[2]==1u)?(val/2u):(val*100u/11u);else if(i==2)val=val*50u;else if(i==3)val=val*100u;break;
  case RU_PAGE_SEQ:if(i==0){uint16_t len[]={4,8,16,32,64,128};uint8_t z=0;while(z<5 && len[z]!=val)z++;val=z*20u;}else if(i==1)val=(val-30u)*100u/210u;break;
  case RU_PAGE_NOTE_MEMORY:if(i==0)val=val*50u;else if(i==1)val=val*100u;else if(i==2)val=val/4u;else val=val*100u/12u;break;
+ case RU_PAGE_GLIDE:if(i==0)val=val/20u;else if(i==1)val=val*50u;else val=val*100u;break;
  case RU_PAGE_FILTER:if(i==0)val=val*25u;break;
  case RU_PAGE_ARP:if(i==0||i==1)val=val*100u/7u;
   else if(i==2)val=(val<=1u?0u:(val-1u)*100u/11u);
@@ -477,7 +484,11 @@ static const char *const ru_knob_labels[RU_PAGE_COUNT][4]={
  {"BEND","TARGET","CURVE",""},
  {"TILT","FREQ","MIX","OUTPUT"},
  {"DRIVE","OCTAVE","TONE","MIX"},
- {"SMOOTH","SOFT","WARMTH","MIX"}
+ {"SMOOTH","SOFT","WARMTH","MIX"},
+ [RU_PAGE_GLIDE]={"TIME MS","MODE","CURVE","ENV RETRIG"},
+ [RU_PAGE_FX_PICK]={"","","",""},
+ [RU_PAGE_DISTORTION]={"DRIVE","BIAS","TONE","MIX"},
+ [RU_PAGE_WAH]={"SENS","SPEED","RESONANCE","MIX"}
  };
 static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==RU_PAGE_LOADING||v->page==RU_PAGE_MENU)return;char buf[4][12];for(int i=0;i<4;i++){if((v->page==RU_PAGE_HELP&&i==3)||(v->page==RU_PAGE_SETTINGS&&i>0))continue;ru_uint(v->k[i],buf[i]);const char *txt=buf[i];
  if((v->page==RU_PAGE_GUIDE||v->page==RU_PAGE_KEYLOCK)&&i==0)txt=ru_notes[v->root%12];
@@ -495,6 +506,9 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  if((v->page==RU_PAGE_SUB1||v->page==RU_PAGE_SUB2)&&i==2){int n=(int)v->k[2]-50; char *t=buf[i];int off=0;if(n<0){t[off++]='-';n=-n;}else t[off++]='+';char digs[8];ru_uint((uint32_t)n,digs);for(int z=0;digs[z];z++)t[off++]=digs[z];t[off++]='C';t[off]=0;txt=t;}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==0){static const char *const pr[]={"LAST","HIGH","LOW"};txt=pr[v->k[0]%3];}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==1)txt=v->k[1]?"ON":"OFF";
+ if(v->page==RU_PAGE_GLIDE&&i==1){static const char *const modes[]={"OFF","LEGATO","ALWAYS"};txt=modes[v->k[1]%3u];}
+ if(v->page==RU_PAGE_GLIDE&&i==2)txt=v->k[2]?"EXP":"LINEAR";
+ if(v->page==RU_PAGE_GLIDE&&i==3)txt=v->k[3]?"ON":"OFF";
  if(v->page==RU_PAGE_BEND&&i==0){ru_uint(v->bend_live,buf[i]);int l=ru_strlen(buf[i]);if(l<9){buf[i][l]='%';buf[i][l+1]=0;}txt=buf[i];}
  if(v->page==RU_PAGE_BEND&&i==1){static const char *const tg[]={"1/4","1/2","FULL","1.5","DOUBLE"};txt=tg[v->bend_target<5u?v->bend_target:0u];}
  if(v->page==RU_PAGE_BEND&&i>=2)txt="";
@@ -514,7 +528,7 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  ru_knob_focus_marker(v,x,y,(uint8_t)i);
  ru_center((v->page==RU_PAGE_PLAY && v->main_wave)?
    (i==0?"BRIGHT":i==1?"EDGE":i==2?"BODY":"LEVEL"):
-   ru_knob_labels[v->page==RU_PAGE_FX?(v->fx_selected<4u?(RU_PAGE_REVERB+v->fx_selected):v->fx_selected==4u?RU_PAGE_COMP:v->fx_selected==5u?RU_PAGE_TILT:v->fx_selected==6u?RU_PAGE_FUZZ:RU_PAGE_SANDPAPER):v->page][i],x,y+26,1);if(ru_strlen(txt)<=10)ru_center(txt,x,y+36,1);else {char truncated[11];int q=0;while(q<10&&txt[q]){truncated[q]=txt[q];q++;}truncated[q]=0;ru_center(truncated,x,y+36,1);} }
+   ru_knob_labels[v->page==RU_PAGE_FX?(v->fx_selected<4u?(RU_PAGE_REVERB+v->fx_selected):v->fx_selected==4u?RU_PAGE_COMP:v->fx_selected==5u?RU_PAGE_TILT:v->fx_selected==6u?RU_PAGE_FUZZ:v->fx_selected==7u?RU_PAGE_SANDPAPER:RU_PAGE_DISTORTION):v->page][i],x,y+26,1);if(ru_strlen(txt)<=10)ru_center(txt,x,y+36,1);else {char truncated[11];int q=0;while(q<10&&txt[q]){truncated[q]=txt[q];q++;}truncated[q]=0;ru_center(truncated,x,y+36,1);} }
 }
 /* Visual response approximates the actual fixed-cross-over 3-band + HIGH CUT DSP.
  * LOW 200 Hz, HIGH 6 kHz; peaks are not parametric until the DSP supports it. */
@@ -623,6 +637,7 @@ static void ru_seq_screen(const RuState *v){
  if(v->seq_note_count){
   char hold[12];ru_uint(v->seq_sustain,hold);ru_text("HOLD",130,145,1);ru_center(hold,180,145,1);
  }else ru_center("SELECT STEP  KEYS ADD/REMOVE",120,144,1);
+ ru_center(v->seq_slide?"SLIDE ON / SEQ + K4 OFF":"SLIDE OFF / SEQ + K4 ON",120,157,1);
  const char *names[4]={"LENGTH","BPM","VELOCITY","GATE"};
  for(int i=0;i<4;i++){
   int x=36+i*56;
@@ -645,7 +660,7 @@ static void ru_seq_screen(const RuState *v){
  }
  ru_footer(v->seq_countin?"TWO BAR COUNT-IN / PLAY CANCEL":
    (v->seq_recording&&!v->seq_playing?"REC ARMED / PLAY TO START":
-    (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+PRESETS SHIFT / SAVE SEQUENCES")));
+    (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+K4 SLIDE / SAVE SEQUENCES")));
 }
 /* V1.20: ROM 1-bit tear animation, 240x240 with no extra screen memory.
  * A single immutable final artwork is exposed through a moving jagged slit,
@@ -988,20 +1003,43 @@ choices:
 static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
- static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","PROJECTS","MIDI"};
- int sel=v->selected%11;ru_center("SELECT TO SCROLL",120,55,1);
- for(int i=-2;i<=2;i++){int j=sel+i;if(j<0||j>=11)continue;int y=114+i*25;
+ static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","GLIDE","PROJECTS","MIDI"};
+ int sel=v->selected%12;ru_center("SELECT TO SCROLL",120,55,1);
+ for(int i=-2;i<=2;i++){int j=sel+i;if(j<0||j>=12)continue;int y=114+i*25;
   if(i==0){ru_frame(9,y-6,222,22);ru_dither(13,y-3,214,3,1);}
   ru_center(options[j],120,y,1);
  }ru_footer("SEL ENTER  HOME BACK");return;}
  if(page==RU_PAGE_EQ){ru_eq_curve(v);return;}
  if(page==RU_PAGE_SEQ){ru_seq_screen(v);return;}
  if(page==RU_PAGE_FX){
-  static const char *const fxnames[]={"REVERB","DELAY","CHORUS","MOSFET","COMPRESSOR","TILT EQ","OCTAVE FUZZ","SANDPAPER"};
-  ru_center(fxnames[v->fx_selected%8u],120,54,1);
-  ru_center(v->fx_on?"ON / SEL BYPASS":"OFF / SEL ENABLE",120,68,1);
-  ru_draw_knobs(v);
-  ru_footer("SELECT FX  SEL ON/OFF");return;
+  static const char *const names[]={"REVERB","DELAY","CHORUS","MOSFET","COMPRESSOR","TILT EQ","OCTAVE FUZZ","SANDPAPER","DISTORTION","WAH WAH"};
+  ru_center(v->fx_legacy?"8 SLOTS / LEGACY SOUND":"8 SLOTS / SIGNAL ORDER",120,53,1);
+  int start=v->fx_selected>4u?(int)v->fx_selected-4:0;
+  for(int n=0;n<6;n++){
+   int pos=start+n;if(pos>=8)break;
+   int y=70+n*22;
+   if(pos==v->fx_selected){ru_frame(9,y-4,222,21);ru_rect(13,y,3,11);}
+   char slot[8];ru_uint((uint32_t)pos+1u,slot);ru_text(slot,21,y,1);
+   uint8_t type=v->fx_types[pos];
+   ru_text(type<RU_FX_TYPES?names[type]:"EMPTY",51,y,1);
+   if(type<RU_FX_TYPES)ru_text((v->fx_enabled&(1u<<pos))?"ON":"OFF",198,y,1);
+  }
+  ru_footer("SEL PARAM K4 ON/OFF ALG MOVE");return;
+ }
+ if(page==RU_PAGE_FX_PICK){
+  static const char *const names[]={"REVERB","DELAY","CHORUS","MOSFET","COMPRESSOR","TILT EQ","OCTAVE FUZZ","SANDPAPER","DISTORTION","WAH WAH","REMOVE / EMPTY"};
+  ru_center("CHOOSE SLOT EFFECT",120,53,1);
+  int start=v->fx_picker>4u?(int)v->fx_picker-4:0;
+  for(int n=0;n<6;n++){int pos=start+n;if(pos>=(int)RU_FX_TYPES+1)break;int y=70+n*22;
+   if(pos==v->fx_picker){ru_frame(11,y-4,218,21);ru_rect(15,y,3,11);}
+   ru_text(names[pos],32,y,1);
+  }
+  if(v->fx_error)ru_center("UNABLE TO ADD EFFECT",120,205,1);
+  ru_footer("SELECT CHOOSE  SEL ADD  HOME BACK");return;
+ }
+ if(page==RU_PAGE_GLIDE){
+  ru_center("PORTAMENTO",120,54,1);
+  ru_draw_knobs(v);ru_footer("OFF / LEGATO / ALWAYS");return;
  }
  if(page==RU_PAGE_BEND){
   /* V1.88.1: Five prepacked 1-bit animation strips, selected by K3 curve.
@@ -1191,7 +1229,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.89","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V1.93","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

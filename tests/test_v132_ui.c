@@ -15,7 +15,7 @@ int main(void){
  assert(city>1500);
  v.saver_frame=48;ru_render(&v);
  int newcity=0;for(int y=0;y<165;y++)for(int x=0;x<240;x++)newcity+=ru_get(x,y);
- assert(newcity==city); /* Dom Tower remains stable */
+ assert(newcity>0 && newcity!=city); /* The animated city now cracks and collapses */
  assert(!ru_get(120,224)); /* canyon void */
  v.saver_frame=63;ru_render(&v);assert(!ru_get(120,224));
  puts("PASS V1.32 FM1 Utrecht art, fracturing street, 2-row saver options");

@@ -5,7 +5,8 @@
 #include "../vendor/etch-v1.88-source/firmware/fm1-native/rupture_save_route.h"
 int main(void){
  const unsigned exceptional[]={RU_PAGE_NAME,RU_PAGE_UPDATE,RU_PAGE_FOREIGN,
-  RU_PAGE_FORMAT_CONFIRM,RU_PAGE_SAFE,RU_PAGE_LOADING,RU_PAGE_TRANSIENT,RU_PAGE_FOLDER};
+  RU_PAGE_FORMAT_CONFIRM,RU_PAGE_SAFE,RU_PAGE_LOADING,RU_PAGE_TRANSIENT,
+  RU_PAGE_SYS_INFO,RU_PAGE_BEND};
  int projects=0,sequences=0,no=0;
  for(unsigned p=0;p<RU_PAGE_COUNT;p++){
   uint8_t dest=ru_save_destination(p);
@@ -18,10 +19,10 @@ int main(void){
  }
  assert(ru_save_destination(RU_PAGE_COUNT)==RU_SAVE_NO_MENU);
  assert(ru_save_destination(255)==RU_SAVE_NO_MENU);
- assert(projects==39 && sequences==2 && no==8);
+ assert(projects==44 && sequences==2 && no==9);
  assert(ru_save_pressed(1u<<9,1u<<9));
  assert(!ru_save_pressed(1u<<9,(1u<<9)|(1u<<2)));
  assert(!ru_save_pressed(0u,0u));
- printf("PASS: 49 screen IDs: %d project, %d sequence, %d protected/edit exceptions\n",projects,sequences,no);
+ printf("PASS: %u screen IDs: %d project, %d sequence, %d protected/edit exceptions\n",RU_PAGE_COUNT,projects,sequences,no);
  return 0;
 }

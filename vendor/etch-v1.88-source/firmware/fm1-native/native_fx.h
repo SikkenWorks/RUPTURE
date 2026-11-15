@@ -4,6 +4,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "rupture_fx_chain.h"
 #ifdef RUPTURE_BUILD
 #include "rupture_eq2.h"
 #endif
@@ -135,6 +136,7 @@ struct etch_native_fx {
  int32_t rupture_fuzz_makeup_target;
  int32_t rupture_fuzz_drive_slew,rupture_fuzz_anti_slew,rupture_fuzz_oct_slew,rupture_fuzz_tone_slew;
  uint8_t rupture_fuzz_tick;
+ int32_t rupture_chain_fade[RU_FX_SLOTS]; /* independent sample-rate bypass ramp per slot */
  /* Pre-nonlinearity anti-alias smoothing, two Q15 poles, no delay lines. */
  int32_t rupture_fuzz_input_lp,rupture_folder_input_lp;
  /* Sandpaper: two smoothing poles, sub-bass body, zero-delay wet slew. */
@@ -142,6 +144,13 @@ struct etch_native_fx {
  int32_t rupture_sand_soft_slew,rupture_sand_warm_slew,rupture_sand_smooth_slew;
 
 };
+#ifdef RUPTURE_BUILD
+/* Ordered RUPTURE FX path. Legacy ETCH FX rendering remains untouched. */
+void rupture_fx_process_ordered(struct etch_native_fx *state,int16_t sample,
+ uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
+ const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
+ uint32_t bypass,int16_t *left,int16_t *right);
+#endif
 static inline void etch_fx_defaults(struct etch_fx_settings *s){
  if(!s)return;
  s->chorus_rate=4096;s->chorus_depth=16384;
