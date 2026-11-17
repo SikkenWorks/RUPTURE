@@ -1,13 +1,13 @@
 {
-  "version": "1.93",
+  "version": "2.0.14",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V1.93.fwsc",
+  "firmware_file": "RUPTURE-V2.0.14.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "3f9bf16e6f6f456941593c88659582c9b617218078dc4a9a884e66765f295bc8",
-  "app_bytes": 395976,
-  "app_sha256": "e9a46ecb2f0806c912560fc4f592f12214a8426d476bb2ed35dd249d87ba1a15",
+  "firmware_sha256": "7e6128aa0241060109d1f0f5b0f4a99cf5319e4bb987b716c2ebffd741763f86",
+  "app_bytes": 542140,
+  "app_sha256": "b4e687d8bda1ea03cbf01039d064c1265bab776b3023624f3ada5fbac973da66",
   "native_screens": 126,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -84,7 +84,7 @@
     "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
     "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
     "V1.92 leaves the insert count at eight; running new distortion and wah with six other inserts may increase peak CPU. Real FM1 DMA margins, rapid chain edits and eight-FX live stability need physical validation. Downgrade to V1.91 cannot decode PJT35 projects containing new IDs 8 or 9.",
-    "V1.93 repeated effects share one parameter set per type. Repeat Chorus, Delay and Reverb inserts share one delay/chorus/reverb tank rather than being independent copies; this avoids additional SRAM but is not the same sound as two independent hardware effects. Each active insertion still adds processing; maximum FX CPU/DMA margin requires an FM1 test. V1.92 cannot decode PJT35 projects with repeated effect IDs."
+    "V1.95 optimization does not eliminate the cost of additional active FX. Delay and Chorus share one PCM history per type; multiple Reverb slots share one tank and cannot provide fully independent reverb decay/topology. FM1 hardware performance, sustained FX chain, and live stability are not yet verified. The older V1.93 cannot open newly saved PJT35 records with the V1.94 parameter extension."
   ],
   "named_project_slots": 12,
   "named_sequence_slots_per_project": 8,
@@ -198,7 +198,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "Repeatable effects in eight real ordered slots; simpler Glide screen",
+  "release_feature": "V2.0.14: Audible GROWL expression zero; LATCH + RETURN",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -330,7 +330,7 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "The eight independently enabled/reorderable FX slots can contain the same type repeatedly. Every type still uses its project-wide parameters. Chorus, Delay and Reverb repeat the wet-return insert while sharing one native ring per type; they are not independent reverb or delay tanks. No additional voices or PCM rings. Existing unique FX routes retain exact V1.92 PCM parity. GLIDE now shows PORTAMENTO without explanatory subtitle. Hardware CPU/DMA validation remains mandatory before live use.",
+  "release_note": "GROWL PRESETS now offers EXPRESSION LATCH (default) and EXPRESSION RETURN. At zero the bass remains audible; 50 keeps the exact previous sound. RETURN glides toward 50 in the main loop, without extra per-sample DSP or flash writes. Separate CXS/GROWL mapping, existing presets, protected bootheader and trusted OTA are retained. FM1 DMA LATE still requires physical verification.",
   "headroom_qualification": "PCM-exact native candidate; actual FM1 89% DSP, DMA LATE 28, GUARD 23 must be remeasured after installation. No all-load stability guarantee until a full hardware soak passes.",
   "v180": {
     "reverb_engines": [
@@ -617,5 +617,453 @@
     "hardware_cpu_margin_verified": false,
     "fully_independent_repeated_fx_implemented": false,
     "v192_can_load_projects_with_duplicate_fx_types": false
+  },
+  "fx_independent_v194": {
+    "slot_parameter_banks": 8,
+    "parameters_per_bank": 4,
+    "independent_small_effect_state": [
+      "MOSFET",
+      "COMP",
+      "TILT",
+      "FUZZ",
+      "SAND",
+      "DISTORTION",
+      "WAH"
+    ],
+    "individual_chorus_modulation_and_mix": true,
+    "individual_delay_taps_and_mix": true,
+    "reverb_wet_mix_independent": true,
+    "reverb_decay_topology_independent": false,
+    "new_pcm_ring_bytes": 0,
+    "exact_single_fx_pcm_parity_test": true,
+    "legacy_pjt35_readable": true,
+    "v193_firmware_reads_new_extended_projects": false,
+    "additional_cpu_when_multiple_effect_instances_active": true,
+    "hardware_live_verified": false
+  },
+  "realtime_optimization_v195": {
+    "golden_oracle_version": "1.94",
+    "golden_oracle_effect_types": 10,
+    "golden_oracle_instance_counts": [
+      1,
+      8
+    ],
+    "golden_oracle_frames_per_case": 35000,
+    "golden_oracle_sample_exact": true,
+    "legacy_parameter_cache_skipped_when_unused": false,
+    "legacy_parameter_cache_kept_warm_for_live_hidden_modulation": true,
+    "independent_wah_control_coefficients_cached": true,
+    "additional_small_control_state_bytes_estimate": 96,
+    "wah_alpha_exact_integer_reduction": true,
+    "pcm_ring_buffer_delta_bytes": 0,
+    "fx_slot_or_feature_removed": false,
+    "physical_fm1_cpu_margin_verified": false
+  },
+  "scale_strict_v196": {
+    "ui_modes": [
+      "OFF",
+      "GUIDE",
+      "STRICT",
+      "LOCK"
+    ],
+    "stored_mode_values": {
+      "OFF": 0,
+      "GUIDE": 1,
+      "STRICT": 3,
+      "LOCK": 2
+    },
+    "out_of_scale_held_keys_silent": true,
+    "out_of_scale_midi_note_on_filtered": true,
+    "note_off_unfiltered": true,
+    "out_of_scale_performance_leds_off": true,
+    "sequencer_live_record_filters_forbidden_keys": true,
+    "new_per_sample_pcm_dsp_operations": 0,
+    "mask_calculated_at_most_twice_per_pcm_block_in_strict": true,
+    "legacy_lock_2_preserved": true,
+    "hardware_key_matrix_tested": false
+  },
+  "glide_tunnel_v197": {
+    "width_pixels": 224,
+    "height_pixels": 30,
+    "frames": 12,
+    "bits_per_pixel": 1,
+    "sprite_rom_bytes": 10080,
+    "camera_jitter_max_pixels": 2,
+    "shake_tick_ms": 85,
+    "forward_keyframe_every_ticks": 3,
+    "draw_only_when_glide_visible": true,
+    "extra_pcm_operations_per_sample": 0,
+    "audio_core_changed": false,
+    "physical_fm1_verified": false
+  },
+  "glide_save_v198": {
+    "stored_per_preset": true,
+    "glide_parameters": [
+      "TIME_MS",
+      "MODE",
+      "CURVE",
+      "ENV_RETRIG"
+    ],
+    "per_preset_storage_bytes_unchanged": true,
+    "project_codec_version": 35,
+    "manual_and_autosave_share_snapshot_and_codec": true,
+    "edits_staged_before_autosave": true,
+    "rapid_preset_switch_preserves_staged_glide": true,
+    "legacy_project_uses_in_session_staging_until_first_save": true,
+    "endpoint_knob_events_do_not_mark_glide_dirty": true,
+    "flash_writes_on_glide_knob_event": false,
+    "additional_audio_pcm_work": 0,
+    "physical_fm1_verified": false
+  },
+  "glide_visual_and_guide_v199": {
+    "tunnel_moves_only_during_held_voice": true,
+    "notes_can_arrive_from": [
+      "KEYS",
+      "USB_MIDI",
+      "TRS_MIDI",
+      "ARPEGGIATOR",
+      "SEQUENCER"
+    ],
+    "out_of_scale_silent_keys_do_not_animate": true,
+    "idle_first_frame_and_shake_zero": true,
+    "last_voice_release_resets_scene": true,
+    "shake_tick_ms": 85,
+    "frame_advance_every_shake_ticks": 3,
+    "guide_display_modes": [
+      "OFF",
+      "GUIDE",
+      "STRICT",
+      "LOCK"
+    ],
+    "guide_stored_modes": [
+      0,
+      1,
+      3,
+      2
+    ],
+    "audio_dsp_changed": false,
+    "project_codec_changed": false,
+    "physical_fm1_verified": false
+  },
+  "boot_signal_breach_v200": {
+    "frames": 12,
+    "width_pixels": 240,
+    "height_pixels": 240,
+    "bits_per_pixel": 1,
+    "source_uncompressed_rom_bytes": 86400,
+    "lossless_rle_rom_bytes": 46340,
+    "uses_existing_ui_framebuffer": true,
+    "duration_ms": 1880,
+    "last_frame_hold_ms": 800,
+    "audio_core_changed": false,
+    "ota_loader_changed": false,
+    "physical_fm1_verified": false
+  },
+  "boot_signal_breach_smooth_v201": {
+    "frames": 23,
+    "exact_source_keyframes": 12,
+    "ordered_dither_intermediate_frames": 11,
+    "width_pixels": 240,
+    "height_pixels": 240,
+    "bits_per_pixel": 1,
+    "compressed_rom_bytes": 96425,
+    "uses_existing_ui_framebuffer": true,
+    "cadence_ms": 50,
+    "duration_ms": 1880,
+    "last_frame_hold_ms": 780,
+    "glide_autosave_uses_existing_preset_snapshot": true,
+    "audio_core_changed": false,
+    "ota_loader_changed": false,
+    "physical_fm1_verified": false
+  },
+  "boot_and_subosc_fear_v202": {
+    "boot_frame_count": 23,
+    "boot_fast_frame_cadence_ms": 35,
+    "boot_last_frame_hold_ms": 1000,
+    "boot_nominal_duration_ms": 1770,
+    "sub_oscillator_pages": [
+      1,
+      2
+    ],
+    "frames_per_oscillator": 16,
+    "sprite_size_pixels": [
+      224,
+      30
+    ],
+    "bits_per_pixel": 1,
+    "original_sprite_rom_bytes": 26880,
+    "source_pixels_changed": false,
+    "idle_frame_index": 0,
+    "turn_frame_indices": [
+      1,
+      11
+    ],
+    "eye_tremor_loop_indices": [
+      12,
+      15
+    ],
+    "note_gated": true,
+    "note_off_resets_to_idle": true,
+    "extra_audio_dsp": false,
+    "project_codec_changed": false,
+    "trusted_ota_loader_changed": false,
+    "physical_fm1_verified": false
+  },
+  "subosc1_stare_v203": {
+    "turn_frames": [
+      1,
+      11
+    ],
+    "held_forward_stare_frame_index": 11,
+    "held_forward_stare_source_file": "frame-12.png",
+    "sustain_face_frames_advance": false,
+    "camera_shake_max_pixels": 1,
+    "shake_step_ms": 75,
+    "note_off_resets_to_idle": true,
+    "subosc2_original_face_loop_unchanged": true,
+    "audio_dsp_changed": false,
+    "glide_and_autosave_changed": false,
+    "trusted_ota_loader_changed": false,
+    "physical_fm1_verified": false
+  },
+  "audio_fx_glide_v204": {
+    "bend_pitch_slew_sample_rate": true,
+    "bend_slew_independent_of_glide_enabled": true,
+    "glide_curves": [
+      "LINEAR",
+      "EXP",
+      "LOG",
+      "SOFT",
+      "FAST",
+      "FIRM"
+    ],
+    "glide_codec_bytes_per_preset_unchanged": true,
+    "fx_browser_order": [
+      "REVERB",
+      "DELAY",
+      "CHORUS",
+      "WAH WAH",
+      "MOSFET",
+      "DISTORTION",
+      "OCTAVE FUZZ",
+      "SANDPAPER",
+      "COMPRESSOR",
+      "TILT EQ"
+    ],
+    "persisted_fx_ids_unchanged": true,
+    "distortion": "tight bass + high gain asymmetric hard clip + tone",
+    "room_reverb": "less damped four-line FDN",
+    "hall_reverb": "allpass corrected, five-tap feedback, brighter decay",
+    "spring_reverb_unchanged": true,
+    "additional_pcm_delay_buffers": 0,
+    "sub_pcm_sample_exact_under_regression": true,
+    "sub_pitch_and_blend_exact_value_caches": true,
+    "cxs_segment_comparisons_before_after": [
+      7,
+      3
+    ],
+    "dma_lates_zero_on_physical_fm1_verified": false,
+    "subjective_listening_on_physical_fm1_verified": false,
+    "physical_fm1_verified": false
+  },
+  "preset_assignment_and_dma_v205": {
+    "sequencer_populated_and_empty_layout_tested": true,
+    "preset_assignment_target_count": 94,
+    "categories": 9,
+    "scale_guide_root_assignable": true,
+    "default_assignment": "TEMPO / BPM",
+    "saved_independent_of_project": true,
+    "global_nor_crc_journal": true,
+    "retained_on_project_and_catalog_rewrite": true,
+    "retained_on_global_settings_compaction": true,
+    "torn_write_tested": true,
+    "status_overlay_phases": [
+      "WAITING",
+      "SAVING",
+      "SAVED",
+      "FAILED"
+    ],
+    "note_on_initial_cxs_exchange_precomputed": true,
+    "original_pcm_sample_exact_count": 262144,
+    "physical_fm1_dma_lates_zero_verified": false,
+    "hardware_verified": false
+  },
+  "preset_popup_and_led_wave_v206": {
+    "physical_encoder_id": 6,
+    "physical_encoder_gpio": "PB7 via FM1 matrix row 5",
+    "assigned_editor_path": "ru_adjust(page, control, detents)",
+    "offscreen_parameter_value_popup": true,
+    "scale_guide_root_note_name": true,
+    "popup_hold_ms": 1550,
+    "popup_overlapping_text_prevented": true,
+    "global_assignment_persistence_unchanged": true,
+    "led_count": 41,
+    "led_keyboard_count": 27,
+    "led_function_count": 14,
+    "led_wave_step_ms": 27,
+    "led_wave_tail_ms": 162,
+    "led_wave_total_ms": 1269,
+    "physical_input_cancels_wave": true,
+    "audio_interrupt_changes": false,
+    "scan_interrupt_changes": false,
+    "audio_engine_changes": false,
+    "physical_fm1_verified": false
+  },
+  "preset_runtime_input_fix_v207": {
+    "root_cause": "RUPTURE main loop continued before reaching V2.0.6 PRESETS handler",
+    "input_handled_before_rupture_continue": true,
+    "physical_encoder_id": 6,
+    "parameter_editor_called_on_detents": true,
+    "scale_guide_root_assignment_reachable": true,
+    "parameter_popup_reachable": true,
+    "seq_plus_preset_pattern_rotate_reachable": true,
+    "assignment_picker_guarded": true,
+    "saver_wakes_on_preset_rotation": true,
+    "native_dispatch_tested": true,
+    "audio_engine_changed": false,
+    "ota_loader_changed": false,
+    "physical_fm1_verified": false
+  },
+  "realtime_cpu_recovery_v209": {
+    "v208_cxs_exchange_optimization_reverted": true,
+    "v208_room_unroll_and_bypass_fade_reverted": true,
+    "cxs_original_v207_assembly_restored": true,
+    "fx_reverb_feedback_and_tails_unchanged": true,
+    "reverb_ordered_q15_mix_guard_checks_removed": true,
+    "reverb_mixed_pcm_golden_cases": 6,
+    "reverb_mix_isolated_pi32v2_code_bytes_before_after": [
+      66,
+      18
+    ],
+    "sub_pitch_increment_old_new_pcm_equal": true,
+    "sub_pitch_increment_parity_cases": 2154880,
+    "sub_pitch_isolated_pi32v2_code_bytes_before_after": [
+      202,
+      106
+    ],
+    "sub_pitch_exact_per_sample_glide_detune_drift": true,
+    "reverb_types": [
+      "SPRING",
+      "HALL",
+      "ROOM"
+    ],
+    "eight_fx_slots_unchanged": true,
+    "additional_pcm_rings": 0,
+    "effect_count_reduced": false,
+    "sample_rate_and_oversampling_unchanged": true,
+    "stored_project_codec_unchanged": true,
+    "hardware_dma_late_zero_verified": false,
+    "physical_fm1_verified": false
+  },
+  "channel_eq_realtime_v210": {
+    "standalone_eq_does_not_dispatch_empty_fx_rack": true,
+    "all_four_saved_eq_gains_supported": true,
+    "original_four_biquad_coefficient_math_unchanged": true,
+    "original_wet_soft_knee_applied_consistently": true,
+    "old_wet_buffer_cleanup_bounded_to_one_sample_index": true,
+    "eq_scenario_count": 8,
+    "eq_default_and_saved_knob_pcm_samples_compared": 6400000,
+    "reverb_to_eq_transition_pcm_matches_v209": true,
+    "dual_sub_low_eq_hall_pcm_stress": true,
+    "no_new_pcm_buffers": true,
+    "project_codec_unchanged": true,
+    "hardware_dma_late_zero_verified": false,
+    "physical_fm1_verified": false
+  },
+  "reference_growl_main_v211": {
+    "reference": "User-supplied Seaboard Block video, 2026-11-16",
+    "reference_note_hz": 36.7,
+    "dominant_harmonics": [
+      2,
+      3,
+      4
+    ],
+    "audio_samples_embedded": false,
+    "former_main_saw_storage_bit_preserved": true,
+    "mode_label": "GROWL",
+    "wavetables": 7,
+    "table_length": 256,
+    "control_labels_unchanged": true,
+    "sub_oscillator_saw_unchanged": true,
+    "cxs_pcm_unchanged": true,
+    "new_runtime_ram_bytes": 8,
+    "floating_point_in_pcm": false,
+    "new_pcm_rings": 0,
+    "physical_fm1_verified": false,
+    "hardware_dma_margin_verified": false
+  },
+  "growl_expression_v212": {
+    "previous_version": "2.0.11",
+    "user_recording_s": 5.3,
+    "reference_repeated_pitch_hz": 36.7,
+    "user_recording_noted_pitches_hz": [
+      110,
+      184.7
+    ],
+    "sound_target": "stronger vocal snarl; distinctly more useful knob extremes",
+    "two_state_formant_filter": true,
+    "asymmetric_overdrive": true,
+    "bounded_wavefold": true,
+    "eight_controls_retained": true,
+    "gain_control_zero_is_silent": true,
+    "params_cached_per_pcm_block": true,
+    "parameter_cache_stack_bytes": 20,
+    "extra_oscillator_voices": 0,
+    "extra_delay_buffers": 0,
+    "new_pcm_64_bit_math": false,
+    "new_pcm_division_or_float": false,
+    "host_extreme_parameter_sustained_cases": 1536,
+    "long_sustain_and_low_eq_dual_sub_reverb_tested": true,
+    "physical_fm1_verified": false,
+    "hardware_dma_margin_verified": false
+  },
+  "growl_performance_v213": {
+    "two_independent_device_global_preset_knob_assignments": true,
+    "cxs_default": "TEMPO / BPM",
+    "growl_default": "EXPRESSION",
+    "expression_range": [
+      0,
+      100
+    ],
+    "expression_units_per_encoder_detent": 5,
+    "neutral_at_50_identical_to_v212": true,
+    "voice_dimensions": [
+      "FORMANT",
+      "BRIGHTNESS",
+      "BODY",
+      "PRESSURE",
+      "WAVEFOLD"
+    ],
+    "individual_touch_axes_or_per_note_mpe": false,
+    "preset_edits_or_flash_writes_while_turning_expression": false,
+    "control_coefficients_processed_once_per_dma_block": true,
+    "new_per_sample_pcm_operations": 0,
+    "new_pcm_delay_buffers_or_oscillator_voices": 0,
+    "new_flash_sectors_or_project_format_version": 0,
+    "global_journal_record_bytes": 8,
+    "legacy_assignment_records_supported": true,
+    "power_loss_and_global_compaction_host_tested": true,
+    "physical_fm1_dma_late_verified": false
+  },
+  "growl_performance_v214": {
+    "growl_default": "EXPRESSION LATCH",
+    "neutral_expression": 50,
+    "expression_zero_audible_when_level_nonzero": true,
+    "negative_expression_gradual_presence_floor": true,
+    "neutral_and_positive_sound_unchanged": true,
+    "modes": [
+      "EXPRESSION LATCH",
+      "EXPRESSION RETURN"
+    ],
+    "assignment_ids": [
+      94,
+      95
+    ],
+    "return_delay_ms": 125,
+    "return_step_per_25ms": 5,
+    "springback_main_loop_only": true,
+    "global_preferences_record_unchanged_bytes": 8,
+    "new_per_sample_pcm_operations": 0,
+    "physical_fm1_dma_late_verified": false
   }
 }

@@ -10,6 +10,19 @@
 enum {RU_FX_REVERB, RU_FX_DELAY, RU_FX_CHORUS, RU_FX_MOSFET,
       RU_FX_COMP, RU_FX_TILT, RU_FX_FUZZ, RU_FX_SAND,
       RU_FX_DISTORTION, RU_FX_WAH};
+/* Browser order only. Stored type IDs and the audible chain stay intact. */
+static const uint8_t ru_fx_library_order[RU_FX_TYPES]={
+ RU_FX_REVERB,RU_FX_DELAY,RU_FX_CHORUS,RU_FX_WAH,
+ RU_FX_MOSFET,RU_FX_DISTORTION,RU_FX_FUZZ,RU_FX_SAND,
+ RU_FX_COMP,RU_FX_TILT
+};
+static inline uint8_t ru_fx_library_index(uint8_t type){
+ for(uint8_t i=0u;i<RU_FX_TYPES;i++)if(ru_fx_library_order[i]==type)return i;
+ return 0u;
+}
+static inline uint8_t ru_fx_library_type(uint8_t pos){
+ return pos<RU_FX_TYPES?ru_fx_library_order[pos]:RU_FX_EMPTY;
+}
 struct rupture_fx_chain {
  uint8_t type[RU_FX_SLOTS],enabled;
  /* Four native-unit knobs per insert, separate from all other inserts.
@@ -31,7 +44,7 @@ static inline void ru_chain_slot_defaults(struct rupture_fx_chain *c,uint8_t slo
  case RU_FX_TILT:p[0]=50u;p[1]=50u;p[2]=65u;p[3]=50u;break;
  case RU_FX_FUZZ:p[0]=55u;p[1]=75u;p[2]=65u;p[3]=65u;break;
  case RU_FX_SAND:p[0]=60u;p[1]=40u;p[2]=45u;p[3]=80u;break;
- case RU_FX_DISTORTION:p[0]=15000u;p[1]=16384u;p[2]=32767u;p[3]=22000u;break;
+ case RU_FX_DISTORTION:p[0]=23500u;p[1]=16384u;p[2]=22000u;p[3]=22000u;break;
  case RU_FX_WAH:p[0]=24000u;p[1]=16384u;p[2]=8192u;p[3]=23500u;break;
  default:break;
  }

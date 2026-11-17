@@ -9,7 +9,8 @@ assert 'ru_settings_open=1u;' in settings
 assert 'else if(ru_settings_selected==1u)' in settings
 assert 'ru_autosave_enabled^=1u;' in settings
 assert 'ru_global_gain_dirty=1u;' in settings
-assert 'ru_settings_open=2u' not in b
+assert 'ru_settings_open=2u' in settings # V2.0.5 PRESETS assignment chooser
+assert 'else if(ru_settings_selected==2u){' in settings # AUTO SAVE remains a direct toggle
 assert 'ru_auto_choice' not in b
 assert 'ru_auto_choice' not in ui[ui.index(' if(page==RU_PAGE_SETTINGS){'):]
 assert '(ru_settings_open==1u || (ru_settings_open==0u && ru_settings_selected==0u))' in b

@@ -7,7 +7,8 @@ int main(void){
  RuState v={0};v.page=RU_PAGE_GLO;v.selected=3u;ru_render(&v);
  assert(ru_get(12,48)&&ru_get(12,82)&&ru_get(12,116)&&ru_get(12,150)&&ru_get(12,184));
  v.page=RU_PAGE_SETTINGS;v.selected=2;v.settings_open=0u;v.master=100u;ru_render(&v);
- assert(ru_get(12,57)&&ru_get(12,99)&&ru_get(12,141)&&ru_get(12,183));
+ /* V2.0.5 inserts PRESETS KNOB and fits seven settings cards at 24px. */
+ for(int row=0;row<7;row++)assert(ru_get(12,52+row*24));
  v.page=RU_PAGE_OTHER;v.saver_enabled=1u;ru_render(&v);assert(pixels()>500);
  v.page=RU_PAGE_WIPE_ALL;v.manager_confirm=0u;ru_render(&v);assert(ru_get(14,157));
  v.manager_confirm=1u;ru_render(&v);assert(ru_get(126,157));

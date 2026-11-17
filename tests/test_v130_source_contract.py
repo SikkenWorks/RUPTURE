@@ -10,6 +10,6 @@ assert 'ru_bug_qr_white' in ui and 'ru_bug_qr_black' not in ui
 assert 'ru_city_fault_x' in ui and 'ru_crack_saver' in ui
 assert 'ru_saver_step(&ru_saver_frame' in b
 assert 'RU_PAGE_BUG_REPORT' in b and 'ru_selected+select,0,6' in b
-assert 'ru_center(num,195,y+9,1)' in ui and 'ru_center(v->auto_save?"ON":"OFF",195,y+9,1)' in ui
+assert 'ru_center(num,195,y+8,1)' in ui and 'ru_center(v->auto_save?"ON":"OFF",195,y+8,1)' in ui
 assert not any(x in (r/'README.md').read_text() for x in ('# V1.29', '# V1.30', '# V1.31', '## Changelog'))
 print('PASS V1.30 native input + storage source contract')

@@ -1,5 +1,5 @@
-/* RUPTURE V1.95: exact V1.94 PCM oracle, including repeated effects and
- * per-slot parameters. Any DSP optimization must preserve these hashes. */
+/* RUPTURE V2.0.4: exact PCM oracle, including repeated effects and
+ * per-slot parameters. Every unchanged engine retains its V1.94 hash. */
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
@@ -46,8 +46,10 @@ static uint32_t render(uint8_t type,uint8_t count){
  return hash;
 }
 int main(void){
- /* Golden hashes produced by UNMODIFIED V1.94 native_fx.c (-O3). They
-  * guard actual left+right PCM output through toggle and slot moves. */
+ /* Golden hashes produced by V1.94 native_fx.c (-O3), except DISTORTION:
+  * V2.0.4 deliberately replaces its overdrive-style clipping with metal
+  * distortion. Its original hashes were 3229841929 / 910584237.
+  * The unchanged engines remain byte-identical to their historic oracle. */
  static const uint32_t reference[RU_FX_TYPES][2]={
   {2485899402u,140647317u},
   {3397896071u,2368806137u},
@@ -57,7 +59,7 @@ int main(void){
   {388186517u,1941994965u},
   {489272983u,994852517u},
   {1874503083u,1003962987u},
-  {3229841929u,910584237u},
+  {2948157681u,471580635u},
   {1886883071u,3979176575u},
  };
  for(uint8_t t=0u;t<RU_FX_TYPES;t++){
@@ -68,6 +70,6 @@ int main(void){
    return 1;
   }
  }
- puts("PASS V1.95 all ten FX engines, 1x and 8x, sample-exact to V1.94");
+ puts("PASS V2.0.4 all ten FX, historic PCM parity except intentional metal distortion");
  return 0;
 }

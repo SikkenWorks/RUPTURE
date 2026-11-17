@@ -54,7 +54,8 @@ int main(void){
  assert(project.v190.glide_patch[1][1]==0x06u);
  assert(ru_v190_glide_stage(&project.v190,31u,9000u,12u,3u,5u));
  assert(project.v190.glide_patch[31][0]==200u);
- assert(project.v190.glide_patch[31][1]==0x16u);
+ /* V2.0.4 preserves curve 3 (SOFT) rather than clamping it to EXP. */
+ assert(project.v190.glide_patch[31][1]==0x1eu);
  assert(!ru_v190_glide_stage(&project.v190,32u,500u,1u,0u,1u));
  /* Manual SAVE: includes every edited GLIDE parameter for both presets. */
  roundtrip();

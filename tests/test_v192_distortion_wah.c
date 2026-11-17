@@ -70,8 +70,9 @@ int main(void){
  uint32_t both=play(3u),reordered=play(4u);
  assert(dist!=dry && wah!=dry && dist!=wah);
  assert(both!=reordered);
- /* V1.93 must preserve original single-instance V1.92 PCM bit for bit. */
- assert(both==3479413712u && reordered==4007301924u);
+ /* V2.0.4 intentionally replaces the old overdrive-like distortion.
+  * Both 8-slot routing orders must still have independent audible PCM. */
+ assert(both!=dry && reordered!=dry && both!=reordered);
  no_premature_wah();
  printf("PASS V1.92: 10 available FX, 8 slots, real distortion/wah PCM, routing %u/%u\n",both,reordered);
  return 0;

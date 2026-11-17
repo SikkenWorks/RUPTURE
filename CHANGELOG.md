@@ -1,3 +1,257 @@
+# RUPTURE V2.0.14 — GROWL LATCH / RETURN
+
+## V2.0.14 (2026-11-17)
+- EXPRESSION=0 no longer removes the GROWL bass. Gradual body and presence
+  floors keep the voice audible across negative expression values.
+- LATCH retains the gesture. RETURN moves it back to 50 after 125ms.
+- Both assignments appear in GROWL PERFORMANCE, persisted as IDs 94/95.
+- No new per-sample DSP, extra audio buffer, flash sector or OTA loader.
+- Firmware cross-compiled, host regressions pass; FM1 hardware unverified.
+
+# RUPTURE V2.0.13 — GROWL expression performance
+
+## V2.0.13 (2026-11-16)
+
+- Two independent device-global PRESETS encoder mappings: original CXS
+  assignment preserved; GROWL defaults to **EXPRESSION**.
+- GROWL PERFORMANCE category added to the existing settings picker, after
+  a new CXS/GROWL mode selector. Both assignments are visible in the chooser.
+- The 0–100 Expression gesture co-modulates formant positions, brightness,
+  body, nonlinear drive, clipping asymmetry and harmonic folds in one motion.
+  Midpoint 50 leaves every GROWL coefficient untouched.
+- Performance movement is temporary, not a patch edit or flash operation.
+  Smoothing and coefficient changes occur once per DMA buffer.
+- Backward-compatible 8-byte NOR preferences record now saves BOTH CXS
+  and GROWL assignments. CRC, interrupted writes, project bank changes and
+  global-settings journal compaction covered by new tests.
+- Firmware cross-compiled; physical FM1 DMA LATE and sound validation remain
+  unverified.
+
+# RUPTURE V2.0.12 — More aggressive, more expressive GROWL
+
+## V2.0.12 (2026-11-16)
+
+- Compared the original 19-second Seaboard reference against the new
+  five-second V2.0.11 recording. The new demonstration sounds too restrained
+  according to the user; its knobs are visibly set to extreme positions.
+  The newly played notes are also higher in pitch than the recurring D1 in
+  the original clip.
+- Reworked GROWL's two-stage vocal filter and introduced a strong, bounded
+  asymmetric wavefold and drive circuit to add genuine rasp, not just volume.
+- Greatly expanded timbral contrast across BRIGHT, EDGE, BODY and the four
+  SHAPE controls, preserving the existing settings/preset structure.
+- Moved GROWL's parameter conversion out of the 44.1-kHz PCM callback's
+  per-sample inner loop; cached 20-byte parameters once per audio block.
+- No extra oscillator, delay ring, reverb state, sample playback, float,
+  dynamic memory or division inside GROWL's PCM processor.
+- Original CXS, SUB SAW/SQUARE, EQ, FX, MIDI, PRESETS and OTA retained.
+- Added separate expressive control sweep and combined dual-SUB/low-EQ/HALL
+  regression tests. Real FM1 CPU/DMA LATE testing still required.
+
+# RUPTURE V2.0.11 — New reference-inspired GROWL main oscillator
+
+## V2.0.11 (2026-11-16)
+
+- Analyzed the user's 19.27-second Seaboard Block video. The repeated deep
+  note is approximately D1 (36.7 Hz), and its second through fourth
+  harmonics dominate the fundamental. The source includes other sounds,
+  compression and performance articulation, so this is a spectral guide.
+- Replaced only the MAIN SAW oscillator mode with **GROWL**, a deterministic
+  seven-level, 256-point bandlimited harmonic waveform generated offline.
+  No recording data or sample playback is stored in firmware.
+- Added two lightweight fixed-point one-pole states to animate the low-mid
+  'throat' when BRIGHT changes, plus bounded drive/weight/bite/punch shaping.
+  No realtime trigonometry, division, allocation, new voices or PCM rings.
+- Retained the same CXS/GROWL 64-sample live transition, all eight existing
+  parameter controls, and the saved main-oscillator project bit, so legacy
+  SAW patches select GROWL automatically after update.
+- Original CXS, SUB SAW/SQUARE, 8-slot FX, three reverbs, low-CPU Channel
+  EQ, project settings, PRESETS, LED wave and the trusted OTA remain intact.
+- Passed six-second sustained GROWL and all 256 extreme knob combinations
+  with undefined-behavior checks. Another 132,300-sample test drives GROWL,
+  both SUB oscillators, low-frequency Channel EQ and HALL simultaneously:
+  no full-scale clipping. All previous software regression tests pass.
+- Sound resemblance and worst-case DMA LATE must still be verified on FM1.
+
+# RUPTURE V2.0.10 — Channel EQ sustained-note DMA LATE hotfix
+
+## V2.0.10 (2026-11-15)
+
+- Physical FM1 report: Channel EQ at low/minimum values crackles and
+  increments DMA LATE, even with just one band enabled.
+- Found that the silent eight-insert FX bypass was rejected by edited EQ
+  gain fields, including the fourth HIGH AIR field. Non-neutral EQ alone
+  could therefore run the full ordered rack / legacy render path at 44.1kHz.
+- Added a dedicated guarded EQ-only path, with the four original RBJ biquads,
+  exact source coefficients, no extra audio allocation, and a bounded
+  per-sample flush of residual reverb/delay buffers after FX disable.
+- Fixed inconsistent peak safety: EQ settings no longer choose between a
+  guarded soft-knee route and an unguarded hard-clipping route.
+- Eight low-frequency/Q/gain scenarios verify 6,400,000 baseline and saved
+  control samples with equal PCM; reverb -> EQ transition stays PCM-exact.
+- Host comparison: EQ-only ~50 ns -> ~25 ns/sample in typical single-band
+  cases, with native pi32v2 machine code and full firmware build audited.
+- Retained CXS, SUB, reverb engines, 8 FX inserts, PRESETS, LED wave, project
+  and global storage and trusted OTA from V2.0.9.
+- DMA LATE zero under real hardware combinations is not yet verified.
+
+## V2.0.9 (2026-11-15)
+
+- Physical FM1 report: DMA LATE events rose rapidly on sustained notes in
+  V2.0.8 with sub-oscillators and reverb. Treat V2.0.8 as regressed.
+- Inspected actual Jieli pi32v2 target disassembly, not just host CPU math.
+  V2.0.8's conditional 32-bit CXS blend made `rupture_q15_sample` grow
+  from 478 to 568 instruction bytes, adding branches in each exchange.
+- Restored V2.0.7 CXS exchange machine code and the original complete
+  Spring/Room/Hall reverb algorithms. Removed unsafe ROOM unrolling and
+  bypass-fade arithmetic changes from V2.0.8.
+- Kept only a demonstrably smaller reverb mixer for guaranteed clipped
+  ordered-insert PCM (66 -> 18 target instruction bytes), with six exact
+  mixed-FX Spring/Hall/Room golden PCM comparisons.
+- Optimized both active sub-oscillators' pitch increment with native paired-
+  register 64-bit multiplication in place of the V1.79 manually split and
+  heavily guarded 32-bit path. The isolated FM1 implementation shrinks
+  from 202 to 106 instruction bytes; no table, buffer or quality changes.
+- 2,154,880 bit-identical SUB increment comparisons including octaves,
+  detune, drift and integer overflow. Existing CXS, FX and OTA regressions
+  remain required before this build is distributed.
+- Actual DMA LATE reduction and final headroom must be checked on the FM1.
+
+## V2.0.8 (2026-11-15)
+
+- Removed the normal-case 64-bit weighted exchange division from the hot
+  CXS cycle path. Preserved its legacy unsigned-excitation behavior exactly,
+  including all internal oscillator states.
+- Sub-oscillator CXS comparison: 352,000 sample-exact samples and 90,870
+  original versus optimized exchange cycles, all states identical.
+- Ordered reverb wet/dry interpolation and per-insert fade now use bounded
+  signed 32-bit products and exact signed division, with no 64-bit fallback
+  in their normal audio path.
+- FM1 compiler fully unrolls ROOM's four FDN feedback-line loops; all lines,
+  damping and stereo reflections remain present.
+- Mixed eight-slot FX regression for Spring, Hall and Room: six independent/
+  legacy configurations, each with 60,000 PCM frames including live bypass,
+  slot moves and parameter changes, exactly matching V2.0.7.
+- No audio quality change, no added RAM/delay buffers, no removed features.
+  OTA loader, bootheader, global PRESETS and boot LED wave are unchanged.
+- No physical FM1 DMA margin test has been run. Reduction of real DMA LATE
+  events remains a hardware test objective, not a verified claim.
+
+## V2.0.7 (2026-11-15)
+
+- Fixed the definitive PRESETS failure: old handler existed only after the
+  unconditional RUPTURE main-loop `continue`, so it was unreachable.
+- PRESETS hardware encoder 6 now reaches its globally assigned parameter
+  editor on every nonzero detent in the live 25 ms RUPTURE input service.
+- Previously implemented name-and-value popup now appears when actually
+  rotating, including off-screen parameters such as Scale Guide ROOT.
+- SEQ + PRESETS pattern rotation is also restored in the RUPTURE handler.
+- PRESETS wakes the screensaver; the active SETTING assignment chooser keeps
+  its own input and never inadvertently changes a parameter or sequence.
+- Native build and tests added for both dispatcher behavior and placement
+  before the early continue. Audio PCM, storage codec, trusted loader,
+  firmware bootheader, and boot LED wave unchanged.
+
+
+## V2.0.6 (2026-11-15)
+
+- PRESETS knob: actual parameter value and name appear in a non-overlapping
+  foreground overlay for 1.55 seconds on every recognized detent, including
+  assignments to parameters on another page (such as Scale Guide ROOT).
+- Physical encoder 6 (PB7 matrix row) and assignment-to-editor path audited.
+  The global NOR-backed mapping still survives project switching and reboot.
+- Bootup: 27 keys followed by 14 function LEDs light successively, with a
+  traveling brightness wave that settles into normal page LED behavior.
+  Physical key presses and protected states cancel the visual immediately.
+- LED effect is entirely outside PCM and timer-scan interrupts. Existing PC6
+  analog-gate power-rail timing guard remains active during the LED wave.
+- Host native build and regression tests run; on-device behavior and DMA
+  timing still require a real FM1 check.
+
+
+## V2.0.5 (2026-11-15)
+
+- SEQUENCER: move HOLD and SLIDE metadata entirely above the four encoder
+  graphics, for both empty and populated steps (including MIDI octave -1).
+- PRESETS encoder: nine ordered categories, 94 stable assignable controls,
+  including Scale Guide ROOT; BPM remains the default after an upgrade.
+- PRESETS assignment persists independently of project and preset files in
+  its own CRC-checked global NOR record. Project rewrites, catalog actions,
+  global preference compaction and torn writes have new storage regressions.
+- On leaving the selection modal, display WAITING/SAVING/SAVED with a
+  progress bar. Do not touch flash during playback or active voice tails.
+- Audio: replace the deterministic initial CXS eight-segment exchange in
+  the note-on ISR with its byte-identical precomputed ROM state. This avoids
+  five multi-division oscillator inits per attack with both SUBs enabled.
+  A 262,144-sample comparison of the original and new algorithms passes.
+- Full FM1 build and host regressions; actual physical DMA timing still
+  requires a device test. OTA loader and protected bootheader are unchanged.
+
+## V2.0.4 (2026-11-15)
+
+- BEND: 44.1 kHz Q16 pitch smoothing prevents encoder-induced stepping on
+  both upward bends and release, regardless of GLIDE mode.
+- GLIDE: six saved curves LINEAR/EXP/LOG/SOFT/FAST/FIRM, packed into the
+  reserved bits of the existing PJT35 per-preset GLIDE settings.
+- FX browser: ambience (REVERB, DELAY), modulation (CHORUS, WAH WAH),
+  drive (MOSFET, DISTORTION, OCTAVE FUZZ, SANDPAPER), dynamics/tone
+  (COMPRESSOR, TILT EQ). Stored type IDs and old effect chains unchanged.
+- DISTORTION: bass-tightened high-gain asymmetric hard-clipping metal voicing,
+  tone lowpass and original wet/dry. Not a duplicate of MOSFET overdrive.
+- ROOM/HALL: refined damping and Schroeder allpass / denser early reflections
+  in existing 4096-word tanks; SPRING and reverb buffers unchanged.
+- SUB engine: cache identical pitch/blend calculations when parameters stay
+  unchanged, use 3 boundary tests instead of 7 for CXS selection and take an
+  exact signed divide-by-4 fast path for the subs' fixed EDGE=50 smoothing.
+  SUB waveform samples, phases and mixing remain bit-identical.
+- Software QA and native build completed; actual FM1 DMA LATE behavior still
+  requires on-device measurement.
+
+## V2.0.3 (2026-11-15)
+
+- SUB OSC 1 turns toward the viewer once, then holds original frame 12
+  throughout sustain. A gentle 1-pixel whole-panel jitter replaces the
+  looping facial/eye frames.
+- Releasing the last held note resets the image and shake immediately;
+  the next note starts the original turn again.
+- SUB OSC 2 animation and original sprite sources remain unchanged.
+- No change to audio/DSP, autosave/GLIDE, loading screen, firmware loader,
+  recovery, flash compatibility or project formats.
+- Verified in host tests. Physical FM1 test pending.
+
+## V2.0.2 (2026-11-15)
+
+- Increased SIGNAL BREACH loading cadence from 50 ms to 35 ms across the first 22 frames, then holds the final RUPTURE V2 image for 1000 ms (previously 780 ms).
+- Installed the user-supplied 16-frame native 1-bit 224×30 SUB OSC 1 fear-face animation and the independent 16-frame SUB OSC 2 close-up.
+- While a real note is held: one-time turn through frames 2–12, then a continuous eye-tremor loop through frames 13–16. On release: immediate return to still frame 1; no animation when silent or when another screen is active.
+- Kept all supplied sprite pixels, existing SUB controls and knob positioning, 1-bit panel blitter, audio engine, preset SAVE/AUTO SAVE and trusted OTA unchanged.
+- Added source-pixel parity and note-gate/loop/release regression tests. Hardware validation is still pending.
+
+---
+
+# RUPTURE V2.0.1 — smoother SIGNAL BREACH loading animation
+
+## V2.0.1 (2026-11-15)
+
+- Smoothed the boot sequence from 12 to 23 full-screen 1-bit frames, adding eleven ordered-dither transition frames between pixel-exact original art.
+- Regularized display timing to 50 ms per animation frame, followed by a 780 ms logo hold; kept the nominal total loading-animation delay at 1880 ms.
+- Preserved the existing 7200-byte framebuffer and lossless RLE storage; no new runtime interpolation, DSP work, or audio buffers.
+- Reverified that all four per-preset GLIDE parameters are captured through the same manual SAVE and guarded AUTO SAVE snapshot and codec. No change to their existing project format or flash-write safeguards.
+- Built a new FWSC using the byte-identical trusted OTA loader and protected bootheader. Physical FM1 verification remains pending.
+
+---
+
+# RUPTURE V2.0 — SIGNAL BREACH loading animation
+
+## V2.0 (2026-11-15)
+
+- Replaced only the loading screen with the 12 exact 240×240 1-bit Signal Breach sprites supplied for RUPTURE V2.0.
+- Lossless compressed 86,400 raw frame bytes to 46,340 ROM bytes; frames decode into the already allocated UI framebuffer, with no additional audio/DSP processing or framebuffer.
+- Frame timing follows the asset's 1,880 ms sequence, including the final 800 ms hold. The startup animation is shorter than the previous 2,019 ms splash.
+- Preserved all synth and GLIDE features, SAVE/AUTO SAVE, SCALE GUIDE, screensaver and other animated pages, flash support and trusted OTA. Automated parity and boot artwork tests added. Physical FM1 validation remains pending.
+
+---
+
 # RUPTURE V1.99 — note-gated GLIDE animation + GUIDE labels
 
 ## V1.99 (2026-11-15)

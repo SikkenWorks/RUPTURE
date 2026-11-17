@@ -20,6 +20,12 @@ typedef struct {
  int32_t drift_q16,drift_target_q16,drift_residue;
  uint16_t mix,blend_smooth;
  uint8_t running_type;
+ /* These are exact-value caches, never reduced-rate oscillator updates.
+  * Sub sample phases, waves and envelopes still advance on every sample. */
+ uint32_t cached_base,cached_increment;
+ int32_t cached_drift;
+ uint16_t cached_mix,cached_blend_target;
+ uint8_t cached_oct,cached_detune,cached_amount,inc_cached,blend_cached;
 } RuSubState;
 static const int16_t ru_sub_sine[257]={0,804,1608,2410,3212,4011,4808,5602,6393,7179,7962,8739,9512,10278,11039,11793,12539,13279,14010,14732,15446,16151,16846,17530,18204,18868,19519,20159,20787,21403,22005,22594,23170,23731,24279,24811,25329,25832,26319,26790,27245,27683,28105,28510,28898,29268,29621,29956,30273,30571,30852,31113,31356,31580,31785,31971,32137,32285,32412,32521,32609,32678,32728,32757,32767,32757,32728,32678,32609,32521,32412,32285,32137,31971,31785,31580,31356,31113,30852,30571,30273,29956,29621,29268,28898,28510,28105,27683,27245,26790,26319,25832,25329,24811,24279,23731,23170,22594,22005,21403,20787,20159,19519,18868,18204,17530,16846,16151,15446,14732,14010,13279,12539,11793,11039,10278,9512,8739,7962,7179,6393,5602,4808,4011,3212,2410,1608,804,0,-804,-1608,-2410,-3212,-4011,-4808,-5602,-6393,-7179,-7962,-8739,-9512,-10278,-11039,-11793,-12539,-13279,-14010,-14732,-15446,-16151,-16846,-17530,-18204,-18868,-19519,-20159,-20787,-21403,-22005,-22594,-23170,-23731,-24279,-24811,-25329,-25832,-26319,-26790,-27245,-27683,-28105,-28510,-28898,-29268,-29621,-29956,-30273,-30571,-30852,-31113,-31356,-31580,-31785,-31971,-32137,-32285,-32412,-32521,-32609,-32678,-32728,-32757,-32767,-32757,-32728,-32678,-32609,-32521,-32412,-32285,-32137,-31971,-31785,-31580,-31356,-31113,-30852,-30571,-30273,-29956,-29621,-29268,-28898,-28510,-28105,-27683,-27245,-26790,-26319,-25832,-25329,-24811,-24279,-23731,-23170,-22594,-22005,-21403,-20787,-20159,-19519,-18868,-18204,-17530,-16846,-16151,-15446,-14732,-14010,-13279,-12539,-11793,-11039,-10278,-9512,-8739,-7962,-7179,-6393,-5602,-4808,-4011,-3212,-2410,-1608,-804,0};
 static inline uint32_t ru_sub_rng(uint32_t *seed){uint32_t x=*seed;x^=x<<13;x^=x>>17;x^=x<<5;*seed=x;return x;}
@@ -31,45 +37,21 @@ static inline void ru_sub_init(RuSubState *s,uint32_t inc,uint32_t seed){
 /* octave index 0=-2,1=-1,2=0,3=+1. 50 detune = neutral.
  * 38 Q16 units ~= 1 cent over +/-50 cent range, 32-bit math throughout
  * apart from the same bounded 32x32 ->64 multiply already used by CXS. */
-/* V1.79: exact, saturating fixed-point increment, using TWO 32x32
- * multiplies instead of a 64-bit multiply per sample per active SUB.
- * factor is 0..131071 for ALL legal detune and drift settings (the
- * drift integrator is bounded to +/-768 Q16). The exceptional corrupted
- * state follows the original 64-bit calculation rather than truncating.
- * Unlike a 32-sample update this preserves EVERY sample's pitch, including
- * very slow drift, low notes and octave=+1. */
+/* V2.0.9 pi32v2 instruction audit: this processor implements a paired
+ * 64-bit multiplication directly. The V1.79 hand-split 32-bit products,
+ * overflow branches and special octave handling cost MORE instructions
+ * in the DMA ISR (202 bytes of native instruction code versus 106).
+ * One bounded wide multiply is bit-for-bit equal, preserves every drift
+ * step and octave sample, and remains saturating at the same boundaries. */
 static inline uint32_t ru_sub_inc(uint32_t base,uint8_t octave,uint8_t detune,int32_t drift){
- uint64_t raw=base;
- if(octave==0u)base>>=2u;
- else if(octave==1u)base>>=1u;
- else if(octave==3u)raw<<=1u;
- int32_t cents=(int32_t)detune-50;
- int32_t signed_factor=65536+cents*38+drift;
+ uint64_t frequency=base;
+ if(octave==0u)frequency=base>>2u;
+ else if(octave==1u)frequency=base>>1u;
+ else if(octave==3u)frequency=(uint64_t)base<<1u;
+ int32_t signed_factor=65536+((int32_t)detune-50)*38+drift;
  if(signed_factor<32768)signed_factor=32768;
- uint32_t factor=(uint32_t)signed_factor;
- if(factor>=131072u){
-  /* Invalid-state defensive path. Regular musical settings never use it. */
-  uint64_t v=(octave==3u)?raw:(uint64_t)base;
-  v=(v*factor)>>16;
-  return (uint32_t)(v>UINT32_MAX?UINT32_MAX:v<1u?1u:v);
- }
- uint32_t fraction=factor&65535u;
- uint32_t lo=(base&65535u)*fraction;
- uint32_t middle=(base>>16)*fraction;
- uint32_t part=lo>>16;
- if(middle>UINT32_MAX-part)return UINT32_MAX;
- uint32_t result=middle+part;
- if(factor>=65536u){
-  if(result>UINT32_MAX-base)return UINT32_MAX;
-  result+=base;
- }
- if(octave==3u){
-  /* Exact floor((base * factor * 2) / 65536): include bit 15 of
-   * product's low half. Saturate instead of overflowing the octave. */
-  if(result>0x7fffffffu)return UINT32_MAX;
-  result=(result<<1u)|((lo>>15u)&1u);
- }
- return result?result:1u;
+ uint64_t result=(frequency*(uint32_t)signed_factor)>>16u;
+ return (uint32_t)(result>UINT32_MAX?UINT32_MAX:result<1u?1u:result);
 }
 static inline int16_t ru_sub_sine_read(uint32_t phase){
  uint32_t i=phase>>24,fract=(phase>>8)&65535u;
@@ -103,7 +85,16 @@ static inline int32_t ru_sub_tick(RuSubState *s,uint8_t type,uint8_t oct,uint8_t
  if(s->mix<goal){s->mix=(uint16_t)(s->mix+256u>goal?goal:s->mix+256u);}
  else if(s->mix>goal){s->mix=(uint16_t)(s->mix>goal+256u?s->mix-256u:goal);}
  if(!s->running_type||!s->mix)return 0;
- uint32_t increment=ru_sub_inc(base,oct,detune,s->drift_q16);
+ uint32_t increment;
+ if(s->inc_cached&&s->cached_base==base&&s->cached_oct==oct&&
+    s->cached_detune==detune&&s->cached_drift==s->drift_q16){
+  increment=s->cached_increment;
+ }else{
+  increment=ru_sub_inc(base,oct,detune,s->drift_q16);
+  s->cached_base=base;s->cached_oct=oct;s->cached_detune=detune;
+  s->cached_drift=s->drift_q16;s->cached_increment=increment;
+  s->inc_cached=1u;
+ }
  uint32_t last=s->phase;s->phase+=increment;
  if(s->phase<last){
   /* ± up to 16 cents slow bounded drift; independently seeded per sub. */
@@ -119,7 +110,9 @@ static inline int32_t ru_sub_tick(RuSubState *s,uint8_t type,uint8_t oct,uint8_t
  if(s->running_type==RU_SUB_SQUARE||s->running_type==RU_SUB_SAW)
   return ru_bandwave_read(s->running_type,s->phase,increment);
  s->cxs.increment=increment;
- rupture_q15_params(&s->cxs,pressure,balance,memory,density);
+ if(s->cxs.pressure!=pressure||s->cxs.balance!=balance||
+    s->cxs.memory!=memory||s->cxs.density!=density)
+  rupture_q15_params(&s->cxs,pressure,balance,memory,density);
  s->cxs.edge=50u;
  return rupture_q15_sample(&s->cxs);
 }
@@ -128,7 +121,14 @@ static inline int32_t ru_sub_tick(RuSubState *s,uint8_t type,uint8_t oct,uint8_t
  * per sample yields about 12ms full-range movement at 44.1kHz. */
 static inline uint16_t ru_sub_smooth_blend(RuSubState *s,uint8_t amount){
  if(amount>100u)amount=100u;
- uint32_t target=((uint32_t)s->mix*amount)/100u;
+ uint32_t target;
+ if(s->blend_cached&&s->cached_mix==s->mix&&s->cached_amount==amount)
+  target=s->cached_blend_target;
+ else{
+  target=((uint32_t)s->mix*amount)/100u;
+  s->cached_mix=s->mix;s->cached_amount=amount;
+  s->cached_blend_target=(uint16_t)target;s->blend_cached=1u;
+ }
  uint32_t curr=s->blend_smooth;
  if(curr<target){curr+=64u;if(curr>target)curr=target;}
  else if(curr>target){curr=curr>target+64u?curr-64u:target;}

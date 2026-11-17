@@ -19,6 +19,7 @@
 #include "hal/fm1_input.h"
 #ifdef RUPTURE_BUILD
 #include "hal/fm1_uart.h"
+extern volatile uint8_t ru_growl_expression;
 #include "rupture_trs_input.h"
 #include "rupture_patch_state.h"
 #include "rupture_shape_state.h"
@@ -29,7 +30,9 @@
 #include "rupture_bend_sprites.h"
 #include "rupture_bend_curves.h"
 #include "rupture_bend_storyboard.h"
+#include "rupture_growl_expression.h"
 #include "rupture_glide_tunnel_playback.h"
+#include "rupture_subosc_fear_playback.h"
 #endif
 #include "hal/fm1_timer.h"
 #include "hal/fm1_audio.h"
@@ -224,6 +227,7 @@ static void etch_panel_commit(void){
 #include "rupture_seq_entry.h"
 #include "rupture_seq_redraw.h"
 #include "rupture_encoder_feel.h"
+#include "rupture_preset_input.h"
 #include "rupture_hw_leds.h"
 #include "rupture_welcome.h"
 #include "rupture_save_route.h"
@@ -274,10 +278,10 @@ static void ru_boot_splash(void){
  RuState v={0};v.page=RU_PAGE_LOADING;
  for(uint32_t f=0;f<RU_SPLASH_STEPS;f++){
   v.boot_step=(uint8_t)(f+1u);v.crt_enabled=ru_crt_enabled;ru_crt_active=ru_crt_enabled;ru_render(&v);ru_commit();
-  fm1_wdt_feed();fm1_delay_ms(56u);
+  /* Frame-accurate supplied timing; feed WDT during the final logo hold. */
+  uint32_t remain=ru_v2_breach_ms[f];
+  while(remain){uint32_t slice=remain>25u?25u:remain;fm1_wdt_feed();fm1_delay_ms(slice);remain-=slice;}
  }
- /* Hold exact logo + slogan while remaining hardware starts. */
- for(uint32_t t=0;t<675u;t+=25u){fm1_wdt_feed();fm1_delay_ms(25u);}
 }
 #endif
 /* Draw a connected waveform into the RAM scope surface. Adjacent X columns
@@ -354,6 +358,7 @@ static uint16_t native_led_last_solid,native_led_last_glow;
 static uint8_t native_led_seen;
 static uint32_t ru_led_start_ms;
 static uint8_t ru_led_started;
+static uint8_t ru_led_wave_cancelled;
 /* Mode is shared by main-loop waveform publication and the renderer. Keep
  * the declaration ahead of audio_target.c because it is included here. */
 static uint8_t native_mono_mode=1u;
@@ -717,6 +722,17 @@ static uint8_t ru_global_gain_dirty=0u;
 static const uint16_t ru_saver_delay_seconds[8]={15u,30u,45u,60u,90u,120u,180u,300u};
 static uint8_t ru_autosave_enabled=0u,ru_screensaver_enabled=1u,ru_saver_delay_index=1u,ru_autoload_project=0u,ru_autoload_browse=0u; /* device setting, OFF until explicitly enabled */
 static uint8_t ru_settings_selected=0u,ru_settings_open=0u,ru_saver_options_selected=0u;
+/* The PRESETS assignment is a device-global setting, never a project/preset
+ * field. The chooser and flash overlay are main-thread UI state only. */
+static uint8_t ru_preset_assign=RU_PRESET_ASSIGN_DEFAULT;
+static uint8_t ru_preset_growl_assign=RU_PRESET_ASSIGN_EXPRESSION;
+static uint32_t ru_growl_expression_last_turn_ms=0u;
+static uint8_t ru_preset_edit_mode=0u; /* chooser: 0 CXS / 1 GROWL */
+static uint8_t ru_preset_category=0u,ru_preset_cursor=RU_PRESET_ASSIGN_DEFAULT;
+static uint8_t ru_preset_save_stage=0u,ru_preset_save_progress=0u;
+static uint32_t ru_preset_save_since_ms=0u;
+/* Time-bounded, screen-only feedback. It is never processed by the DSP. */
+static uint32_t ru_preset_popup_until=0u;
 static uint8_t ru_manager_project=0u,ru_manager_seq=0u,ru_manager_action=0u;
 static uint8_t ru_manager_confirmation=0u,ru_manager_status=0u,ru_manager_seq_mask=0u;
 static uint8_t ru_manager_name=0u,ru_about_scroll=0u;
@@ -730,6 +746,9 @@ static uint8_t ru_panel_last_page=255u;
 /* GLIDE-only POV tunnel cadence: display service, never the audio callback. */
 static uint32_t ru_tunnel_last_tick_ms=0u;
 static uint8_t ru_tunnel_frame=0u,ru_tunnel_tick=0u;
+/* SUB 1 / SUB 2 fear-face animation: page-local, real held voice only. */
+static uint8_t ru_sub_fear_frame=0u,ru_sub_fear_active=0u,ru_sub_fear_shake=0u;
+static uint32_t ru_sub_fear_last_tick_ms=0u;
 
 static uint32_t ru_saver_hold_until_ms=0u;
 static uint32_t ru_global_gain_changed_ms=0u,ru_global_gain_attempt_ms=0u;
@@ -746,7 +765,13 @@ static uint8_t ru_use_staged_name=0u;
 static const char ru_name_alphabet[]=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
 
 static uint8_t ru_pressure=58,ru_balance=50,ru_memory=52,ru_density=68;
-static uint8_t ru_main_wave=0u; /* 0 CXS, 1 SAW; preserved per project/preset */
+static uint8_t ru_main_wave=0u; /* 0 CXS, 1 GROWL (former SAW); storage unchanged */
+static uint8_t ru_preset_active_assignment(void){
+ return ru_main_wave?ru_preset_growl_assign:ru_preset_assign;
+}
+static uint8_t ru_preset_edit_assignment(void){
+ return ru_preset_edit_mode?ru_preset_growl_assign:ru_preset_assign;
+}
 static uint8_t ru_weight=0u,ru_edge=50u,ru_bite=0u,ru_punch=0u;
 /* SUB pages: TYPE OFF/CXS/CLASSIC/SQUARE/SAW, OCT -2/-1/0/+1, DETUNE +/-50 cents, DRIFT 0..100. */
 static uint8_t ru_sub_type[2]={0u,0u};
@@ -1323,12 +1348,22 @@ static void native_seq_led_refresh(void){
  solid|=pressed_live;
  dim&=~solid;
  mid&=~solid;
+ /* Boot-only panel animation is main-thread state, never a scan-ISR timer.
+  * Any real user input cancels it permanently to preserve key feedback. */
+ if(!ru_led_started){ru_led_start_ms=etch_ms;ru_led_started=1u;}
+ uint32_t boot_wave_ms=(uint32_t)(etch_ms-ru_led_start_ms);
+ if(fm1_in.buttons||fm1_in.notes||native_tripped||native_safe||native_updating)
+  ru_led_wave_cancelled=1u;
+ uint8_t boot_wave=(uint8_t)(!ru_led_wave_cancelled &&
+  boot_wave_ms<RU_LED_BOOT_WAVE_TOTAL_MS);
  fm1_irq_off();
  for(uint32_t k=0;k<27;k++){
   uint32_t bit=1u<<k;
-  fm1_led_key(14u+k,(solid&bit)!=0);
-  native_seq_led_dim(14u+k,(dim&bit)!=0);
-  native_seq_led_mid(14u+k,(mid&bit)!=0);
+  uint8_t level=(solid&bit)?3u:(mid&bit)?2u:(dim&bit)?1u:0u;
+  if(boot_wave)level=ru_led_boot_wave_level(boot_wave_ms,(uint8_t)k,level);
+  fm1_led_key(14u+k,level==3u);
+  native_seq_led_dim(14u+k,level==1u);
+  native_seq_led_mid(14u+k,level==2u);
  }
  /* V1.84: show the current page and transport status on the physical
   * function buttons. Inactive functions stay discoverable at the existing
@@ -1338,9 +1373,8 @@ static void native_seq_led_refresh(void){
    (uint8_t)(native_safe||native_tripped||native_updating||ru_welcome.phase));
  /* Cold boot: prevent the abrupt all-function-LED current edge. No impact
   * on the usual page/transport/button LED behavior after startup. */
- if(!ru_led_started){ru_led_start_ms=etch_ms;ru_led_started=1u;}
  leds=ru_function_led_boot_softstart(leds,(uint8_t)!!ru_welcome.phase,
-    (uint32_t)(etch_ms-ru_led_start_ms),(uint16_t)fm1_in.buttons);
+    boot_wave_ms,(uint16_t)fm1_in.buttons);
  if(!native_led_seen || native_led_last_solid!=leds.solid ||
     native_led_last_glow!=leds.glow){
   native_led_seen=1u;
@@ -1362,6 +1396,30 @@ static void native_seq_led_refresh(void){
 #endif
  native_seq_led_dim(0u,0);
  native_seq_led_dim(1u,0);
+ if(boot_wave){
+  /* Keys 0..26, then function LEDs 0..13: a single, visibly travelling
+   * wave. Only these 41 cheap matrix writes run during boot. */
+  for(uint8_t b=0u;b<14u;b++){
+   uint16_t bit=(uint16_t)(1u<<b);
+#ifdef RUPTURE_BUILD
+   uint8_t level=b<2u?
+     (uint8_t)rupture_octave_led(b,native_controls.octave,fm1_in.buttons)*3u:
+     (leds.solid&bit)?3u:(leds.glow&bit)?1u:0u;
+#else
+   uint8_t level=b<2u?
+     (uint8_t)etch_led_octave(b,native_controls.octave,fm1_in.buttons)*3u:
+     (leds.solid&bit)?3u:(leds.glow&bit)?1u:0u;
+#endif
+   level=ru_led_boot_wave_level(boot_wave_ms,(uint8_t)(27u+b),level);
+   fm1_led_key(b,level==3u);
+   native_seq_led_dim(b,level==1u);
+   native_seq_led_mid(b,level==2u);
+  }
+  /* Audio PC6 gate already waits for LED current to settle. Keep that
+   * original pop guard armed during the successive boot LED transitions. */
+  native_led_seen=1u;
+  native_led_last_change_ticks=fm1_ticks();
+ }
  fm1_irq_enable_all();
 }
 static uint32_t envelope_step(uint32_t ms){if(!ms)return 0x7fff0000u;uint32_t samples=ms*3000u/68u;return samples?0x7fff0000u/samples:0x7fff0000u;}
@@ -1723,7 +1781,8 @@ static void native_preset_dsp_restore(uint8_t slot){
  if(native_project_cfg.source_version>=35u || (ru_glide_staged_mask&(1u<<slot))){
   ru_note_glide_ms=(uint16_t)native_project_cfg.v190.glide_patch[slot][0]*10u;
   uint8_t settings=native_project_cfg.v190.glide_patch[slot][1];
-  ru_glide_mode=settings&3u;ru_glide_curve=(settings>>2u)&1u;
+  ru_glide_mode=settings&3u;
+  ru_glide_curve=(uint8_t)(((settings>>2u)&3u)|((settings>>3u)&4u));
   ru_glide_retrigger=(settings>>4u)&1u;
  }else{
   ru_glide_mode=ru_note_glide_ms?1u:0u;
@@ -2931,11 +2990,83 @@ static uint8_t ru_splash_active(void){
  if(ru_splash_done||native_safe||native_tripped||native_updating)return 0u;
  if(!native_screen_gate.ready)return 0u;
  if(!ru_splash_started){ru_splash_started=1u;ru_splash_start_ms=etch_ms;}
- if((uint32_t)(etch_ms-ru_splash_start_ms)>=2050u){ru_splash_done=1u;first_frame=1u;return 0u;}
+ if((uint32_t)(etch_ms-ru_splash_start_ms)>=RU_V2_BREACH_DURATION_MS){ru_splash_done=1u;first_frame=1u;return 0u;}
  return 1u;
 }
 static uint8_t ru_seq_slot_used(uint8_t slot);
 static uint8_t ru_legacy_empty_seq(uint8_t slot,const char *name);
+/* Read the actual target after turning PRESETS. Unlike the four page knobs,
+ * PRESETS can edit an off-screen parameter, so v.k[current_page] is wrong.
+ * The same raw fields are used by ru_adjust and the ordinary page renderer. */
+static void ru_preset_popup_format(char out[20]){
+ uint8_t assignment=ru_preset_active_assignment();
+ if(!ru_preset_assign_valid(assignment)){ru_uint(0u,out);return;}
+ const RuPresetAssign *t=&ru_preset_targets[assignment];
+ const uint8_t c=t->control;
+ uint32_t n=0u;
+ if(assignment==RU_PRESET_ASSIGN_EXPRESSION||assignment==RU_PRESET_ASSIGN_EXPRESSION_RETURN){
+  ru_uint(ru_growl_expression,out);return;
+ }
+ if(t->page==RU_PAGE_GUIDE && c==0u){
+  static const char *const notes[12]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+  const char *s=notes[native_harmony.root%12u];uint8_t i=0;
+  do{out[i]=s[i];}while(s[i++] && i<19u);
+  return;
+ }
+ if(t->page==RU_PRESET_ASSIGN_OFF_PAGE){out[0]='-';out[1]='-';out[2]=0;return;}
+ if(assignment==RU_PRESET_ASSIGN_DEFAULT)n=native_tempo;
+ else if(t->page==RU_PAGE_SETTINGS)n=rupture_master_pct;
+ else if(t->page==RU_PAGE_PLAY){const uint8_t a[]={ru_pressure,ru_balance,ru_memory,ru_density};n=a[c];}
+ else if(t->page==RU_PAGE_SHAPE){const uint8_t a[]={ru_weight,ru_edge,ru_bite,ru_punch};n=a[c];}
+ else if(t->page==RU_PAGE_SUB1||t->page==RU_PAGE_SUB2){
+  uint8_t z=(uint8_t)(t->page-RU_PAGE_SUB1);
+  n=c==RU_PRESET_ASSIGN_SUB_BLEND?ru_sub_blend_amount[z]:
+    c==0u?ru_sub_type[z]:c==1u?ru_sub_oct[z]:c==2u?ru_sub_detune[z]:ru_sub_drift[z];
+ }
+ else if(t->page==RU_PAGE_FILTER)n=c==0u?native_filter_type:
+   c==1u?(uint32_t)native_cutoff*100u/8192u:
+   c==2u?(uint32_t)native_resonance*100u/32767u:(uint32_t)native_drive*100u/32767u;
+ else if(t->page==RU_PAGE_ENV)n=c==0u?native_env_ms[0]:c==1u?native_env_ms[1]:
+   c==2u?(uint32_t)native_sustain*100u/32767u:native_env_ms[2];
+ else if(t->page==RU_PAGE_LFO)n=c==0u?(native_mod_mode==1u?native_free_millihz/100u:native_mod_ratio):
+   c==1u?(uint32_t)native_controls.depth*100u/32767u:c==2u?native_mod_mode:native_controls.mod_target;
+ else if(t->page==RU_PAGE_GUIDE)n=c==1u?native_harmony.mode:c==2u?native_harmony.keylock:native_harmony.chord;
+ else if(t->page==RU_PAGE_GLIDE)n=c==0u?ru_note_glide_ms:c==1u?ru_glide_mode:c==2u?ru_glide_curve:ru_glide_retrigger;
+ else if(t->page==RU_PAGE_ARP)n=c==0u?native_arp_mode:c==1u?native_arp_rate:c==2u?native_arp_octaves:native_arp_gate_index;
+ else if(t->page==RU_PAGE_SEQ)n=c==0u?native_seq_length:c==1u?native_tempo:c==2u?
+   (native_pattern.steps[native_seq_step].count?native_pattern.steps[native_seq_step].notes[0].velocity:ru_seq_velocity):native_seq_gate;
+ else if(t->page==RU_PAGE_SEQ_SLOTS)n=c==2u?native_seq_rate:native_seq_swing;
+ else if(t->page==RU_PAGE_BEND)n=c==0u?ru_bend_live:c==1u?ru_bend_target:ru_bend_curve;
+ else if(t->page==RU_PAGE_TILT)n=ru_tilt[c];
+ else if(t->page==RU_PAGE_FUZZ)n=ru_fuzz[c];
+ else if(t->page==RU_PAGE_SANDPAPER)n=ru_sand[c];
+ else{
+  uint16_t raw=0u;
+  uint8_t enum_value=0u;
+  if(t->page==RU_PAGE_REVERB){raw=c==1u?native_fx_settings.reverb_decay:c==2u?native_fx_settings.reverb_size:native_reverb;enum_value=(c==0u);if(enum_value)n=ru_reverb_type;}
+  else if(t->page==RU_PAGE_DELAY){raw=c==0u?native_fx_settings.delay_time:c==1u?native_fx_settings.delay_feedback:native_delay;enum_value=(c==2u);if(enum_value)n=etch_fx_route(&native_fx_settings);}
+  else if(t->page==RU_PAGE_CHORUS){raw=c==0u?native_fx_settings.chorus_rate:c==1u?native_fx_settings.chorus_depth:native_chorus;enum_value=(c==2u);if(enum_value)n=etch_fx_route(&native_fx_settings);}
+  else if(t->page==RU_PAGE_WAH)raw=c==0u?native_fx_settings.wah_sens:c==1u?native_fx_settings.wah_attack:c==2u?native_fx_settings.wah_reso:native_fx_settings.wah_mix;
+  else if(t->page==RU_PAGE_DRIVE)raw=native_drive;
+  else if(t->page==RU_PAGE_DISTORTION)raw=c==0u?native_fx_settings.folder_fold:c==1u?native_fx_settings.folder_symmetry:c==2u?native_fx_settings.folder_tone:native_fx_settings.folder_mix;
+  else if(t->page==RU_PAGE_COMP)raw=c==0u?native_fx_settings.comp_threshold:c==1u?native_fx_settings.comp_ratio:c==2u?native_fx_settings.comp_attack:native_fx_settings.comp_release;
+  else if(t->page==RU_PAGE_EQ)raw=c==0u?native_fx_settings.eq_low:c==1u?native_fx_settings.eq_mid:c==2u?native_fx_settings.eq_high:native_fx_settings.eq_hpf;
+  if(!enum_value)n=(uint32_t)raw*100u/32767u;
+  /* The independent FX insert editor can intercept K1-K4 edits; PRESETS
+   * must report that specific slot's real value, not a legacy global. */
+  if(ru_fx_slot_edit && native_project_cfg.v190.chain.independent &&
+     t->page==ru_fx_page_for_selection(native_project_cfg.v190.chain.type[ru_fx_selected]) &&
+     !(native_project_cfg.v190.chain.type[ru_fx_selected]==RU_FX_MOSFET&&c!=0u)){
+   uint16_t slot=native_project_cfg.v190.chain.parameter[ru_fx_selected][c];
+   uint8_t fx_type=native_project_cfg.v190.chain.type[ru_fx_selected];
+   n=(fx_type==RU_FX_TILT||fx_type==RU_FX_FUZZ||fx_type==RU_FX_SAND||
+      (t->page==RU_PAGE_REVERB&&c==0u)||
+      ((t->page==RU_PAGE_CHORUS||t->page==RU_PAGE_DELAY)&&c==2u))?slot:
+     (uint32_t)slot*100u/32767u;
+  }
+ }
+ ru_uint(n,out);
+}
 static void rupture_native_screen(void){
  /* Never flash the normal PLAY page before the display has stabilized.
     On a healthy boot the first visible page is the pixel-assembly logo. */
@@ -2943,7 +3074,7 @@ static void rupture_native_screen(void){
  if(ru_splash_active()){
   RuState intro={0};intro.page=RU_PAGE_LOADING;intro.crt_enabled=ru_crt_enabled;
   uint32_t elapsed=(uint32_t)(etch_ms-ru_splash_start_ms);
-  intro.boot_step=elapsed>=1350u?RU_SPLASH_STEPS:(uint8_t)(elapsed/56u+1u);
+  intro.boot_step=(uint8_t)(ru_v2_breach_frame_at(elapsed)+1u);
   ru_crt_active=(uint8_t)(intro.crt_enabled&&intro.page!=RU_PAGE_BUG_REPORT);ru_render(&intro);ru_commit();return;
  }
  if(native_audio.fx.eq2_enabled!=native_project_cfg.eq2.enabled)ru_eq2_apply();
@@ -2955,7 +3086,7 @@ static void rupture_native_screen(void){
  else if(native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE || native_storage_boot.phase==ETCH_STORAGE_PROMPT_CONFIRM)v.page=native_storage_boot.phase==ETCH_STORAGE_PROMPT_CHOOSE?RU_PAGE_FOREIGN:RU_PAGE_FORMAT_CONFIRM;
  v.format_yes=native_storage_boot.yes;
  v.show_battery=1;v.battery=ru_battery_percent;v.usb_power=(uint8_t)(usb.config!=0u&&!usb.suspended);v.fx_selected=ru_fx_selected;
- v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);v.glide_frame=ru_tunnel_frame;v.glide_shake=(uint8_t)(ru_tunnel_tick&7u);v.bend_live=ru_bend_live;v.bend_target=ru_bend_target;v.bend_curve=ru_bend_curve;v.bend_shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);v.bend_frame=ru_bend_frame_from_live();v.bend_shake_phase=(uint8_t)((etch_ms/85u)&3u);v.bend_releasing=(uint8_t)(ru_bend_live && (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
+ v.saver_active=ru_saver_active;v.saver_frame=ru_saver_frame;v.main_wave=ru_main_wave;v.dam_frame=ru_dam_anim.frame;v.panel_frame=ru_panel_anim.frame;v.panel_shake=ru_panel_anim.shake;v.panel_hold_frame=ru_panel_anim.hold_frame;v.panel_hold_active=(uint8_t)(ru_panel_anim.phase==RU_PANEL_HOLD);v.glide_frame=ru_tunnel_frame;v.glide_shake=(uint8_t)(ru_tunnel_tick&7u);v.sub_fear_frame=ru_sub_fear_frame;v.sub_fear_shake=ru_sub_fear_shake;v.bend_live=ru_bend_live;v.bend_target=ru_bend_target;v.bend_curve=ru_bend_curve;v.bend_shaped=ru_bend_curve_percent(ru_bend_curve,ru_bend_live);v.bend_frame=ru_bend_frame_from_live();v.bend_shake_phase=(uint8_t)((etch_ms/85u)&3u);v.bend_releasing=(uint8_t)(ru_bend_live && (uint32_t)(etch_ms-ru_bend_last_turn_ms)>=75u);
  v.welcome_phase=ru_welcome.phase;v.welcome_choice=ru_welcome.choice;
  v.welcome_lesson=ru_welcome.lesson;v.welcome_overlay=ru_welcome.overlay;
  v.welcome_crt=ru_welcome.crt;v.welcome_status=ru_welcome.status;
@@ -2973,6 +3104,18 @@ static void rupture_native_screen(void){
   }else v.page=RU_PAGE_WELCOME;
  }
  v.crt_enabled=ru_crt_enabled;
+ v.preset_assign=ru_settings_open>=2u?ru_preset_edit_assignment():ru_preset_active_assignment();
+ v.preset_edit_mode=ru_preset_edit_mode;
+ v.preset_cxs_assign=ru_preset_assign;
+ v.preset_growl_assign=ru_preset_growl_assign;
+ v.preset_category=ru_preset_category;
+ v.preset_cursor=ru_preset_cursor;
+ v.preset_save_stage=ru_preset_save_stage;
+ v.preset_save_progress=ru_preset_save_progress;
+ v.preset_popup_visible=(uint8_t)(ru_preset_popup_until&&
+   (int32_t)(ru_preset_popup_until-etch_ms)>0 && !ru_preset_save_stage &&
+   !ru_welcome.phase && !native_updating && !native_tripped && !native_safe);
+ if(v.preset_popup_visible)ru_preset_popup_format(v.preset_popup_value);
  v.knob_focus=ru_knob_focused;
  v.knob_focus_visible=(uint8_t)(ru_knob_focus_page==v.page &&
   (int32_t)(ru_knob_focus_until-etch_ms)>0);
@@ -3057,7 +3200,7 @@ static void rupture_native_screen(void){
   }
   break;
  case RU_PAGE_SEQ_SLOTS:v.k[0]=ru_seq_slot;v.k[1]=ru_selected;v.k[2]=native_seq_rate;v.k[3]=native_seq_swing;break;
- case RU_PAGE_ARP:v.k[0]=native_arp_mode;v.k[1]=native_arp_rate;v.k[2]=native_arp_octaves;v.k[3]=native_seq_gate;break;
+ case RU_PAGE_ARP:v.k[0]=native_arp_mode;v.k[1]=native_arp_rate;v.k[2]=native_arp_octaves;v.k[3]=native_arp_gate_index;break;
  case RU_PAGE_GUIDE:case RU_PAGE_KEYLOCK:v.k[0]=native_harmony.root;v.k[1]=native_harmony.mode;v.k[2]=native_harmony.keylock;v.k[3]=native_harmony.chord;break;
  case RU_PAGE_AUTOLOAD:v.selected=ru_autoload_browse;v.boot_choice=ru_autoload_project;v.project_mask=native_project_present;for(uint8_t ii=0;ii<12;ii++)for(uint8_t jj=0;jj<12;jj++)v.project_names[ii][jj]=native_project_names[ii][jj];break;
  case RU_PAGE_SETTINGS:v.k[0]=rupture_master_pct;v.selected=ru_settings_selected;
@@ -4264,6 +4407,17 @@ static void ru_bend_service(void){
  }
  native_controls.live_bend_q16=ru_bend_live_q16();
 }
+/* Software return is serviced outside the audio IRQ at 25ms intervals. */
+static void ru_growl_expression_service(void){
+ if(ru_preset_growl_assign!=RU_PRESET_ASSIGN_EXPRESSION_RETURN)return;
+ uint8_t value=ru_growl_expression;
+ uint8_t next=ru_growl_expression_return_step(value,
+  etch_ms?etch_ms:1u,ru_growl_expression_last_turn_ms);
+ if(next!=value){
+  ru_growl_expression=next;
+  if(next==RU_GROWL_EXPR_NEUTRAL)first_frame=1u;
+ }
+}
 static void ru_undo_capture(uint8_t page,uint8_t k,uint8_t value,uint32_t now){
  ru_undo_gesture_capture(&ru_knob_undo,page,k,value,now);ru_undo_notice=0u;
 }
@@ -4305,7 +4459,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
    * K4 = explicit enable switch. Neither is processed in the ISR. */
   if(control==0u){
    uint8_t previous=native_project_cfg.v190.chain.type[ru_fx_selected];
-   ru_fx_picker=previous<RU_FX_TYPES?previous:0u;
+   ru_fx_picker=ru_fx_library_index(previous);
    ru_fx_pick_error=0u;ru_nav_to(RU_PAGE_FX_PICK);
   }else if(control==3u){
    struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
@@ -4378,7 +4532,7 @@ static void ru_adjust(uint8_t control,int32_t amount){
   uint8_t old_retrigger=ru_glide_retrigger;
   if(control==0u)ru_note_glide_ms=(uint16_t)ui_bound((int32_t)ru_note_glide_ms+amount*10,0,2000);
   if(control==1u)ru_glide_mode=(uint8_t)ui_bound((int32_t)ru_glide_mode+amount,0,2);
-  if(control==2u)ru_glide_curve=(uint8_t)ui_bound((int32_t)ru_glide_curve+amount,0,1);
+  if(control==2u)ru_glide_curve=(uint8_t)ui_bound((int32_t)ru_glide_curve+amount,0,5);
   if(control==3u)ru_glide_retrigger=(uint8_t)ui_bound((int32_t)ru_glide_retrigger+amount,0,1);
   if(old_time!=ru_note_glide_ms || old_mode!=ru_glide_mode ||
      old_curve!=ru_glide_curve || old_retrigger!=ru_glide_retrigger){
@@ -4582,6 +4736,53 @@ static void ru_adjust(uint8_t control,int32_t amount){
  }
 }
 
+/* PRESETS is an independently assignable fifth encoder. Parameter edits
+ * happen only in the main thread and reuse the normal K1-K4 edit path. */
+static void ru_preset_apply(int32_t turns){
+ uint8_t assignment=ru_preset_active_assignment();
+ if(!turns||!ru_preset_assign_valid(assignment))return;
+ const RuPresetAssign *target=&ru_preset_targets[assignment];
+ /* Every detent produces the same visible feedback, even at value limits.
+  * The display snapshots the real edited target after the adjustment. */
+ ru_preset_popup_until=etch_ms+1550u;first_frame=1u;
+ if(target->page==RU_PRESET_ASSIGN_OFF_PAGE)return;
+ if(assignment==RU_PRESET_ASSIGN_EXPRESSION||assignment==RU_PRESET_ASSIGN_EXPRESSION_RETURN){
+  /* Momentary performance value: no patch dirty flag and no flash writes.
+   * The audio callback slews a single 8-bit target at DMA block boundaries. */
+  /* Ten detents move from neutral to either extreme: the gesture must
+   * respond musically to a wrist movement, not need 50 full knob clicks. */
+  int32_t gesture=turns>20?100:turns< -20?-100:turns*5;
+  ru_growl_expression=(uint8_t)ui_bound((int32_t)ru_growl_expression+gesture,0,100);
+  ru_growl_expression_last_turn_ms=etch_ms?etch_ms:1u;
+  return;
+ }
+ if(assignment==RU_PRESET_ASSIGN_DEFAULT){
+  uint8_t bpm=(uint8_t)etch_v130_bpm(native_tempo,turns);
+  if(bpm!=native_tempo){native_tempo=bpm;native_project_cfg.tempo=bpm;
+   native_bpm_overlay_until=etch_ms+1500u;first_frame=1u;}
+  return;
+ }
+ if(target->page==RU_PAGE_SETTINGS){
+  uint8_t volume=(uint8_t)ui_bound((int32_t)rupture_master_pct+turns,0,200);
+  if(volume!=rupture_master_pct){rupture_master_pct=volume;
+   ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;first_frame=1u;}
+  return;
+ }
+ if((target->page==RU_PAGE_SUB1||target->page==RU_PAGE_SUB2)&&
+    target->control==RU_PRESET_ASSIGN_SUB_BLEND){
+  uint8_t which=(uint8_t)(target->page-RU_PAGE_SUB1);
+  uint8_t blend=(uint8_t)ui_bound((int32_t)ru_sub_blend_amount[which]+turns,0,100);
+  if(blend!=ru_sub_blend_amount[which]){
+   ru_sub_blend_amount[which]=blend;ru_mark_dirty();first_frame=1u;}
+  return;
+ }
+ uint8_t original_page=ru_page;
+ ru_page=target->page;
+ ru_adjust(target->control,turns);
+ ru_page=original_page;
+ first_frame=1u;
+}
+
 /* Manage catalogs without replacing a stored project with live RAM. All
  * operations are on the main loop, require the existing A/B CRC/commit path,
  * and stop audio while NOR erase/program runs. */
@@ -4745,7 +4946,9 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  if(buttons&(1u<<8)){if(!ru_home_since)ru_home_since=etch_ms?etch_ms:1u;
   if(!ru_home_used&&(uint32_t)(etch_ms-ru_home_since)>=650u){ru_page=RU_PAGE_PLAY;ru_prev=RU_PAGE_PLAY;ru_home_used=1;first_frame=1;}}
  else if(ru_home_since){if(!ru_home_used){
-  if(ru_page==RU_PAGE_SETTINGS&&ru_settings_open){ru_settings_open=0u;first_frame=1u;}
+  if(ru_page==RU_PAGE_SETTINGS&&ru_settings_open){
+   ru_settings_open=ru_settings_open==3u?2u:0u;first_frame=1u;
+  }
   else if(ru_page==RU_PAGE_NAME&&ru_manager_name){ru_page=ru_manager_name==1u?RU_PAGE_STORAGE_ACTIONS:RU_PAGE_STORAGE_SEQ_ACTIONS;ru_manager_name=0u;first_frame=1u;}
   else if(ru_page==RU_PAGE_PLAY)ru_nav_to(RU_PAGE_SHAPE);
   else if(ru_page==RU_PAGE_SHAPE)ru_nav_to(RU_PAGE_SUB1);
@@ -4835,7 +5038,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  }
  /* In live REC ALGORITHM is dedicated to metronome volume, on any normal
   * page. Consume it BEFORE sequencer HOLD, sound shaping or menu routing.
-  * Outside REC, ALGORITHM is passed through untouched. PRESETS stays BPM. */
+  * Outside REC, ALGORITHM is passed through untouched. PRESETS is assignable. */
  if(!native_updating && !native_safe &&
     ru_metronome_record_algorithm(&ru_metronome_volume,&alg,
             native_seq_recording,(uint8_t)(native_seq_run||ru_countin.active||native_seq_recording)))first_frame=1u;
@@ -4899,29 +5102,32 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){
-   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,5);first_frame=1u;}
+   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,6);first_frame=1u;}
    if(pressed&(1u<<3)){
     if(ru_settings_selected==0u){
      /* MASTER VOLUME retains its detail page; K1 also works while its
       * row is selected without requiring entry. */
      ru_settings_open=1u;
-    }else if(ru_settings_selected==5u){
+    }else if(ru_settings_selected==1u){
+     ru_preset_edit_mode=ru_main_wave;
+     ru_settings_open=4u; /* Select CXS or GROWL first. */
+    }else if(ru_settings_selected==6u){
      /* Fast display-only setting. Save through existing deferred NOR journal. */
      ru_crt_enabled^=1u;ru_band_valid=0u;
      ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
-    }else if(ru_settings_selected==1u){
+    }else if(ru_settings_selected==2u){
      /* AUTO SAVE is a direct SEL checkbox, not a separate modal page. */
      ru_autosave_enabled^=1u;
      ru_global_gain_dirty=1u;ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
      if(ru_autosave_enabled)ru_last_edit_ms=etch_ms?etch_ms:1u;
     }else{
-     if(ru_settings_selected==2u){
+     if(ru_settings_selected==3u){
       native_project_browser_refresh();ru_autoload_browse=ru_autoload_project;
       if(ru_autoload_browse && !(native_project_present&(1u<<(ru_autoload_browse-1u))))ru_autoload_browse=0u;
       ru_nav_to(RU_PAGE_AUTOLOAD);
      }else{
-      if(ru_settings_selected==3u && native_store_status==ETCH_STORE_OK)native_project_browser_refresh();
-      ru_nav_to(ru_settings_selected==3u?RU_PAGE_STORAGE:RU_PAGE_OTHER);
+      if(ru_settings_selected==4u && native_store_status==ETCH_STORE_OK)native_project_browser_refresh();
+      ru_nav_to(ru_settings_selected==4u?RU_PAGE_STORAGE:RU_PAGE_OTHER);
      }
      ru_selected=0u;
     }
@@ -4930,6 +5136,51 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   }else if(ru_settings_open==1u){
    if(select)ru_adjust(0,select); /* SELECT or K1 edits detail volume */
    if(pressed&(1u<<3)){ru_settings_open=0u;first_frame=1u;}
+  }else if(ru_settings_open==4u){
+   if(select){ru_preset_edit_mode=(uint8_t)ui_bound((int32_t)ru_preset_edit_mode+select,0,1);first_frame=1u;}
+   if(pressed&(1u<<3)){
+    uint8_t active=ru_preset_edit_assignment();
+    ru_preset_category=ru_preset_assign_valid(active)?ru_preset_targets[active].group:0u;
+    ru_preset_cursor=ru_preset_assign_valid(active)?active:RU_PRESET_ASSIGN_DEFAULT;
+    ru_settings_open=2u;first_frame=1u;
+   }
+  }else if(ru_settings_open==2u){
+   if(select){ru_preset_category=(uint8_t)ui_bound((int32_t)ru_preset_category+select,0,
+       ru_preset_edit_mode?RU_PRESET_GROUP_COUNT-1u:RU_PRESET_GROUP_COUNT-2u);first_frame=1u;}
+   if(pressed&(1u<<3)){
+    uint8_t first=ru_preset_group_first(ru_preset_category);
+    uint8_t last=ru_preset_group_last(ru_preset_category);
+    uint8_t active=ru_preset_edit_assignment();
+    ru_preset_cursor=active>=first&&active<last?active:first;
+    ru_settings_open=3u;first_frame=1u;
+   }
+  }else if(ru_settings_open==3u){
+   if(select){
+    uint8_t first=ru_preset_group_first(ru_preset_category);
+    uint8_t last=ru_preset_group_last(ru_preset_category);
+    ru_preset_cursor=(uint8_t)ui_bound((int32_t)ru_preset_cursor+select,first,last-1u);
+    first_frame=1u;
+   }
+   if(pressed&(1u<<3)){
+    if(ru_preset_edit_assignment()!=ru_preset_cursor){
+     if(ru_preset_edit_mode){
+      ru_preset_growl_assign=ru_preset_cursor;
+      if(ru_preset_cursor!=RU_PRESET_ASSIGN_EXPRESSION &&
+         ru_preset_cursor!=RU_PRESET_ASSIGN_EXPRESSION_RETURN)
+       ru_growl_expression=RU_GROWL_EXPR_NEUTRAL;
+      if(ru_preset_cursor==RU_PRESET_ASSIGN_EXPRESSION_RETURN){
+       ru_growl_expression=RU_GROWL_EXPR_NEUTRAL;
+       ru_growl_expression_last_turn_ms=0u;
+      }
+     }
+     else ru_preset_assign=ru_preset_cursor;
+     /* Save after the modal exits. A separate record survives project
+      * switches and the global-settings journal's A/B compaction. */
+     ru_preset_save_stage=1u;ru_preset_save_progress=5u;
+     ru_preset_save_since_ms=etch_ms?etch_ms:1u;
+    }
+    ru_settings_open=0u;first_frame=1u;
+   }
   }
  }
  else if(ru_page==RU_PAGE_AUTOLOAD){
@@ -5081,8 +5332,8 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(pressed&(1u<<3)){
    struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
    if(ru_fx_picker==RU_FX_REMOVE){ru_chain_remove(chain,ru_fx_selected);ru_fx_sync_chain();ru_nav_to(RU_PAGE_FX);}
-   else {ru_fx_enable_independent_parameters();if(ru_chain_insert(chain,ru_fx_selected,ru_fx_picker)){
-    uint8_t type=ru_fx_picker;
+   else {uint8_t type=ru_fx_library_type(ru_fx_picker);
+    ru_fx_enable_independent_parameters();if(ru_chain_insert(chain,ru_fx_selected,type)){
     if(type==RU_FX_REVERB&&!native_reverb)native_reverb=12000u;
     if(type==RU_FX_DELAY&&!native_delay)native_delay=12000u;
     if(type==RU_FX_CHORUS&&!native_chorus)native_chorus=12000u;
@@ -5464,6 +5715,11 @@ void fm1_cstart(void){
    ru_welcome_done=(uint8_t)(welcome_done&&current_wizard);
    rupture_master_pct=remembered;ru_autosave_enabled=enabled;ru_screensaver_enabled=saver;ru_saver_delay_index=seconds_index;ru_autoload_project=boot_choice;ru_crt_enabled=crt;
   }
+  uint8_t mapped=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_EXPRESSION;
+  if(etch_store_preset_assign_pair_load(&native_store_io,&mapped,&growl)==ETCH_STORE_OK){
+   if(ru_preset_assign_valid(mapped))ru_preset_assign=mapped;
+   if(ru_preset_assign_valid(growl))ru_preset_growl_assign=growl;
+  }
  }
  if(!safe && !native_keyboard_mode){
   if(!ru_welcome_done){
@@ -5808,7 +6064,8 @@ void fm1_cstart(void){
     }
     /* Keep the low-current Welcome bank ramp advancing even while the
      * wizard temporarily owns navigation. No LED scan ISR changes. */
-    if((uint32_t)(etch_ms-ru_led_start_ms)<340u)native_seq_led_refresh();
+    if((uint32_t)(etch_ms-ru_led_start_ms)<RU_LED_BOOT_WAVE_TOTAL_MS+40u)
+     native_seq_led_refresh();
     last_seq_notes=fm1_in.notes;
     continue;
    }
@@ -5907,7 +6164,7 @@ void fm1_cstart(void){
 #ifdef RUPTURE_BUILD
    if(!ru_autosave_armed && native_store_status==ETCH_STORE_OK &&
       (native_project_present&(1u<<etch_store_project_selected())))ru_autosave_armed=1u;
-   {uint8_t active=(uint8_t)(buttons||pressed||select||alg||dm||dd||up||down||
+   {uint8_t active=(uint8_t)(buttons||pressed||select||alg||dm||dd||up||down||preset||
        fm1_in.notes||notes_changed||native_blend_audio_busy()||native_seq_run||native_seq_recording||
        native_updating||native_safe||native_tripped||native_storage_boot.phase);
     if(active||!ru_last_user_activity_ms){
@@ -5922,6 +6179,31 @@ void fm1_cstart(void){
     }
    }
    if(!ru_saver_active)ru_handle_input(buttons,&pressed,select,alg,dm,dd,up,down,(fm1_in.notes&~last_seq_notes));
+   /* V2.0.7 FIX: RUPTURE ends this 25ms service branch with `continue`.
+    * Earlier PRESETS handling was below that continue in the ETCH fallback
+    * and could NEVER execute on RUPTURE. Consume encoder 6 HERE, before the
+    * common RUPTURE redraw and parameter publication. This is intentionally
+    * separate from the four parameter encoders and has no DSP-ISR work. */
+   enum RuPresetInputAction preset_action=ru_preset_input_action(
+      preset,buttons,ru_page,ru_settings_open,ru_saver_active,
+      (uint8_t)(native_updating||native_safe||native_tripped||
+       native_storage_boot.phase||ru_welcome.phase),
+      (uint8_t)(native_seq_length>255u?255u:native_seq_length));
+   if(preset_action==RU_PRESET_INPUT_SEQ_ROTATE){
+     /* Hold SEQ + PRESETS: rotate the whole live pattern, never change the
+      * mapped parameter. Keep all HOLDs and per-step locks together. */
+     if(ru_live_finish(&native_pattern,&ru_live_capture))ru_mark_dirty();
+     struct etch_native_pattern *staged=etch_patch_staging(&native_patch_swap);
+     if(ru_seq_rotate(&native_pattern,staged,native_seq_length,preset)){
+      fm1_irq_off();etch_patch_commit(&native_patch_swap);
+      native_controls.pattern=&native_pattern;fm1_irq_enable_all();
+      ru_seq_used=1u;ru_mark_dirty();first_frame=1u;
+     }
+   }else if(preset_action==RU_PRESET_INPUT_PARAMETER){
+     /* Every menu assignment, including SCALE GUIDE ROOT, runs through
+      * ru_adjust on the target page. ru_preset_apply also arms the popup. */
+    ru_preset_apply(preset);
+   }
    /* The audio ISR starts step 1 at the exact eighth-beat END. The UI
     * acknowledges it on its next pass without restarting the sequencer. */
    /* Cancel an interrupted/corrupt/externally stopped armed count-in.
@@ -5959,12 +6241,13 @@ void fm1_cstart(void){
     ru_countin_last_beat=255u;ru_countin_pulse=0u;first_frame=1u;
    }
    if(ru_countin.active || ru_countin_last_beat!=255u)native_seq_led_refresh();
-   /* PRESETS remains BPM; ALGORITHM is metronome level while armed/REC.
+   /* PRESETS defaults to BPM; ALGORITHM is metronome level while armed/REC.
     * Metronome shares its original PCM voice with the silent count-in. */
    ru_metronome_enabled=(uint8_t)(native_seq_recording &&
       (native_seq_run||ru_countin.active||ru_countin.force_seq) &&
       !native_updating && !native_safe && !native_tripped);
    ru_bend_service();
+   ru_growl_expression_service();
 
    /* 25 ms main-loop service only: no MIDI, DSP, ISR, storage or OTA changes.
     * Never repaint other pages just to animate a hidden bar. */
@@ -5992,6 +6275,29 @@ void fm1_cstart(void){
      ru_dam_changed=ru_glide_tunnel_play_step(etch_ms,glide_playing,
         &ru_tunnel_frame,&ru_tunnel_tick,&ru_tunnel_last_tick_ms,
         RU_TUNNEL_FRAMES);
+    }
+   }else if((ru_page==RU_PAGE_SUB1 || ru_page==RU_PAGE_SUB2) &&
+      !ru_saver_active && !native_safe && !native_tripped && !native_updating){
+    uint8_t held=0u;
+    for(uint32_t vi=0;vi<ETCH_NATIVE_VOICES;vi++){
+     if(native_audio.voice[vi].active && native_audio.voice[vi].held){
+      held=1u;break;
+     }
+    }
+    if(ru_panel_last_page!=ru_page){
+     ru_panel_last_page=ru_page;
+     ru_sub_fear_frame=0u;ru_sub_fear_active=0u;ru_sub_fear_shake=0u;
+     ru_sub_fear_last_tick_ms=etch_ms;
+     ru_dam_changed=1u;
+    }else{
+     if(ru_page==RU_PAGE_SUB1){
+      ru_dam_changed=ru_sub1_stare_step(etch_ms,held,
+        &ru_sub_fear_frame,&ru_sub_fear_active,&ru_sub_fear_last_tick_ms,
+        &ru_sub_fear_shake);
+     }else{
+      ru_dam_changed=ru_sub_fear_play_step(etch_ms,held,
+        &ru_sub_fear_frame,&ru_sub_fear_active,&ru_sub_fear_last_tick_ms);
+     }
     }
    }else if((ru_page==RU_PAGE_PLAY || ru_page==RU_PAGE_ENV || ru_page==RU_PAGE_LFO || ru_page==RU_PAGE_SHAPE || ru_page==RU_PAGE_BEND) &&
       !ru_saver_active && !native_safe && !native_tripped && !native_updating){
@@ -6037,6 +6343,7 @@ void fm1_cstart(void){
     * turns, never write during playback, held USB/TRS notes, OTA or faults.
     * This is main-loop only and audio is muted throughout SPI programming. */
    if(ru_global_gain_dirty && ru_global_gain_changed_ms &&
+      (ru_preset_save_stage==0u || ru_preset_save_stage>=3u) &&
       (uint32_t)(etch_ms-ru_global_gain_changed_ms)>=2500u &&
       (uint32_t)(etch_ms-ru_global_gain_attempt_ms)>=5000u &&
       !native_seq_run && !native_seq_recording && !native_updating &&
@@ -6047,6 +6354,38 @@ void fm1_cstart(void){
      int gr=etch_store_user_settings_welcome_save(&native_store_io,rupture_master_pct,ru_autosave_enabled,ru_screensaver_enabled,ru_saver_delay_index,ru_autoload_project,ru_crt_enabled,ru_welcome_done);
      if(gr==ETCH_STORE_OK){ru_global_gain_dirty=0u;ru_welcome_save_pending=0u;}
      if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
+   }
+   /* Save the selected PRESETS mapping independently from project data.
+    * Two display phases precede the blocking write; CRC readback controls
+    * the success progress. Flash is never touched while notes are held. */
+   if(ru_preset_save_stage==1u &&
+      (native_safe||native_tripped||native_store_status!=ETCH_STORE_OK) &&
+      (uint32_t)(etch_ms-ru_preset_save_since_ms)>=500u){
+    ru_preset_save_stage=4u;ru_preset_save_progress=0u;
+    ru_preset_save_since_ms=etch_ms;first_frame=1u;
+   }else if(ru_preset_save_stage==1u &&
+      (uint32_t)(etch_ms-ru_preset_save_since_ms)>=170u &&
+      !native_seq_run&&!native_seq_recording&&!native_updating&&
+      !native_safe&&!native_tripped&&!native_storage_boot.phase&&
+      native_store_status==ETCH_STORE_OK&&!native_blend_audio_busy()){
+    ru_preset_save_stage=2u;ru_preset_save_progress=45u;
+    ru_preset_save_since_ms=etch_ms;first_frame=1u;
+   }else if(ru_preset_save_stage==2u &&
+      (uint32_t)(etch_ms-ru_preset_save_since_ms)>=170u &&
+      !native_seq_run&&!native_seq_recording&&!native_updating&&
+      !native_safe&&!native_tripped&&native_store_status==ETCH_STORE_OK&&
+      !native_blend_audio_busy()){
+    uint8_t was_tripped=native_tripped,was_muted=muted;
+    native_pause();
+    int saved=etch_store_preset_assign_pair_save(&native_store_io,
+      ru_preset_assign,ru_preset_growl_assign);
+    if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
+    ru_preset_save_stage=(uint8_t)(saved==ETCH_STORE_OK?3u:4u);
+    ru_preset_save_progress=(uint8_t)(saved==ETCH_STORE_OK?100u:0u);
+    ru_preset_save_since_ms=etch_ms;first_frame=1u;
+   }else if(ru_preset_save_stage>=3u &&
+      (uint32_t)(etch_ms-ru_preset_save_since_ms)>=2200u){
+    ru_preset_save_stage=0u;first_frame=1u;
    }
    /* Autosave only after an explicit first SAVE / project LOAD. Never while
     * transport runs, notes are held, storage is foreign, or USB OTA active. */
@@ -6132,12 +6471,15 @@ void fm1_cstart(void){
     }
    }else if(!(buttons&(1u<<2))){native_fx_press_since=0u;native_fx_press_consumed=0u;}
 
+   /* Legacy ETCH path only. The RUPTURE path above owns encoder 6 before
+    * its early continue and must not be accidentally moved back here. */
+#ifndef RUPTURE_BUILD
    /* V1.20: PRESETS rotary is ignored outside the named PRESETS browser.
     * SAVE editors already use K1 (dm) to choose a destination slot. */
    /* Hold physical SEQ and turn PRESETS to rotate the WHOLE current
     * sequencer pattern (all note events, note durations, HOLDs and locks).
     * Copy into the existing inactive patch bank; atomically publish its
-    * pointer with a short interrupt mask. Normal PRESETS stays BPM. */
+    * pointer with a short interrupt mask. Otherwise PRESETS uses its mapping. */
    if(preset && (buttons&(1u<<11)) && !native_updating && !native_safe &&
       !native_tripped && !ru_welcome.phase && native_seq_length>1u){
     if(ru_live_finish(&native_pattern,&ru_live_capture))ru_mark_dirty();
@@ -6149,15 +6491,14 @@ void fm1_cstart(void){
     }
     preset=0; /* SEQ chord must NEVER change the BPM */
    }
-   /* PRESETS adjusts global BPM continuously, including during live REC;
-    * the preexisting browser/name exceptions remain unchanged. */
+   /* Assignable PRESETS encoder. Pattern rotation, the named PRESETS
+    * browser and save/name editors retain their existing special modes. */
    if(preset && !native_updating &&
+      !(ru_page==RU_PAGE_SETTINGS && ru_settings_open>=2u) &&
       ((native_seq_recording && native_seq_run) ||
        (native_page!=ETCH_UI_PRESETS && native_page!=ETCH_UI_NAME &&
         native_page!=ETCH_UI_PROJECT_SAVE))){
-    uint8_t bpm=(uint8_t)etch_v130_bpm(native_tempo,preset);
-    if(bpm!=native_tempo){native_tempo=bpm;native_project_cfg.tempo=bpm;
-     native_bpm_overlay_until=etch_ms+1500u;first_frame=1u;}
+    ru_preset_apply(preset);
    }
    if(preset && !(native_seq_recording && native_seq_run) &&
       !native_draw && native_page==ETCH_UI_PRESETS){
@@ -6166,6 +6507,7 @@ void fm1_cstart(void){
     uint8_t next=etch_presets_next_valid(native_presets_cursor,preset,valid);
     if(next!=native_presets_cursor){native_patch_change(next);native_presets_cursor=native_patch_slot;}
    }
+#endif
    /* V1.82: a short EDIT press still enters/exits DRAW. While already in
     * DRAW, wait for release before treating it as short; a 700 ms hold opens
     * a non-destructive YES/NO modal instead. */
@@ -7119,14 +7461,17 @@ void fm1_cstart(void){
     * jumps the PCM sample to zero, causing the reported audible pop.
     * Explicit panel diagnostics and manual HOME+PLAY recovery remain intact. */
    fm1_irq_enable_all();native_seq_led_refresh();
+   if(ru_preset_popup_until && (int32_t)(etch_ms-ru_preset_popup_until)>=0){
+    ru_preset_popup_until=0u;first_frame=1u;
+   }
    if(page_before!=native_page || draw_before!=native_draw)first_frame=1;
    /* Keep 100 ms input/USB service; skip redundant full-region LCD redraws. */
    uint16_t visible_playhead=etch_seq_actual_step(native_seq_run,native_audio.perf_last_seq,native_audio.perf_played,native_audio.perf_current_step,native_seq_length,native_seq_step);
    uint8_t playhead_changed=(uint8_t)(native_seq_run && (etch_seq_is_web_page(native_page)||native_page==ETCH_UI_GRID) && visible_playhead!=last_painted_playhead);
-   if(first_frame||pressed||buttons!=previous_buttons_snapshot||oct_action!=ETCH_OCT_NONE||notes_changed||(preset && !native_draw && native_page==ETCH_UI_PRESETS)||select||alg||dm||dd||up||down||(!native_draw&&web_primary_page()&&etch_scope_redraw_on_silence(native_scope_has_signal,web_last_signal))||((!native_draw&&web_primary_page()&&etch_scope_anim_needed(&web_scope_release,native_scope_held_note,native_scope_has_signal,web_last_signal))&&etch_ms-last_ui_paint_ms>=etch_ui_live_frame_interval(native_audio.voice_limit,(uint8_t)(native_missed_streak+(native_ui_pressure>=9u?1u:0u)+(native_ui_pressure>=20u?2u:0u)),native_tripped))||((playhead_changed||native_seq_run||fm1_in.notes)&&etch_ms-last_ui_paint_ms>=((native_audio.voice_limit<8u||native_missed_streak)?750u:(etch_seq_is_web_page(native_page)?40u:(native_page==ETCH_UI_GRID?60u:250u))))||(ru_page==RU_PAGE_DIAG && etch_ms-last_ui_paint_ms>=1000u)||(native_page==25&&native_system_tab>=4&&etch_ms-last_ui_paint_ms>=500u)||(native_bpm_overlay_until && (int32_t)(etch_ms-native_bpm_overlay_until)>=0 && (uint32_t)(etch_ms-native_bpm_overlay_until)<200u)||native_tripped!=native_last_tripped||page_before!=native_page||draw_before!=native_draw||native_save_notice_pending||(native_saved_until && (int32_t)(etch_ms-native_saved_until)>=0)){
+   if(first_frame||pressed||buttons!=previous_buttons_snapshot||oct_action!=ETCH_OCT_NONE||notes_changed||(preset && !native_draw && native_page==ETCH_UI_PRESETS)||select||alg||dm||dd||up||down||(!native_draw&&web_primary_page()&&etch_scope_redraw_on_silence(native_scope_has_signal,web_last_signal))||((!native_draw&&web_primary_page()&&etch_scope_anim_needed(&web_scope_release,native_scope_held_note,native_scope_has_signal,web_last_signal))&&etch_ms-last_ui_paint_ms>=etch_ui_live_frame_interval(native_audio.voice_limit,(uint8_t)(native_missed_streak+(native_ui_pressure>=9u?1u:0u)+(native_ui_pressure>=20u?2u:0u)),native_tripped))||((playhead_changed||native_seq_run||fm1_in.notes)&&etch_ms-last_ui_paint_ms>=((native_audio.voice_limit<8u||native_missed_streak)?750u:(etch_seq_is_web_page(native_page)?40u:(native_page==ETCH_UI_GRID?60u:250u))))||(ru_page==RU_PAGE_DIAG && etch_ms-last_ui_paint_ms>=1000u)||(ru_preset_save_stage&&!native_blend_audio_busy()&&etch_ms-last_ui_paint_ms>=150u)||(native_page==25&&native_system_tab>=4&&etch_ms-last_ui_paint_ms>=500u)||(native_bpm_overlay_until && (int32_t)(etch_ms-native_bpm_overlay_until)>=0 && (uint32_t)(etch_ms-native_bpm_overlay_until)<200u)||native_tripped!=native_last_tripped||page_before!=native_page||draw_before!=native_draw||native_save_notice_pending||(native_saved_until && (int32_t)(etch_ms-native_saved_until)>=0)){
     /* V1.70: heavy USB audio takes priority over animated LCD DMA.
      * Never delay fault notices, page transitions or destructive-action feedback. */
-    uint8_t force_paint=(uint8_t)(first_frame||native_tripped!=native_last_tripped||
+    uint8_t force_paint=(uint8_t)(first_frame||(ru_preset_save_stage&&!native_blend_audio_busy())||native_tripped!=native_last_tripped||
        page_before!=native_page||draw_before!=native_draw||native_save_notice_pending);
     if(etch_ui_refresh_budget(etch_ms,last_ui_paint_ms,force_paint,
              native_ui_pressure,(uint8_t)(usb.config&&!usb.suspended),native_missed_streak)){

@@ -7,6 +7,9 @@
  * only. Stored outside the saturated FM1 DSP pool. */
 volatile uint8_t ru_metronome_enabled=0u;
 volatile uint8_t ru_metronome_volume=65u;
+/* Device-global, live one-byte gesture target. Never written by the ISR. */
+volatile uint8_t ru_growl_expression=50u;
+static uint8_t ru_growl_expression_smooth=50u;
 static struct RuMetroClick ru_metronome_click;
 #include "rupture_countin.h"
 volatile struct RuCountIn ru_countin={0};
@@ -17,6 +20,7 @@ volatile struct RuCountIn ru_countin={0};
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
 #include "rupture_saw_tone.h"
+#include "rupture_growl_waves.h"
 #include "rupture_ladder_fast.h"
 #include "rupture_filter_fast.h"
 #endif
@@ -305,6 +309,7 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
  /* On a new note begin in the selected engine; no extra transition CPU. */
  s->main_saw_mix=0u;
  s->saw_low=0;
+ s->growl.low=0;s->growl.throat=0;
  ru_sub_init(&s->sub[0],target,0x3c102acd);
  ru_sub_init(&s->sub[1],target,0xd477629f);
  s->mono_current_inc=s->mono_target_inc=target;s->mono_glide_left=0u;
@@ -950,11 +955,8 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   group_envs[gi].release=gp?group_adsr_step(gp->release_ms):c->release_step;
   group_envs[gi].sustain=gp?gp->sustain:c->sustain_level;
  }
-#ifdef RUPTURE_BUILD
- /* Scalar per-block control, NOT recalculated for each audio sample. */
- const uint8_t saw_alias_guard=ru_saw_alias_strength(c->cxs_pressure,
-  c->cxs_balance,c->cxs_edge,c->cxs_bite,c->cxs_punch);
-#endif
+/* The previous SAW alias strength remains available for the unchanged SUB
+ * waveform helpers, but the new GROWL carrier is bandlimited in ROM. */
  uint16_t living_from[8]={0},living_to[8]={0};
  native_rates(s,c,increments,modincrements);
  struct etch_native_controls locked=*c;
@@ -976,6 +978,29 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   * Compute the Q16 master gain target once per block; the sample-wise
   * slewing itself is unchanged and stays click-free. */
  const int32_t gain_target=(int32_t)(c->gain>32767?32767:c->gain)*65536;
+#ifdef RUPTURE_BUILD
+ /* The eight GROWL controls are stable during this DMA render. Resolve all
+  * nonlinear drive/formant coefficients once, outside the sample/voice loop.
+  * Preserve the CXS->GROWL crossfade by caching during its short tail too. */
+ RuGrowlParams growl_params={0};
+ if(c->main_wave || s->main_saw_mix){
+  /* Rate-limit rapid knob reversals on the block boundary; no added
+   * per-sample multiply, divide, delay line, oscillator or allocation. */
+  uint8_t target=ru_growl_expression>100u?100u:ru_growl_expression;
+  uint8_t step=(uint8_t)(1u+(frames>>6));
+  if(ru_growl_expression_smooth<target){
+   uint8_t distance=(uint8_t)(target-ru_growl_expression_smooth);
+   ru_growl_expression_smooth+=(distance<step?distance:step);
+  }else if(ru_growl_expression_smooth>target){
+   uint8_t distance=(uint8_t)(ru_growl_expression_smooth-target);
+   ru_growl_expression_smooth-=(distance<step?distance:step);
+  }
+  growl_params=ru_growl_make_params(c->cxs_pressure,c->cxs_balance,
+                      c->cxs_memory,c->cxs_density,c->cxs_edge,
+                      c->cxs_weight,c->cxs_bite,c->cxs_punch);
+  ru_growl_apply_expression(&growl_params,ru_growl_expression_smooth);
+ }
+#endif
 
  for(uint32_t f=0;f<frames;f++){
   if(s->clock_samples<1000000u)++s->clock_samples;
@@ -1234,6 +1259,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    /* Sample-wise monophonic portamento. Glide is updated at audio rate
     * and uses a bounded integer ramp with no heap or extra voice. */
    if(i==0u && s->mono_current_inc){
+    /* Do not apply encoder BEND changes in audible pitch steps.
+     * Transition smoothly on every PCM sample independently of GLIDE OFF. */
+    s->mono_live_bend_q16=rupture_bend_slew_q16(
+      s->mono_live_bend_q16,c->live_bend_q16);
     if(s->mono_glide_left){
      s->mono_current_inc=rupture_glide_next_curve(s->mono_current_inc,
        s->mono_target_inc,s->mono_glide_left,s->mono_glide_curve);
@@ -1248,8 +1277,8 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
      int32_t scaled=65536+delta;
      mfactor=(uint32_t)(scaled<16384?16384:scaled>131072?131072:scaled);
     }
-    if(c->live_bend_q16 && c->live_bend_q16!=65536u){
-     mfactor=(uint32_t)(((uint64_t)mfactor*c->live_bend_q16)>>16);
+    if(s->mono_live_bend_q16!=65536u){
+     mfactor=(uint32_t)(((uint64_t)mfactor*s->mono_live_bend_q16)>>16);
      if(mfactor<16384u)mfactor=16384u;else if(mfactor>131072u)mfactor=131072u;
     }
     if(mfactor==65536u) pitch_inc=s->mono_current_inc;
@@ -1268,7 +1297,7 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    /* CXS parameter updates are unnecessary in steady SAW mode. */
    int32_t classic_post0=0,classic_post1=0;
    uint16_t classic_gain0=0,classic_gain1=0;
-   /* A single carrier: CXS or bandlimited SAW. During live mode switching,
+   /* A single carrier: CXS or reference-inspired bandlimited GROWL. During live mode switching,
     * run both for a short 64-sample fade; in steady SAW only one constant-time
     * lookup is used, while CXS phase continues without CXS computation. */
    uint16_t target_mix=c->main_wave?32768u:0u;
@@ -1294,14 +1323,12 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
     if(s->cxs.phase<old)s->cxs.cycles++;
    }
    if(blend){
-    int32_t saw=ru_saw_guarded_read(s->cxs.phase,pitch_inc,saw_alias_guard);
-    saw=rupture_saw_tone(&s->saw_low,saw,c->cxs_pressure,
-                        c->cxs_balance,c->cxs_memory,c->cxs_density,c->cxs_edge,
-                        c->cxs_weight,c->cxs_bite,c->cxs_punch);
-    /* Crossfade the two independently shaped carriers. CXS remains exactly
-     * unchanged in steady CXS mode and SAW bypasses the expensive int64
-     * CXS shaper in steady SAW mode. */
-    sample=(int32_t)(((sample*(int32_t)(32768u-blend))+(saw*(int32_t)blend))>>15);
+    /* One bandlimited wavetable carrier, one bounded two-state throat,
+     * one precomputed eight-control waveshaper: no additional voice/tank. */
+    int32_t growl=ru_growl_read(s->cxs.phase,pitch_inc);
+    growl=ru_growl_process(&s->growl,growl,&growl_params);
+    /* CXS and SUB modes remain unchanged, including live 64-sample fades. */
+    sample=(int32_t)(((sample*(int32_t)(32768u-blend))+(growl*(int32_t)blend))>>15);
    }
    /* Independent subs are added before filters/ADSR. With both OFF, sample
     * remains bit-identical to V1.8. No extra voices or wavetable path. */

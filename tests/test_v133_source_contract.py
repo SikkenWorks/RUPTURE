@@ -11,6 +11,7 @@ assert 'native_seq_length=len' in b
 assert 'native_parameter_publish()' in b
 assert 'v.active_project=' in b and 'v.active_seq_slot=' in b
 assert '"ACTIVE",175,y' in u
-assert 'ru_center(a,180,133,1)' in u and 'ru_center(hold,180,145,1)' in u
+assert 'ru_text("STEP",14,131,1)' in u and 'ru_text("HOLD",14,143,1)' in u
+assert 'ru_text(v->seq_slide?"SLIDE ON":"SLIDE OFF",169,143,1)' in u
 assert "name[4]==' '?5u:4u" in b and "name[4]==' '?5u:4u" in w
 print('PASS V1.33 exact native SAVE/LOAD and UI contract')

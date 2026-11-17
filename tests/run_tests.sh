@@ -138,8 +138,11 @@ python3 tests/export_native_screens.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v119_dma_diagnostics.c -o /tmp/rupture_v119_diag
 /tmp/rupture_v119_diag
 
-# V1.20: pixel-perfect native 1-bit ROM intro, deterministic 24 real frames.
-python3 tests/test_v120_boot_art.py
+# V2.0.1: exact 1-bit source art and eleven reproducible in-between frames.
+python3 tests/test_v201_boot_art.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v202_subosc_playback.c -o /tmp/rupture_v202_sub_fear && /tmp/rupture_v202_sub_fear
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v203_subosc_stare.c -o /tmp/rupture_v203_sub_stare && /tmp/rupture_v203_sub_stare
+python3 tests/test_v202_subosc_art.py
 
 # V1.21: shared firmware SAVE routing, including both SUB HOME pages.
 "$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror tests/test_v121_save_home.c -o /tmp/rupture_v121_save_home
@@ -333,7 +336,91 @@ python3 tests/test_v179_pcm_parity.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v1883_env_animation.c -o /tmp/rupture_v1883_env && /tmp/rupture_v1883_env
 python3 tests/test_v165_png_parity.py
 python3 tests/test_v170_hold_png_parity.py
-python3 tests/test_v199_release_ota.py
+python3 tests/test_v210_release_ota.py
+
+# V2.0.9: native paired-register SUB pitch multiplication must remain
+# exact for ALL normal/saturating detune, drift and octave combinations.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v209_sub_inc_parity.c -o /tmp/rupture_v209_sub_inc && /tmp/rupture_v209_sub_inc
+python3 tests/test_v210_target_codegen.py
+# V2.0.11: reference harmonic shape, bandlimited mips, live GROWL motion,
+# continuous sustained PCM and bounded output. SUB SAW and CXS remain old.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v211_growl.c \
+ -lm -o /tmp/rupture_v211_growl && /tmp/rupture_v211_growl
+# V2.0.12: extreme expressiveness (all eight knobs), 1536 held-note cases,
+# output headroom, and block-cached parameter conversion.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v212_growl_expression.c \
+ -lm -o /tmp/rupture_v212_growl && /tmp/rupture_v212_growl
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ tests/test_v213_expression.c -o /tmp/rupture_v213_expression && /tmp/rupture_v213_expression
+python3 tests/test_v213_knob_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v214_growl_expression.c \
+ -lm -o /tmp/rupture_v214_growl && /tmp/rupture_v214_growl
+# V2.0.10: minimum EQ frequency, negative/positive gain and HIGH AIR must
+# bypass the empty FX rack and preserve the V2.0.9 guarded EQ response.
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -D_DEFAULT_SOURCE \
+ tests/test_v210_eq_pcm_benchmark.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v210_eq && /tmp/rupture_v210_eq
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -D_DEFAULT_SOURCE \
+ tests/test_v210_sub_eq_reverb_stress.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v210_stress && /tmp/rupture_v210_stress
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -D_DEFAULT_SOURCE \
+ tests/test_v211_growl_eq_reverb_stress.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v211_growl_stress && /tmp/rupture_v211_growl_stress
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -D_DEFAULT_SOURCE \
+ tests/test_v213_expression_eq_reverb_stress.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v213_expression_stress && /tmp/rupture_v213_expression_stress
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v206_led_wave.c -o /tmp/rupture_v206_wave && /tmp/rupture_v206_wave
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function tests/test_v206_popup_ui.c -o /tmp/rupture_v206_popup && /tmp/rupture_v206_popup
+python3 tests/test_v206_preset_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v207_preset_runtime.c -o /tmp/rupture_v207_preset && /tmp/rupture_v207_preset
+python3 tests/test_v207_reachable_input.py
+# V2.0.8: compare every PCM sample and the complete CXS state against the
+# actual V2.0.7 source, including oscillator-cycle exchanges and live edits.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ -Drupture_q15_init=old_rupture_q15_init -Drupture_q15_params=old_rupture_q15_params \
+ -Drupture_q15_sample=old_rupture_q15_sample -Drupture_q15_valid=old_rupture_q15_valid \
+ -c reference/native_cxs_q15-V2.0.7.c -o /tmp/rupture_v208_cxs_old.o
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v208_cxs_exchange_pcm.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ /tmp/rupture_v208_cxs_old.o -o /tmp/rupture_v208_cxs_pcm && /tmp/rupture_v208_cxs_pcm
+"$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v208_mixed_reverb_pcm.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v208_mixed_pcm && /tmp/rupture_v208_mixed_pcm
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function tests/test_v205_cxs_note_start.c -o /tmp/rupture_v205_cxs && /tmp/rupture_v205_cxs
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function tests/test_v205_preset_menu.c -o /tmp/rupture_v205_menu && /tmp/rupture_v205_menu
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v205_preset_global.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v205_global && /tmp/rupture_v205_global
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v213_dual_knob_storage.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm \
+ -o /tmp/rupture_v213_knob && /tmp/rupture_v213_knob
 bash tests/pop_fix/run_pop_tests.sh
 
 # V1.90: ordered fixed-memory insert chain, per-patch GLIDE and step SLIDE,
@@ -342,6 +429,7 @@ bash tests/pop_fix/run_pop_tests.sh
  tests/test_v190_fx_chain.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -o /tmp/rupture_v190_fx && /tmp/rupture_v190_fx
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v190_glide.c -o /tmp/rupture_v190_glide && /tmp/rupture_v190_glide
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v204_glide_fx_order.c -o /tmp/rupture_v204_glide_fx && /tmp/rupture_v204_glide_fx
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
  tests/test_v190_project_roundtrip.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
@@ -406,6 +494,12 @@ bash tests/pop_fix/run_pop_tests.sh
  vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
  -lm -o /tmp/rupture_v195_oracle_test && /tmp/rupture_v195_oracle_test
+
+"$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v195_legacy_hidden_pcm.c \
+ reference/native_fx-V2.0.3.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -DRU_V204_BASELINE -lm -o /tmp/rupture_v195_hidden_baseline && /tmp/rupture_v195_hidden_baseline
 
 "$cc" -std=c11 -O3 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
  tests/test_v195_legacy_hidden_pcm.c \

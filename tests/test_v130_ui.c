@@ -19,7 +19,7 @@ int main(void){
  assert(!ru_get(44,75) && !ru_get(196,75)); /* black quiet zone */
  assert(pixel_count()>10000);
  v.page=RU_PAGE_SETTINGS;v.selected=0;v.master=100;ru_render(&v);
- assert(ru_get(12,57)&&ru_get(12,99));
+ assert(ru_get(12,52)&&ru_get(12,76));
  v.auto_save=1;ru_render(&v);assert(pixel_count()>1000);
  v.saver_active=1;v.saver_frame=0;ru_render(&v);int meadow=pixel_count();
  assert(meadow>4000);

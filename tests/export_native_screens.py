@@ -29,6 +29,13 @@ try:
   output=root/'ui/screens'/(scene+'.png');temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),scene,str(temp)],check=True)
   Image.open(temp).save(output,optimize=True);temp.unlink()
+ for page,option,title in [(9,'seq-empty','sequencer-empty'),(9,'seq-chord','sequencer-chord'),
+                           (16,'settings-groups','settings-presets-groups'),
+                           (16,'settings-targets','settings-presets-targets'),
+                           (16,'settings-saved','settings-presets-saved')]:
+  output=root/'ui/screens'/(title+'.png');temp=output.with_suffix('.pgm')
+  subprocess.run([str(exe),str(page),str(temp),option],check=True)
+  Image.open(temp).save(output,optimize=True);temp.unlink()
  for scene in ('storage-save','storage-load'):
   output=root/'ui/screens'/(scene+'.png');temp=output.with_suffix('.pgm')
   subprocess.run([str(exe),scene,str(temp)],check=True)
@@ -42,7 +49,11 @@ try:
   (root/'ui/screens'/old).unlink(missing_ok=True)
  frame_dir=root/'ui/loading-frames'
  frame_dir.mkdir(exist_ok=True)
- for step in range(1,25):
+ # V2.0.1 uses 23 1-bit frames: twelve original art keyframes and eleven
+ # deterministic interstitials. Remove obsolete output after the sequence.
+ for legacy in range(24,25):
+  (frame_dir/f'frame-{legacy:02d}.png').unlink(missing_ok=True)
+ for step in range(1,24):
   pgm=frame_dir/(f'frame-{step:02d}.pgm')
   subprocess.run([str(exe),'24',str(pgm),str(step)],check=True)
   Image.open(pgm).save(pgm.with_suffix('.png'),optimize=True)

@@ -94,4 +94,22 @@ static inline RuFunctionLeds ru_function_led_boot_softstart(
  requested.glow=(uint16_t)(requested.glow&~requested.solid);
  return requested;
 }
+/* V2.0.6: one travelling, fading boot wave over the full 41-LED panel.
+ * Called only by the ordinary control loop, NEVER from the audio/scan ISR.
+ * 0 = off, 1 = dim, 2 = mid, 3 = bright. The normal state is restored once
+ * the travelling head has passed; this also handles unlit keyboard keys. */
+#define RU_LED_BOOT_WAVE_STEP_MS 27u
+#define RU_LED_BOOT_WAVE_TAIL_MS 162u
+#define RU_LED_BOOT_WAVE_TOTAL_MS (41u*RU_LED_BOOT_WAVE_STEP_MS+RU_LED_BOOT_WAVE_TAIL_MS)
+static inline uint8_t ru_led_boot_wave_level(uint32_t elapsed_ms,
+                                             uint8_t ordinal,uint8_t normal){
+ uint32_t start=(uint32_t)ordinal*RU_LED_BOOT_WAVE_STEP_MS;
+ if(elapsed_ms<start)return 0u;
+ uint32_t age=elapsed_ms-start;
+ if(age>=RU_LED_BOOT_WAVE_TAIL_MS)return normal;
+ if(age<27u)return 1u;
+ if(age<54u)return 2u;
+ if(age<108u)return 3u;
+ return age<135u?2u:1u;
+}
 #endif

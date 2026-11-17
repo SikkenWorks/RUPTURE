@@ -7,8 +7,13 @@ int main(void){
  /* Isolate the knob painter: no pixel in the subtitle rectangle y50..80. */
  ru_clear();ru_draw_knobs(&v);
  for(int y=50;y<=80;y++)for(int x=0;x<240;x++)assert(!ru_get(x,y));
- /* The two upper knobs start safely BELOW the subtitle's 80px edge. */
- ru_render(&v);assert(ru_get(8,50)&&ru_get(120,79));
+ /* The two upper knobs start safely BELOW the 30px animation window.
+  * V2.0.2 replaced the former border/subtitle with source-exact sprites. */
+ ru_render(&v);
+ for(int y=50;y<80;y++)for(int x=8;x<232;x++){
+  uint8_t packed=ru_sub_fear_sprites[0][0][y-50][(x-8)/8];
+  assert(ru_get(x,y)==((packed>>(7-((x-8)%8)))&1u));
+ }
  v.page=RU_PAGE_SHAPE;ru_clear();ru_draw_knobs(&v);
  for(int y=50;y<=80;y++)for(int x=0;x<240;x++)assert(!ru_get(x,y));
  /* Header wordmark survives the negative-space tear and remains recognizable. */

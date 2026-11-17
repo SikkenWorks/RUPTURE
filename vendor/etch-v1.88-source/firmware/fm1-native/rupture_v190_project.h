@@ -6,7 +6,7 @@
 struct rupture_v190_project {
  struct rupture_fx_chain chain; /* nine bytes: eight processors + enable */
  uint8_t legacy_chain; /* 1: byte-identical old DSP order until first slot edit */
- uint8_t glide_patch[32][2]; /* per preset: 0..200 * 10ms, mode/curve/retrigger */
+ uint8_t glide_patch[32][2]; /* per preset: 0..200 * 10ms, mode/3-bit curve/retrigger */
  uint8_t seq_slide[32]; /* 256 steps, one SLIDE flag per step */
 };
 static inline void ru_v190_defaults(struct rupture_v190_project *p){
@@ -25,7 +25,9 @@ static inline uint8_t ru_v190_glide_stage(struct rupture_v190_project *p,
  if(time_ms>2000u)time_ms=2000u;
  if(mode>2u)mode=2u;
  uint8_t time=(uint8_t)(time_ms/10u);
- uint8_t flags=(uint8_t)((mode&3u)|((curve&1u)<<2u)|((retrigger&1u)<<4u));
+ if(curve>5u)curve=5u;
+ /* Original curve bit stays at bit 2; use reserved bits 3/5 for 2..5. */
+ uint8_t flags=(uint8_t)((mode&3u)|((curve&3u)<<2u)|((curve&4u)<<3u)|((retrigger&1u)<<4u));
  uint8_t changed=(uint8_t)(p->glide_patch[slot][0]!=time||
                            p->glide_patch[slot][1]!=flags);
  p->glide_patch[slot][0]=time;
@@ -36,8 +38,9 @@ static inline uint8_t ru_v190_valid(const struct rupture_v190_project *p){
  if(!ru_chain_valid(&p->chain))return 0u;
  if(p->legacy_chain>1u)return 0u;
  for(uint8_t i=0u;i<32u;i++)
-  if(p->glide_patch[i][0]>200u||(p->glide_patch[i][1]&~0x17u)||
-      (p->glide_patch[i][1]&3u)>2u)return 0u;
+  if(p->glide_patch[i][0]>200u||(p->glide_patch[i][1]&~0x3fu)||
+      (p->glide_patch[i][1]&3u)>2u||
+      (((p->glide_patch[i][1]>>2u)&3u)|((p->glide_patch[i][1]>>3u)&4u))>5u)return 0u;
  return 1u;
 }
 static inline uint8_t ru_slide_at(const struct rupture_v190_project *p,uint16_t step){

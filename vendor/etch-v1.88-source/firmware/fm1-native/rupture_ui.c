@@ -14,6 +14,7 @@
 #include "rupture_dam_anim.h"
 #include "rupture_panel_sprites.h"
 #include "rupture_tunnel_sprites.h"
+#include "rupture_subosc_fear_sprites.h"
 #include "rupture_volcano_sprites.h"
 #include "rupture_hold_sprites.h"
 #include "rupture_crt_vcr.h"
@@ -78,9 +79,10 @@
 #define RU_PAGE_DISTORTION 53
 #define RU_PAGE_WAH 54
 #define RU_PAGE_COUNT 55
+#include "rupture_preset_assign.h"
 #include "rupture_tutorial.h"
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO","GLIDE","FX LIBRARY","DISTORTION","WAH WAH"};
-typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t glide_frame,glide_shake;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
+typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t glide_frame,glide_shake,sub_fear_frame,sub_fear_shake;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
  uint8_t crt_enabled;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
@@ -97,6 +99,10 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  uint16_t diag_control,diag_nested,diag_live_slack;
  uint32_t diag_midi_queue,diag_midi_deferred,diag_postlate;
  uint8_t fx_types[8],fx_enabled,fx_picker,fx_error,fx_legacy,seq_slide;
+ uint8_t preset_assign,preset_category,preset_cursor,preset_save_stage,preset_save_progress;
+ uint8_t preset_edit_mode,preset_cxs_assign,preset_growl_assign;
+ uint8_t preset_popup_visible;
+ char preset_popup_value[20];
 } RuState;
 #ifdef RU_BITS_EXTERNAL
 /* Display scratch is unused while drawing RUPTURE. */
@@ -259,7 +265,7 @@ static void ru_header(const char *s,const RuState *v){ru_wordmark();if(v->show_b
  /* Oscillator belongs to the header, never to the waveform/knob area.
   * 93..148 is clear after PLAY/SOUND SHAPE and before OCT at x=166. */
  if(v->page==RU_PAGE_PLAY || v->page==RU_PAGE_SHAPE)
-  ru_text(v->main_wave?"SAWTOOTH":"CXS",93,32,1);
+  ru_text(v->main_wave?"GROWL":"CXS",93,32,1);
  {char oct[7]={'O','C','T',' ',0,0,0};
   if(v->octave==0){oct[4]='0';}
   else{oct[4]=v->octave<0?'-':'+';
@@ -453,7 +459,12 @@ static uint8_t ru_knob_normal(const RuState *v,int i){
  case RU_PAGE_LFO:if(i==0)val=(v->k[2]==1u)?(val/2u):(val*100u/11u);else if(i==2)val=val*50u;else if(i==3)val=val*100u;break;
  case RU_PAGE_SEQ:if(i==0){uint16_t len[]={4,8,16,32,64,128};uint8_t z=0;while(z<5 && len[z]!=val)z++;val=z*20u;}else if(i==1)val=(val-30u)*100u/210u;break;
  case RU_PAGE_NOTE_MEMORY:if(i==0)val=val*50u;else if(i==1)val=val*100u;else if(i==2)val=val/4u;else val=val*100u/12u;break;
- case RU_PAGE_GLIDE:if(i==0)val=val/20u;else if(i==1)val=val*50u;else val=val*100u;break;
+ case RU_PAGE_GLIDE:
+  if(i==0){val/=20u;}
+  else if(i==1){val*=50u;}
+  else if(i==2){val*=20u;}
+  else {val*=100u;}
+  break;
  case RU_PAGE_FILTER:if(i==0)val=val*25u;break;
  case RU_PAGE_ARP:if(i==0||i==1)val=val*100u/7u;
   else if(i==2)val=(val<=1u?0u:(val-1u)*100u/11u);
@@ -512,7 +523,10 @@ static void ru_draw_knobs(const RuState *v){if(v->page>=RU_PAGE_COUNT||v->page==
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==0){static const char *const pr[]={"LAST","HIGH","LOW"};txt=pr[v->k[0]%3];}
  if(v->page==RU_PAGE_NOTE_MEMORY&&i==1)txt=v->k[1]?"ON":"OFF";
  if(v->page==RU_PAGE_GLIDE&&i==1){static const char *const modes[]={"OFF","LEGATO","ALWAYS"};txt=modes[v->k[1]%3u];}
- if(v->page==RU_PAGE_GLIDE&&i==2)txt=v->k[2]?"EXP":"LINEAR";
+ if(v->page==RU_PAGE_GLIDE&&i==2){
+  static const char *const curves[]={"LINEAR","EXP","LOG","SOFT","FAST","FIRM"};
+  txt=curves[v->k[2]<6u?v->k[2]:0u];
+ }
  if(v->page==RU_PAGE_GLIDE&&i==3)txt=v->k[3]?"ON":"OFF";
  if(v->page==RU_PAGE_BEND&&i==0){ru_uint(v->bend_live,buf[i]);int l=ru_strlen(buf[i]);if(l<9){buf[i][l]='%';buf[i][l+1]=0;}txt=buf[i];}
  if(v->page==RU_PAGE_BEND&&i==1){static const char *const tg[]={"1/4","1/2","FULL","1.5","DOUBLE"};txt=tg[v->bend_target<5u?v->bend_target:0u];}
@@ -631,18 +645,19 @@ static void ru_seq_screen(const RuState *v){
   if(v->seq_playing && first+(uint16_t)n==v->seq_playhead){ru_rect(x+8,y+9,8,5);}
  }
  char step[12],total[12];ru_uint(v->seq_current_step+1u,step);ru_uint(v->seq_length,total);
- ru_text("STEP",14,133,1);ru_text(step,47,133,1);ru_text("/",76,133,1);ru_text(total,90,133,1);
+ ru_text("STEP",14,131,1);ru_text(step,47,131,1);ru_text("/",78,131,1);ru_text(total,91,131,1);
  if(v->seq_note_count){
-  ru_text(ru_notes[v->seq_first_note%12],156,133,1);
-  /* Pitch octave and HOLD count share one truly centered value column.
-   * This keeps single- and multi-digit values visually aligned on FM1. */
-  ru_uint(v->seq_first_note/12u-1u,a);ru_center(a,180,133,1);
-  if(v->seq_note_count>1u){ru_text("+",196,133,1);ru_uint(v->seq_note_count-1u,b);ru_text(b,205,133,1);}
- }else ru_text("REST",169,133,1);
+  ru_text(ru_notes[v->seq_first_note%12],156,131,1);
+  if(v->seq_first_note<12u)ru_text("-1",172,131,1);
+  else{ru_uint(v->seq_first_note/12u-1u,a);ru_text(a,172,131,1);}
+  if(v->seq_note_count>1u){ru_text("+",198,131,1);ru_uint(v->seq_note_count-1u,b);ru_text(b,208,131,1);}
+ }else ru_text("REST",169,131,1);
  if(v->seq_note_count){
-  char hold[12];ru_uint(v->seq_sustain,hold);ru_text("HOLD",130,145,1);ru_center(hold,180,145,1);
- }else ru_center("SELECT STEP  KEYS ADD/REMOVE",120,144,1);
- ru_center(v->seq_slide?"SLIDE ON / SEQ + K4 OFF":"SLIDE OFF / SEQ + K4 ON",120,157,1);
+  char hold[12];ru_uint(v->seq_sustain,hold);ru_text("HOLD",14,143,1);ru_text(hold,48,143,1);
+ }else ru_text("KEYS ADD / REMOVE",14,143,1);
+ /* Two compact rows above the knob hit areas. The previous SLIDE status
+  * at y=157 intersected the knob rings starting at y=156. */
+ ru_text(v->seq_slide?"SLIDE ON":"SLIDE OFF",169,143,1);
  const char *names[4]={"LENGTH","BPM","VELOCITY","GATE"};
  for(int i=0;i<4;i++){
   int x=36+i*56;
@@ -667,53 +682,13 @@ static void ru_seq_screen(const RuState *v){
    (v->seq_recording&&!v->seq_playing?"REC ARMED / PLAY TO START":
     (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+K4 SLIDE / SAVE SEQUENCES")));
 }
-/* V1.20: ROM 1-bit tear animation, 240x240 with no extra screen memory.
- * A single immutable final artwork is exposed through a moving jagged slit,
- * so successive frames cannot jump between unrelated crack illustrations.
- * Never called from audio IRQ. All drawing stays in existing ru_bits canvas. */
-#include "rupture_splash_bitmap.h"
-#define RU_SPLASH_STEPS 24u
-static int ru_tear_axis(int x){
- return 120+(int)((((unsigned)x/9u)*7u+(((unsigned)x)/23u)*3u)%15u)-7;
-}
-static void ru_splash_crack(int reach){
- int last=ru_tear_axis(0);
- for(int x=1;x<reach&&x<240;x++){
-  int y=ru_tear_axis(x);
-  ru_line(x-1,last,x,y);
-  if((x%53)==17 && x+7<reach)ru_line(x,y,x+6,y-9);
-  if((x%71)==39 && x+5<reach)ru_line(x,y,x+4,y+10);
-  last=y;
- }
-}
+/* V2.0.1: lossless 1-bit Signal Breach loading sprites. 12 exact 240x240
+ * images share the existing framebuffer; no heap, DSP, or audio IRQ work. */
+#include "rupture_v2_signal_breach_sprites.h"
+#define RU_SPLASH_STEPS RU_V2_BREACH_FRAMES
 static void ru_brand(const RuState *v){
- uint32_t step=v->boot_step;
- ru_clear();
- if(step>=RU_SPLASH_STEPS){
-  for(uint32_t i=0;i<7200u;i++)ru_bits[i]=ru_splash_final_bitmap[i];
-  return;
- }
- if(step<=8u){
-  if(step)ru_splash_crack((int)((step*240u)/8u));
-  return;
- }
- uint32_t k=step-8u;
- int radius=(int)((k*k*141u)/256u);
- for(int y=0;y<240;y++){
-  const uint32_t row=(uint32_t)y*240u;
-  for(int x=0;x<240;x++){
-   /* A different stepped contour per column makes the crack split
-    * like torn fabric rather than two perfectly straight shutters. */
-   int ragged=(int)((((unsigned)x*17u)+((unsigned)x/7u)*43u)%19u)-9;
-   int dy=y-ru_tear_axis(x);if(dy<0)dy=-dy;
-   if(dy>radius+ragged)continue;
-   uint32_t p=row+(uint32_t)x;
-   if(ru_splash_final_bitmap[p>>3]&(0x80u>>(p&7)))
-    ru_bits[p>>3]|=(uint8_t)(0x80u>>(p&7));
-  }
- }
- /* Preserve the initial hairline while the rupture is still tiny. */
- if(radius<8)ru_splash_crack(240);
+ uint8_t frame=v->boot_step?(uint8_t)(v->boot_step-1u):0u;
+ ru_v2_breach_decode(ru_bits,frame);
 }
 /* V1.30: pixel meadow fracturing into a canyon. Visual work is exclusively
  * in the UI loop. No DSP, additional framebuffer, floats, heap or random IO.
@@ -1032,7 +1007,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("SEL PARAM K4 ON/OFF ALG MOVE");return;
  }
  if(page==RU_PAGE_FX_PICK){
-  static const char *const names[]={"REVERB","DELAY","CHORUS","MOSFET","COMPRESSOR","TILT EQ","OCTAVE FUZZ","SANDPAPER","DISTORTION","WAH WAH","REMOVE / EMPTY"};
+  static const char *const names[]={"REVERB","DELAY","CHORUS","WAH WAH","MOSFET","DISTORTION","OCTAVE FUZZ","SANDPAPER","COMPRESSOR","TILT EQ","REMOVE / EMPTY"};
   ru_center("CHOOSE SLOT EFFECT",120,53,1);
   int start=v->fx_picker>4u?(int)v->fx_picker-4:0;
   for(int n=0;n<6;n++){int pos=start+n;if(pos>=(int)RU_FX_TYPES+1)break;int y=70+n*22;
@@ -1126,8 +1101,17 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("STOP K1 = RELEASE");return;
  }
  if(page==RU_PAGE_SUB1||page==RU_PAGE_SUB2){
-  ru_frame(8,50,224,30);
-  ru_center(page==RU_PAGE_SUB1?"SUB OSCILLATOR 1":"SUB OSCILLATOR 2",120,60,1);
+  /* SUB1 stays on the forward-facing frame during sustain and jitters the
+   * entire camera; SUB2 retains its original facial animation loop. */
+  uint8_t z=(uint8_t)(page-RU_PAGE_SUB1);
+  static const int8_t sub1_shake_x[8]={0,1,0,-1,0,1,0,-1};
+  static const int8_t sub1_shake_y[8]={0,0,1,0,-1,0,1,0};
+  uint8_t stare=(uint8_t)(z==0u&&v->sub_fear_frame==11u);
+  uint8_t phase=(uint8_t)(v->sub_fear_shake&7u);
+  ru_panel_blit_shaken(ru_sub_fear_sprites[z][v->sub_fear_frame%RU_SUB_FEAR_FRAMES],
+   stare?sub1_shake_x[phase]:0,stare?sub1_shake_y[phase]:0);
+  /* The native SUB OSC 1 / SUB OSC 2 header already names this page.
+   * Leaving this row free keeps the existing knob circles unobstructed. */
   ru_draw_knobs(v);
   /* Fifth visual knob follows the physical ALGORITHM encoder. */
   ru_knob(120,135,v->sub_blend);
@@ -1242,7 +1226,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V1.99","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V2.0.14","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){
@@ -1467,20 +1451,62 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
  }
  if(page==RU_PAGE_SETTINGS){
   if(v->settings_open==0u){
-   static const char *const names[]={"MASTER VOLUME","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK"};
-   for(int i=0;i<6;i++){
-    int y=52+i*28;ru_frame(12,y,216,26);
+   static const char *const names[]={"MASTER VOLUME","PRESETS KNOB","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK"};
+   for(int i=0;i<7;i++){
+    int y=52+i*24;ru_frame(12,y,216,23);
     if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+8,3,12);}
-    ru_text(names[i],27,y+9,1);
+    ru_text(names[i],27,y+8,1);
     if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}
      if(v->knob_focus_visible&&v->knob_focus==0u)ru_rect(178,y+8,2,10);
-     ru_center(num,195,y+9,1);}
-    if(i==1){ru_center(v->auto_save?"ON":"OFF",195,y+9,1);}
-    if(i==2){if(v->boot_choice==0)ru_center("NEW",199,y+9,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+9,1);}}
-    if(i==5)ru_center(v->crt_enabled?"ON":"OFF",195,y+9,1);
-    if(v->selected==(uint8_t)i)ru_text(">",217,y+9,1);
+     ru_center(num,195,y+8,1);}
+    if(i==1 && v->preset_assign<RU_PRESET_ASSIGN_COUNT){
+     /* The full target remains visible inside the chooser. The settings
+      * row gives a concise current assignment without colliding with text. */
+     ru_text("SET",188,y+8,1);
+    }
+    if(i==2){ru_center(v->auto_save?"ON":"OFF",195,y+8,1);}
+    if(i==3){if(v->boot_choice==0)ru_center("NEW",199,y+8,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+8,1);}}
+    if(i==6)ru_center(v->crt_enabled?"ON":"OFF",195,y+8,1);
+    if(v->selected==(uint8_t)i)ru_text(">",217,y+8,1);
    }
-   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL TOGGLE AUTO SAVE":v->selected==5u?"SEL TOGGLE CRT / VCR":"SELECT / SEL OPEN");return;
+   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL ASSIGN PRESETS":v->selected==2u?"SEL TOGGLE AUTO SAVE":v->selected==6u?"SEL TOGGLE CRT / VCR":"SELECT / SEL OPEN");return;
+  }
+  if(v->settings_open==4u){
+   ru_center("PRESETS KNOB / MODE",120,49,1);
+   for(uint8_t i=0u;i<2u;i++){
+    int y=88+(int)i*56;
+    uint8_t assignment=i?v->preset_growl_assign:v->preset_cxs_assign;
+    ru_frame(12,y,216,49);
+    if(v->preset_edit_mode==i){ru_rect(17,y+8,3,30);ru_text(">",213,y+13,1);}
+    ru_text(i?"GROWL":"CXS",28,y+7,1);
+    if(assignment<RU_PRESET_ASSIGN_COUNT)
+     ru_text(ru_preset_targets[assignment].name,28,y+26,1);
+   }
+   ru_footer("SELECT MODE / SEL ASSIGN / HOME BACK");return;
+  }
+  if(v->settings_open==2u){
+   ru_center(v->preset_edit_mode?"ASSIGN GROWL PRESETS":"ASSIGN CXS PRESETS",120,46,1);
+   for(uint8_t i=0;i<(uint8_t)(sizeof(ru_preset_groups)/sizeof(ru_preset_groups[0]))-(v->preset_edit_mode?0u:1u);i++){
+    int y=64+(int)i*16;
+    if(i==v->preset_category){ru_frame(13,y-3,214,16);ru_rect(17,y,3,8);}
+    ru_text(ru_preset_groups[i],27,y,1);
+    ru_text(">",215,y,1);
+   }
+   ru_footer("SELECT CATEGORY / SEL OPEN / HOME BACK");return;
+  }
+  if(v->settings_open==3u){
+   ru_center(ru_preset_groups[v->preset_category],120,46,1);
+   uint8_t start=ru_preset_group_first(v->preset_category);
+   uint8_t finish=ru_preset_group_last(v->preset_category);
+   uint8_t top=start;
+   if(v->preset_cursor>=start+7u)top=(uint8_t)(v->preset_cursor-6u);
+   for(uint8_t i=top,n=0u;i<finish&&n<7u;i++,n++){
+    int y=66+(int)n*21;
+    if(i==v->preset_cursor){ru_frame(12,y-5,216,19);ru_rect(17,y-1,3,9);}
+    ru_text(ru_preset_targets[i].name,28,y,1);
+    if(i==v->preset_assign)ru_text("*",214,y,1);
+   }
+   ru_footer("SELECT TARGET / SEL SAVE / HOME BACK");return;
   }
   ru_frame(12,72,216,111);ru_dither(15,75,210,4,1);
   char num[12];ru_uint(v->master,num);ru_center("MASTER VOLUME",120,89,1);
@@ -1536,4 +1562,27 @@ static void ru_render(const RuState *v){
  ru_render_raw(v);
  if(v->welcome_phase==RU_WELCOME_TOUR && v->page!=RU_PAGE_WELCOME)
   ru_tour_overlay(v);
+ if(v->preset_popup_visible && ru_preset_assign_valid(v->preset_assign)){
+  /* Opaque foreground prevents the assigned parameter's value from being
+   * obscured by the live sequencer, animation or existing editor labels. */
+  for(int y=76;y<165;y++)for(int x=13;x<227;x++)ru_clr(x,y);
+  ru_frame(13,76,214,89);
+  ru_center("PRESETS KNOB",120,85,1);
+  ru_center(ru_preset_targets[v->preset_assign].name,120,103,1);
+  ru_center(v->preset_popup_value,120,124,2);
+  ru_center(v->main_wave?"GROWL PERFORMANCE":"CXS ASSIGNMENT",120,151,1);
+ }
+ if(v->preset_save_stage){
+  /* Global settings write is a main-thread-only operation. Redraw on each
+   * phase transition so users can distinguish queued, writing and verified. */
+  for(int y=78;y<164;y++)for(int x=15;x<225;x++)ru_clr(x,y);
+  ru_frame(15,78,210,86);
+  ru_center(v->preset_save_stage==1u?"WAITING FOR AUDIO IDLE":
+   v->preset_save_stage==2u?"SAVING GLOBAL SETTING":
+   v->preset_save_stage==3u?"SAVED GLOBALLY":"SAVE FAILED",120,96,1);
+  ru_frame(28,128,184,15);
+  uint8_t pct=v->preset_save_progress>100u?100u:v->preset_save_progress;
+  if(pct)ru_rect(31,131,(int)pct*178/100,9);
+  char status[12];ru_uint(pct,status);ru_center(status,120,149,1);
+ }
 }

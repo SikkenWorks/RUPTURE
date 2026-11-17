@@ -86,6 +86,15 @@ static inline int32_t ru_fx_reverb_lerp(int32_t dry,int32_t wet,uint16_t space){
  return (int32_t)(((int64_t)dry*(32767u-space)+
                     (int64_t)wet*space)/32767);
 }
+/* In RUPTURE's ordered inserts, EVERY preceding stage clips to Q15 and
+ * each Spring/Hall/Room return is clip16. As a result the four per-frame
+ * range checks in the generic function above can never fail. The maximum
+ * absolute numerator is 32768*32767 (< INT32_MAX). Jieli pi32v2 emits
+ * only 18 instruction bytes here versus 66 for the guarded generic mix.
+ * Same weights, same division and signed rounding, without a quality cut. */
+static inline int32_t ru_fx_reverb_mix_clipped(int32_t dry,int32_t wet,uint16_t space){
+ return (dry*(int32_t)(32767u-space)+wet*(int32_t)space)/32767;
+}
 void etch_fx_reset(struct etch_native_fx *s){
  uint8_t *p=(uint8_t*)s;for(uint32_t i=0;i<sizeof(*s);i++)p[i]=0;
  for(uint32_t i=0;i<3584;i++)reverse_line[i]=0;
@@ -802,14 +811,17 @@ static inline void ru_reverb_room(struct etch_native_fx *s,int32_t input,uint16_
  const int32_t gain=s->reverb_room_feedback; /* cached at knob updates */
  for(uint32_t i=0;i<4u;i++){
   int32_t diff=v[i]-s->reverb_line_damp[i];
-  s->reverb_line_damp[i]+=diff>>1; /* cheap absorptive wall material */
+  /* ROOM: a gentler wall high-frequency loss avoids a dull, boxy short
+   * reverb. Same one-pole cost and same four existing feedback buffers. */
+  s->reverb_line_damp[i]+=diff>>2;
  }
  /* Damp the feedback state itself, rather than the dry excitation. */
  const int32_t filtered=(s->reverb_line_damp[0]+s->reverb_line_damp[1]+
                          s->reverb_line_damp[2]+s->reverb_line_damp[3])>>1;
  for(uint32_t i=0;i<4u;i++){
   int32_t reflected=filtered-s->reverb_line_damp[i];
-  int32_t injection=(i&1u)?-(input>>1):(input>>1);
+  /* Unequal injection prevents repeated early stereo cancellations. */
+  int32_t injection=(i&1u)?-(input>>2):(input>>1);
   s->reverb[starts[i]+s->reverb_line_cursor[i]]=clip16(injection+((reflected*gain)>>15));
   uint32_t next=s->reverb_line_cursor[i]+1u;
   uint32_t length=i==0u?s->tap1:i==1u?s->tap2:i==2u?s->tap3:s->reverb_room_line4;
@@ -824,8 +836,9 @@ static inline void ru_reverb_room(struct etch_native_fx *s,int32_t input,uint16_
 static inline void ru_reverb_hall(struct etch_native_fx *s,int32_t input,uint16_t decay,
                            int32_t *wl,int32_t *wr){
  uint32_t p=s->reverb_pos;
- /* Schroeder allpass diffusion into a long, low-passed recursive feedback
-  * network. The three staggered tank taps create the diffuse late field. */
+ /* Schroeder allpass diffusion into the long, low-passed recursive feedback
+  * network. Correct allpass feedback decorrelates the tail without any
+  * additional reads, buffers, divides or multipliers per sample. */
  int32_t a=s->reverb[(p-s->tap1)&4095u];
  int32_t b=s->reverb[(p-s->tap2)&4095u];
  int32_t c=s->reverb[(p-s->tap3)&4095u];
@@ -834,13 +847,45 @@ static inline void ru_reverb_hall(struct etch_native_fx *s,int32_t input,uint16_
  int32_t previous=space_diffuser[(p-43u)&63u];
  int32_t feed=(input*2)/3;
  int32_t diffused=previous-(feed>>1);
- space_diffuser[p&63u]=clip16(feed+(previous>>1));
- int32_t diffusion=(a+b+c)/3;
+ space_diffuser[p&63u]=clip16(feed+(diffused>>1));
+ /* Feed early reflections back into the diffuse tail, not just the three
+  * late taps. The >>2 mix replaces /3 (no more CPU cost), creating a
+  * denser hall than a sparse three-comb echo. */
+ int32_t diffusion=(a+b+c+(early1>>1)+(early2>>1))>>2;
  s->space_damp_state+=etch_fx_bounded_lp_step(diffusion-s->space_damp_state,s->space_damp_alpha);
  s->reverb[p]=clip16(diffused+(((s->space_damp_state*(int32_t)decay)>>15)*31)/32);
  s->reverb_pos=(p+1u)&4095u;
  *wl=clip16((early1*7+early2*5+a*6+b*4+c*3)/6);
  *wr=clip16((early2*7+early1*4+b*6+c*4+a*3)/6);
+}
+/* Bounded one-index-per-sample cleanup of old wet PCM history. Also used by
+ * the standalone Channel EQ fastpath: EQ can keep playing while previous
+ * reverb/delay buffers are quietly cleared, never with an IRQ-sized memset. */
+static inline void etch_fx_idle_flush(struct etch_native_fx *s){
+ if(s->dry_was_wet){
+  s->dry_was_wet=0u;s->dry_flush_active=1u;s->dry_flush_cursor=0u;
+ }
+ if(s->dry_flush_active){
+  uint32_t i=s->dry_flush_cursor;
+  s->delay[i]=0;
+  if(i<ETCH_REVERB_SIZE)s->reverb[i]=0;
+  if(i<ETCH_CHORUS_SIZE)s->chorus[i]=0;
+  if(i<64u)space_diffuser[i]=0;
+  if(i<3584u)reverse_line[i]=0;
+  if(i<1024u)s->flanger_line[i]=0;
+  if(i<512u){vibrato_line[i]=0;tape_line[i]=0;}
+  if(++s->dry_flush_cursor==ETCH_DELAY_SIZE){
+   s->dry_flush_active=0u;s->dry_flush_cursor=0u;
+   s->eq_lp_low=s->eq_lp_high=s->eq_lp_hpf=0;
+   s->phaser_feedback_state=s->flanger_feedback_state=0;
+   for(uint32_t z=0;z<4u;z++)s->phaser_z[z]=0;
+   s->wah_env=s->wah_lp=s->wah_hp=0;
+   s->tape_tone_state=s->reverse_tone_state=0;
+   s->folder_tone_state=s->folder_baseline=0;
+   s->space_damp_state=0;
+   s->reverse_accum=0;s->reverse_ready=0;
+  }
+ }
 }
 void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t chorus,uint16_t delay,uint16_t reverb,const struct etch_fx_settings *cfg,uint32_t bypass_mask,int16_t *left,int16_t *right){
  if(!left||!right)return;
@@ -909,31 +954,7 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
     }
    }
 #endif
-   if(s->dry_was_wet){
-    s->dry_was_wet=0u;s->dry_flush_active=1u;s->dry_flush_cursor=0u;
-   }
-   if(s->dry_flush_active){
-    uint32_t i=s->dry_flush_cursor;
-    s->delay[i]=0;
-    if(i<ETCH_REVERB_SIZE)s->reverb[i]=0;
-    if(i<ETCH_CHORUS_SIZE)s->chorus[i]=0;
-    if(i<64u)space_diffuser[i]=0;
-    if(i<3584u)reverse_line[i]=0;
-    if(i<1024u)s->flanger_line[i]=0;
-    if(i<512u){vibrato_line[i]=0;tape_line[i]=0;}
-    if(++s->dry_flush_cursor==ETCH_DELAY_SIZE){
-     s->dry_flush_active=0u;s->dry_flush_cursor=0u;
-     /* Small persistent filter states are not allowed to resurrect a tone. */
-     s->eq_lp_low=s->eq_lp_high=s->eq_lp_hpf=0;
-     s->phaser_feedback_state=s->flanger_feedback_state=0;
-     for(uint32_t z=0;z<4u;z++)s->phaser_z[z]=0;
-     s->wah_env=s->wah_lp=s->wah_hp=0;
-     s->tape_tone_state=s->reverse_tone_state=0;
-     s->folder_tone_state=s->folder_baseline=0;
-     s->space_damp_state=0;
-     s->reverse_accum=0;s->reverse_ready=0;
-    }
-   }
+   etch_fx_idle_flush(s);
    *left=in;*right=in;return;
  }
  s->dry_was_wet=1u;s->dry_flush_active=0u;
@@ -982,7 +1003,9 @@ void etch_fx_process_stereo_masked(struct etch_native_fx *s,int16_t in,uint16_t 
   s->rate_step=1u+(uint32_t)qclamp(cfg->chorus_rate)*9u/32768u;
   /* Precompute span at UI rate, not with an expensive 64-bit audio multiply. */
   s->chorus_span=(uint16_t)((uint32_t)qclamp(cfg->chorus_depth)*924u/32767u);
-  s->space_damp_alpha=(uint16_t)(7000u+(uint32_t)(32767u-qclamp(cfg->reverb_decay))*8000u/32767u);
+  /* HALL: wider high-end diffusion at long decay with the original single
+   * damping pole and no extra sample work. */
+  s->space_damp_alpha=(uint16_t)(9600u+(uint32_t)(32767u-qclamp(cfg->reverb_decay))*5500u/32767u);
   s->delay_samples=384u+(uint32_t)qclamp(cfg->delay_time)*15488u/32767u;
   /* Distinct delay geometries, computed only when settings change. */
   uint32_t span=(uint32_t)qclamp(cfg->reverb_size);
@@ -1191,16 +1214,44 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
   * V1.89's proven exact-dry/bounded ring-flush path rather than calculate
   * EQ/filter coefficients and scan eight inert slots at audio rate. Never
   * take the shortcut while a just-bypassed processor is still fading. */
- if(!chain->enabled && !c->ring_mix && !c->eq_hpf &&
-    (c->eq_low==16384u||!c->eq_low) &&
-    (c->eq_mid==16384u||!c->eq_mid) &&
-    (c->eq_high==16384u||!c->eq_high) &&
+ if(!chain->enabled && !c->ring_mix &&
+    /* When EQ2 is enabled, ALL four gain controls belong to its isolated
+     * biquads, including the legacy eq_hpf storage field for HIGH AIR.
+     * A nonzero gain must not activate the unrelated eight-slot FX rack. */
+    (s->eq2_enabled || (!c->eq_hpf &&
+     (c->eq_low==16384u||!c->eq_low) &&
+     (c->eq_mid==16384u||!c->eq_mid) &&
+     (c->eq_high==16384u||!c->eq_high))) &&
     !c->trem_mix&&!c->vibrato_mix&&!c->phaser_mix&&
     !c->flanger_mix&&!c->tape_mix&&!c->decim_mix&&
     !c->reverse_mix&&!c->rotary_mix){
   uint8_t tail=0u;
   for(uint8_t slot=0;slot<RU_FX_SLOTS;slot++)if(s->rupture_chain_fade[slot]){tail=1u;break;}
   if(!tail){
+   /* V2.0.10: CHANNEL EQ is not an insert. Previously ANY non-neutral EQ
+    * forced an entirely silent eight-insert rack through the full legacy
+    * stereo FX renderer on EVERY PCM frame. This is especially wasteful for
+    * a single low-frequency shelf/bell on a sustained note. In a cold,
+    * tail-free rack, only the EQ can affect the PCM; render its original
+    * four biquads and identical wet peak knee directly. Never take this
+    * path if a previous effect still needs its feedback/tail drained. */
+   if(s->eq2_enabled && !rupture_eq2_is_unity(&s->eq2) &&
+      !(bypass&ETCH_FXB_BIT(ETCH_FXB_EQ)) &&
+      !s->reverb_mix_smooth&&!s->chorus_mix_smooth&&
+      !s->delay_mix_smooth&&!s->ring_mix_smooth&&!s->trem_mix_smooth&&
+      !s->vibrato_mix_smooth&&!s->phaser_mix_smooth&&
+      !s->flanger_mix_smooth&&!s->tape_mix_smooth&&
+      !s->decim_mix_smooth&&!s->reverse_mix_smooth&&
+      !s->rotary_mix_smooth&&!s->wah_mix_smooth&&
+      !s->rupture_tilt_mix&&!s->rupture_fuzz_mix&&
+      !s->rupture_sand_mix&&!rt_tilt_on&&!rt_fuzz_on&&!rt_sand_on&&
+      s->comp_gain==32767){
+    etch_fx_idle_flush(s);
+    int16_t eq=etch_fx_ring_eq(s,sample,c,bypass);
+    int16_t output=etch_fx_wet_safety(eq,!rupture_eq2_is_unity(&s->eq2));
+    *left=*right=output;
+    return;
+   }
    /* Cold/settled dry: no audio FX arithmetic, no eight-slot traversal.
     * Keep the neutral parametric EQ's IIR history warm, exactly as the
     * existing V1.89 dry path does. A formerly wet state must FIRST pass
@@ -1342,25 +1393,30 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
   int16_t in=clip16((l+r)/2);
   switch(type){
    case RU_FX_DISTORTION:{
-    /* Hard-edged, asymmetrical clipping with one-pole tone and direct mix.
-     * Distinct from the soft MOSFET transfer and with no division by a
-     * variable, heap allocation, or extra audio ring buffer. */
-    uint32_t gain_q8=256u+((uint32_t)qclamp(separated?p[0]:c->folder_fold)*15u>>7u);
-    int32_t bias=((int32_t)qclamp(separated?p[1]:c->folder_symmetry)-16384)*3/8;
-    int32_t driven=((int32_t)in*(int32_t)gain_q8>>8u)+bias;
-    int32_t shaped=(int32_t)clip16(driven)-(int32_t)clip16(bias);
-    uint32_t alpha=1024u+((uint32_t)qclamp(separated?p[2]:c->folder_tone)*31743u>>15u);
-    /* Half-scale Q14 avoids costly 64-bit multiplies on the FM1 core;
-     * state/PCM differences remain bounded to the signed 32-bit range. */
+    /* Tight high-gain metal preamp: bass tightening before hard asymmetrical
+     * clipping, followed by a treble tame. Unlike MOSFET this is deliberate
+     * hard saturation with strong odd and even harmonics, not soft overdrive.
+     * One pole added per insert, no PCM rings, division or extra voice. */
+    uint32_t gain_q8=384u+((uint32_t)qclamp(separated?p[0]:c->folder_fold)*10500u>>15u);
+    int32_t bias=((int32_t)qclamp(separated?p[1]:c->folder_symmetry)-16384)>>3u;
+    int32_t bass=separated?s->ru_slot_small[slot].distortion_bass:s->distortion_bass;
+    bass+=(in-bass)>>5u;
+    int32_t tightened=in-(bass>>1u);
+    int32_t driven=((tightened*(int32_t)gain_q8)>>8u)+bias;
+    if(driven>12500)driven=12500;
+    if(driven< -14500)driven=-14500;
+    int32_t shaped=(driven-(bias>>2u))*2;
+    uint32_t alpha=768u+((uint32_t)qclamp(separated?p[2]:c->folder_tone)*24576u>>15u);
     int32_t tone_state=separated?s->ru_slot_small[slot].distortion_tone:s->folder_tone_state;
-    int32_t tone=tone_state+
-      ((((shaped-tone_state)>>1)*(int32_t)alpha)>>14);
+    int32_t tone=tone_state+(((shaped-tone_state)*(int32_t)alpha)>>15);
     if(separated || !(shared_fx_done&256u)){
      shared_fx_done|=256u;
      if(separated){
+      s->ru_slot_small[slot].distortion_bass=bass;
       s->ru_slot_small[slot].distortion_tone=tone;
       s->ru_slot_small[slot].distortion_mix=etch_fx_slew(s->ru_slot_small[slot].distortion_mix,qclamp(p[3]));
      }else{
+      s->distortion_bass=bass;
       s->folder_tone_state=tone;
       s->folder_mix_smooth=etch_fx_slew(s->folder_mix_smooth,qclamp(c->folder_mix));
      }
@@ -1703,8 +1759,8 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
      }
      int32_t *mix=&s->ru_slot_reverb_mix[slot];
      *mix=etch_fx_slew(*mix,qclamp(p[3]));
-     l=ru_fx_reverb_lerp(l,reverb_wl,(uint16_t)*mix);
-     r=ru_fx_reverb_lerp(r,reverb_wr,(uint16_t)*mix);
+     l=ru_fx_reverb_mix_clipped(l,reverb_wl,(uint16_t)*mix);
+     r=ru_fx_reverb_mix_clipped(r,reverb_wr,(uint16_t)*mix);
      break;
     }
     if(!(shared_fx_done&4u)){
@@ -1717,8 +1773,8 @@ void rupture_fx_process_ordered(struct etch_native_fx *s,int16_t sample,
      }
      s->reverb_mix_smooth=etch_fx_slew(s->reverb_mix_smooth,qclamp(reverb));
     }
-    l=ru_fx_reverb_lerp(l,reverb_wl,(uint16_t)s->reverb_mix_smooth);
-    r=ru_fx_reverb_lerp(r,reverb_wr,(uint16_t)s->reverb_mix_smooth);break;
+    l=ru_fx_reverb_mix_clipped(l,reverb_wl,(uint16_t)s->reverb_mix_smooth);
+    r=ru_fx_reverb_mix_clipped(r,reverb_wr,(uint16_t)s->reverb_mix_smooth);break;
    }
    default:break;
   }

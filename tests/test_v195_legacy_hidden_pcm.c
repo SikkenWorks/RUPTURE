@@ -1,4 +1,4 @@
-/* V1.94 golden left/right PCM for older PJT35 FX routing and hidden mod FX.
+/* Golden left/right PCM for older PJT35 FX routing and hidden mod FX.
  * Realtime cache bypass is only safe when every consumer is inactive. */
 #include <stdint.h>
 #include <stdio.h>
@@ -39,10 +39,20 @@ static uint32_t render(uint8_t independent){
 
 int main(void){
  uint32_t independent=render(1u),legacy=render(0u);
+#ifdef RU_V204_BASELINE
  if(independent!=2822464508u||legacy!=1687728378u){
-  fprintf(stderr,"FAIL V1.94 legacy/hidden PCM oracle: %u %u\n",independent,legacy);
+  fprintf(stderr,"FAIL historical V1.94 legacy/hidden PCM oracle: %u %u\n",independent,legacy);
   return 1;
  }
- puts("PASS V1.95 hidden modulation transitions and legacy FX PCM bit-exact to V1.94");
+ puts("PASS original V1.94 hidden modulation and legacy FX PCM baseline");
+#else
+ /* ROOM/HALL's upgraded diffusion intentionally changes these two outputs.
+  * These hashes are the exact V2.0.4 result, not the old V1.94 oracle. */
+ if(independent!=1088817010u||legacy!=2620323848u){
+  fprintf(stderr,"FAIL V2.0.4 legacy/hidden PCM oracle: %u %u\n",independent,legacy);
+  return 1;
+ }
+ puts("PASS V2.0.4 hidden modulation and legacy FX deterministic PCM");
+#endif
  return 0;
 }

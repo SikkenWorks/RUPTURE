@@ -147,7 +147,7 @@ struct etch_native_fx {
   uint16_t wah_attack_param,wah_reso_param;
   uint16_t wah_attack_cached,wah_resonance_cached;
   uint8_t wah_cache_valid;
-  int32_t distortion_tone,distortion_mix;
+  int32_t distortion_tone,distortion_mix,distortion_bass;
   int32_t comp_env,comp_gain,comp_target;
   uint8_t comp_tick;
  } ru_slot_small[RU_FX_SLOTS];
@@ -169,7 +169,7 @@ struct etch_native_fx {
  uint8_t ru_reverb_last_type;
 #endif
  /* Pre-nonlinearity anti-alias smoothing, two Q15 poles, no delay lines. */
- int32_t rupture_fuzz_input_lp,rupture_folder_input_lp;
+ int32_t rupture_fuzz_input_lp,rupture_folder_input_lp,distortion_bass;
  /* Sandpaper: two smoothing poles, sub-bass body, zero-delay wet slew. */
  int32_t rupture_sand_pole1,rupture_sand_pole2,rupture_sand_body,rupture_sand_mix;
  int32_t rupture_sand_soft_slew,rupture_sand_warm_slew,rupture_sand_smooth_slew;

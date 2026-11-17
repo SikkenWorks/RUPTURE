@@ -24,6 +24,7 @@ extern struct etch_native_bank native_banks[3]; /* shared preallocated mip banks
 #include "native_cxs_q15.h"
 #include "rupture_subosc.h"
 #include "rupture_fx_chain.h"
+#include "rupture_growl_tone.h"
 #else
 #define ETCH_MONO_STACK 48u
 #endif
@@ -40,8 +41,8 @@ struct etch_native_audio {
 #ifdef RUPTURE_BUILD
  RuptureCXSQ15 cxs; /* main CXS carrier */
  RuSubState sub[2]; /* two independent monophonic subs, not extra note voices */
- uint32_t cxs_lfo_phase;int32_t cxs_body_low;int32_t saw_low;uint16_t main_saw_mix;
- uint32_t mono_current_inc,mono_target_inc,mono_glide_left;
+ uint32_t cxs_lfo_phase;int32_t cxs_body_low;int32_t saw_low;RuGrowlState growl;uint16_t main_saw_mix;
+ uint32_t mono_current_inc,mono_target_inc,mono_glide_left,mono_live_bend_q16;
  uint16_t mono_glide_ms;uint8_t mono_priority,mono_legato,mono_bend_range;
  uint8_t mono_glide_mode,mono_glide_curve,mono_env_retrigger;
  uint8_t mono_force_slide;

@@ -36,10 +36,24 @@ if(argc>=4 && v.page==RU_PAGE_PLAY && strncmp(argv[3],"dam",3)==0){
  int frame=atoi(argv[3]+3);if(frame>=0 && frame<20)v.dam_frame=(uint8_t)frame;
 }
 /* Optional renderer-only native view variations, no UI code fork. */
-if(argc>=4 && (v.page==RU_PAGE_PLAY || v.page==RU_PAGE_SHAPE) && !strcmp(argv[3],"saw"))v.main_wave=1u;
+if(v.page==RU_PAGE_SEQ && argc>=4){
+ if(!strcmp(argv[3],"seq-empty")){v.seq_note_count=0u;v.seq_slide=0u;}
+ else if(!strcmp(argv[3],"seq-chord")){v.seq_note_count=3u;v.seq_first_note=48u;v.seq_sustain=16u;v.seq_slide=1u;}
+}
+if(v.page==RU_PAGE_SETTINGS && argc>=4){
+ v.preset_assign=36u;
+ if(!strcmp(argv[3],"settings-groups")){v.settings_open=2u;v.preset_category=4u;}
+ else if(!strcmp(argv[3],"settings-targets")){v.settings_open=3u;v.preset_category=4u;v.preset_cursor=36u;}
+ else if(!strcmp(argv[3],"settings-saved")){v.settings_open=0u;v.preset_save_stage=3u;v.preset_save_progress=100u;}
+}
+if(argc>=4 && (v.page==RU_PAGE_PLAY || v.page==RU_PAGE_SHAPE) && (!strcmp(argv[3],"saw")||!strcmp(argv[3],"growl")))v.main_wave=1u;
 if(argc>=4 && (v.page==RU_PAGE_SUB1 || v.page==RU_PAGE_SUB2)){
  if(!strcmp(argv[3],"square"))v.k[0]=3u;
  else if(!strcmp(argv[3],"saw"))v.k[0]=4u;
+ else if(strncmp(argv[3],"subframe",8)==0){
+  int frame=atoi(argv[3]+8);
+  if(frame>=0&&frame<16)v.sub_fear_frame=(uint8_t)frame;
+ }
 }
 if(v.page==RU_PAGE_SHAPE){v.k[0]=72;v.k[1]=64;v.k[2]=30;v.k[3]=42;}if(v.page==RU_PAGE_COMP){v.k[0]=74;v.k[1]=65;v.k[2]=30;v.k[3]=60;}
 if(v.page==RU_PAGE_BEND){
