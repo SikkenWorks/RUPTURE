@@ -1,4 +1,4 @@
-/* RUPTURE V2.0.12: high-contrast, voice-like bandlimited GROWL tone.
+/* RUPTURE V2.0.16: reference-tuned and lightly self-modulated GROWL tone.
  * GROWL is ONLY the MAIN oscillator mode; CXS and both subs stay intact.
  * Control-to-coefficient conversion runs ONCE per render/DMA block.
  * PCM: signed 32-bit multiply/shift/branch only; no float, divide or malloc.
@@ -40,7 +40,9 @@ static inline RuGrowlParams ru_growl_make_params(
  /* Approximately 260 Hz -> 7 kHz. Even BRIGHT=0 must retain an
   * audible bass core, unlike the overattenuated first candidate. */
  p.low_a=1200+(int32_t)bright*(int32_t)bright*2;
- p.throat_a=96+((int32_t)bright*(int32_t)bright)/3;
+ /* Center vowel is lower than the earlier almost-highpass throat: the
+  * reference carries significant 2nd/3rd partial alongside partial four. */
+ p.throat_a=96+((int32_t)bright*(int32_t)bright)/5;
  p.body_q10=180+(int32_t)body*4+(int32_t)shape_weight*3;
  p.band_q10=100+(int32_t)shape_edge*6+(int32_t)bright*2;
  p.presence_q10=((int32_t)bright*(32+(int32_t)shape_punch*3))>>7;
@@ -54,42 +56,98 @@ static inline RuGrowlParams ru_growl_make_params(
  return p;
 }
 
-/* GROWL's one-dimensional PERFORMANCE gesture deliberately moves several
- * independent physical-sounding axes along different curves: vocal tract
- * position (two filters), breath/brightness, pressure/drive and folds.
- * 50 is exactly neutral, preserving existing patch audio bit for bit.
+/* Seaboard-style expression: low (closed/uh), center (throat/ah), high
+ * (bright/strained/eh) are genuinely different vowel/pressure colours.
+ * Re-analysis of the supplied D1 reference found strong evolving partials
+ * three and four; its changes are not adequately modeled by a linear
+ * brightness gain. Nonlinear sweep of BOTH formant poles, pressure and
+ * asymmetric fold gives the entire 0..100 range stronger articulation.
+ * Coefficients are updated ONCE per audio block; the PCM path is unchanged.
+ * 50 is exactly neutral, and 0 never gates the actual oscillator.
  * This is evaluated ONCE per DMA block, never inside the PCM sample loop. */
 static inline void ru_growl_apply_expression(RuGrowlParams *p,uint8_t expression){
  int32_t d=(int32_t)ru_growl_u100(expression)-50;
  if(!d)return;
- /* EXPRESSION=0 must stay audible. Keep the change continuous around 50,
-  * retain the original sound at 50 and the original snarl above it. */
- const int32_t dark=d<0;
- const int32_t depth=dark?-d:0;
- const int32_t min_low=dark?1200:240;
- const int32_t min_throat=dark?96:36;
- const int32_t min_body=dark?180:100;
- const int32_t min_band=dark?100:40;
- const int32_t min_presence=depth*2;
- const int32_t min_drive=dark?160+depth*2:128;
- int32_t a=(int32_t)p->low_a+d*32;
- p->low_a=(uint16_t)(a<min_low?min_low:a>28000?28000:a);
- a=(int32_t)p->throat_a+d*7;
- p->throat_a=(uint16_t)(a<min_throat?min_throat:a>17000?17000:a);
- a=(int32_t)p->body_q10-d*2;
- p->body_q10=(uint16_t)(a<min_body?min_body:a>1150?1150:a);
- a=(int32_t)p->band_q10+d*7;
- p->band_q10=(uint16_t)(a<min_band?min_band:a>1450?1450:a);
- a=(int32_t)p->presence_q10+d*3;
- p->presence_q10=(uint16_t)(a<min_presence?min_presence:a>500?500:a);
- a=(int32_t)p->drive_q8+d*11;
- p->drive_q8=(uint16_t)(a<min_drive?min_drive:a>2100?2100:a);
- a=(int32_t)p->pos_knee-d*80;
+ const int32_t signed_curve=d<0?-(d*d):d*d;
+ const int32_t depth=d<0?-d:0;
+ /* Closed end keeps a real bass carrier and spectral body, not silence. */
+ int32_t a=(int32_t)p->low_a+d*35+signed_curve;
+ p->low_a=(uint16_t)(a<1200?1200:a>28000?28000:a);
+ /* Upper tract opens more rapidly above neutral to resemble a singing
+  * vowel shift rather than just a brighter fixed oscillator. */
+ a=(int32_t)p->throat_a+d*13+signed_curve/2;
+ p->throat_a=(uint16_t)(a<96?96:a>17000?17000:a);
+ a=(int32_t)p->body_q10-d*3-signed_curve/35;
+ p->body_q10=(uint16_t)(a<180?180:a>1200?1200:a);
+ a=(int32_t)p->band_q10+d*8+signed_curve/16;
+ p->band_q10=(uint16_t)(a<100?100:a>1600?1600:a);
+ a=(int32_t)p->presence_q10+d*4+signed_curve/18;
+ p->presence_q10=(uint16_t)(a<depth*2?depth*2:a>650?650:a);
+ a=(int32_t)p->drive_q8+d*11+signed_curve/9;
+ p->drive_q8=(uint16_t)(a<(160+depth*2)?160+depth*2:a>2100?2100:a);
+ a=(int32_t)p->pos_knee-d*80-signed_curve/9;
  p->pos_knee=(uint16_t)(a<7000?7000:a>30000?30000:a);
- a=(int32_t)p->neg_knee-d*45;
+ a=(int32_t)p->neg_knee-d*45-signed_curve/12;
  p->neg_knee=(uint16_t)(a<7000?7000:a>30000?30000:a);
- a=(int32_t)p->fold_q8+d*2;
+ a=(int32_t)p->fold_q8+d*2+signed_curve/28;
  p->fold_q8=(uint16_t)(a<0?0:a>250?250:a);
+ /* A closed vowel should be dark, NOT sound like the volume is disappearing.
+  * Compensate the energy naturally lost at the bottom of the formant sweep.
+  * LEVEL=0 still yields 0, and neutral/upward expression keep their gain. */
+ if(depth>30)p->level_q8=(uint16_t)(((int32_t)p->level_q8*
+                                  (256+(depth-30)*12))>>8);
+}
+
+/* V2.0.18: the physical PRESETS encoder moves in integer detents, but the
+ * audible formants must move continuously between them. Interpolate the
+ * exact original integer-param snapshots using 8-bit fractional expression.
+ * This runs ONCE per DMA block, not once per PCM sample. Integer positions
+ * (including neutral 50) remain bit-exact with V2.0.17. */
+static inline void ru_growl_apply_expression_q8(RuGrowlParams *p,uint16_t expression_q8){
+ uint8_t low=(uint8_t)(expression_q8>>8u);
+ uint32_t fraction=(uint32_t)(expression_q8&255u);
+ if(low>=100u){ru_growl_apply_expression(p,100u);return;}
+ if(!fraction){ru_growl_apply_expression(p,low);return;}
+ RuGrowlParams high=*p;
+ ru_growl_apply_expression(p,low);
+ ru_growl_apply_expression(&high,(uint8_t)(low+1u));
+#define RU_GROWL_LERP_FIELD(field) do{ \
+ int32_t diff=(int32_t)high.field-(int32_t)p->field; \
+ p->field=(uint16_t)((int32_t)p->field+((diff*(int32_t)fraction+128)>>8)); \
+}while(0)
+ RU_GROWL_LERP_FIELD(low_a);
+ RU_GROWL_LERP_FIELD(throat_a);
+ RU_GROWL_LERP_FIELD(body_q10);
+ RU_GROWL_LERP_FIELD(band_q10);
+ RU_GROWL_LERP_FIELD(presence_q10);
+ RU_GROWL_LERP_FIELD(drive_q8);
+ RU_GROWL_LERP_FIELD(pos_knee);
+ RU_GROWL_LERP_FIELD(neg_knee);
+ RU_GROWL_LERP_FIELD(fold_q8);
+ RU_GROWL_LERP_FIELD(level_q8);
+#undef RU_GROWL_LERP_FIELD
+}
+
+/* Faster encoder movement briefly introduces extra pressure/rasp; holding
+ * still always settles into the selected vowel. No additional samples,
+ * oscillators or processing are introduced in the PCM sample loop. */
+static inline void ru_growl_apply_motion(RuGrowlParams *p,uint8_t energy){
+ int32_t n=energy>36u?36u:energy;
+ int32_t a=(int32_t)p->band_q10+n*5;
+ p->band_q10=(uint16_t)(a>1600?1600:a);
+ a=(int32_t)p->drive_q8+n*9;
+ p->drive_q8=(uint16_t)(a>2100?2100:a);
+ a=(int32_t)p->fold_q8+n*2;
+ p->fold_q8=(uint16_t)(a>250?250:a);
+}
+
+/* A second independent drift lane gently shifts the voice tract. Pure
+ * block-rate coefficient math; never changes pitch or amplitude envelopes. */
+static inline void ru_growl_apply_auto_drift(RuGrowlParams *p,int8_t drift){
+ int32_t a=(int32_t)p->throat_a+(int32_t)drift*32;
+ p->throat_a=(uint16_t)(a<96?96:a>17000?17000:a);
+ a=(int32_t)p->band_q10+(int32_t)drift*5;
+ p->band_q10=(uint16_t)(a<100?100:a>1600?1600:a);
 }
 
 static inline int32_t ru_growl_bound(int32_t x,int32_t limit){

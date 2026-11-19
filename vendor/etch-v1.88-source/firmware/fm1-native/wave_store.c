@@ -224,20 +224,25 @@ static uint8_t ru_vol_valid(const struct ru_vol_record *r){
  return (r->magic==RU_VOL_MAGIC||r->magic==RU_SETTINGS_MAGIC||r->magic==RU_SAVER_OFF_MAGIC||r->magic==RU_BOTH_OFF_MAGIC||(ru_is_timed(r->magic)||ru_is_boot_magic(r->magic)))&&r->volume<=200u&&
    r->opposite==(uint8_t)(r->volume^255u)&&r->crc==etch_store_crc(r,4u);
 }
-static struct ru_vol_record ru_preset_assign_pair_make(uint8_t cxs,uint8_t growl){
- struct ru_vol_record r={RU_PRESET_ASSIGN_PAIR_MAGIC,cxs,growl,0u};
+/* Global USB-C audio rate uses the previously unused high bit of the
+ * GROWL mapping byte. All assignment indices remain 0..95; old records
+ * have bit 7 clear (44.1 kHz), and the 8-byte CRC journal ABI is intact. */
+static struct ru_vol_record ru_preset_assign_pair_make(uint8_t cxs,uint8_t growl,uint8_t rate48){
+ struct ru_vol_record r={RU_PRESET_ASSIGN_PAIR_MAGIC,cxs,
+     (uint8_t)(growl|(rate48?128u:0u)),0u};
  r.crc=etch_store_crc(&r,4u);return r;
 }
 static uint8_t ru_preset_assign_record_valid(const struct ru_vol_record *r){
  return r->volume<RU_PRESET_ASSIGN_MAX&&
   ((r->magic==RU_PRESET_ASSIGN_MAGIC&&r->opposite==(uint8_t)(r->volume^255u))||
-   (r->magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&r->opposite<RU_PRESET_ASSIGN_MAX))&&
+   (r->magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&(r->opposite&127u)<RU_PRESET_ASSIGN_MAX))&&
   r->crc==etch_store_crc(r,4u);
 }
 static int ru_preset_assign_pair_scan(const struct etch_store_io *io,uint32_t bank,
- uint8_t *cxs,uint8_t *growl,uint8_t *present){
+ uint8_t *cxs,uint8_t *growl,uint8_t *rate48,uint8_t *present){
  if(cxs)*cxs=RU_PRESET_ASSIGN_DEFAULT;
  if(growl)*growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
+ if(rate48)*rate48=0u;
  if(present)*present=0u;
  for(uint32_t i=0u;i<RU_VOL_SLOTS;i++){
   struct ru_vol_record rec;
@@ -245,7 +250,9 @@ static int ru_preset_assign_pair_scan(const struct etch_store_io *io,uint32_t ba
   if(ru_preset_assign_record_valid(&rec)){
    if(cxs)*cxs=rec.volume;
    if(growl)*growl=rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC?
-    rec.opposite:RU_PRESET_ASSIGN_GROWL_DEFAULT;
+    (uint8_t)(rec.opposite&127u):RU_PRESET_ASSIGN_GROWL_DEFAULT;
+   if(rate48)*rate48=(uint8_t)(rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&
+                            !!(rec.opposite&128u));
    if(present)*present=1u;
   }
  }
@@ -321,10 +328,11 @@ static int ru_vol_compact(const struct etch_store_io *io,uint32_t bank,
 static int ru_vol_transfer_preferences(const struct etch_store_io *io,
  uint32_t source_bank,uint32_t target_offset){
  uint8_t vol=100u,autosave=0u,saver=1u,seconds=1u,boot=0u,crt=0u,done=0u;
- uint8_t mapping=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,mapping_present=0u;
+ uint8_t mapping=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,
+         mapping_present=0u,usb_rate48=0u;
  int rc=ru_vol_scan(io,source_bank,&vol,&autosave,&saver,&seconds,&boot,0,&crt,&done,0);
  if(rc)return rc;
- rc=ru_preset_assign_pair_scan(io,source_bank,&mapping,&growl,&mapping_present);
+ rc=ru_preset_assign_pair_scan(io,source_bank,&mapping,&growl,&usb_rate48,&mapping_present);
  if(rc)return rc;
  uint32_t offset=target_offset+RU_VOL_FIRST;
  if(vol!=100u||autosave||!saver||seconds!=1u||boot||crt||done){
@@ -334,7 +342,7 @@ static int ru_vol_transfer_preferences(const struct etch_store_io *io,
   offset+=RU_VOL_REC_BYTES;
  }
  if(mapping_present){
-  struct ru_vol_record rec=ru_preset_assign_pair_make(mapping,growl),check;
+  struct ru_vol_record rec=ru_preset_assign_pair_make(mapping,growl,usb_rate48),check;
   if(io->program(offset,&rec,sizeof(rec))||io->read(offset,&check,sizeof(check)))return ETCH_STORE_IO;
   if(!ru_preset_assign_record_valid(&check)||check.volume!=mapping)return ETCH_STORE_VERIFY;
  }
@@ -386,9 +394,10 @@ int etch_store_user_settings_welcome_save(const struct etch_store_io *io,uint8_t
   /* Preserve the independent assignment record when other global options
    * force journal compaction. Old projects and the protected loader remain. */
   uint8_t mapping=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,present=0u;
-  rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&mapping,&growl,&present);if(rc)return rc;
+  uint8_t usb_rate48=0u;
+  rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&mapping,&growl,&usb_rate48,&present);if(rc)return rc;
   struct ru_vol_record compact=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project,crt,welcome_done);
-  struct ru_vol_record assigned=ru_preset_assign_pair_make(mapping,growl);
+  struct ru_vol_record assigned=ru_preset_assign_pair_make(mapping,growl,usb_rate48);
   return ru_vol_compact(io,(uint32_t)bank,h,&compact,present?&assigned:0);
  }
  struct ru_vol_record record=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project,crt,welcome_done),check;
@@ -409,27 +418,30 @@ int etch_store_preset_assign_pair_load(const struct etch_store_io *io,uint8_t *c
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
- return ru_preset_assign_pair_scan(io,(uint32_t)bank,cxs,growl,0);
+ return ru_preset_assign_pair_scan(io,(uint32_t)bank,cxs,growl,0,0);
 }
 int etch_store_preset_assign_load(const struct etch_store_io *io,uint8_t *assignment){
  uint8_t growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
  return etch_store_preset_assign_pair_load(io,assignment,&growl);
 }
-int etch_store_preset_assign_pair_save(const struct etch_store_io *io,uint8_t cxs,uint8_t growl){
+static int ru_store_preference_pair_save(const struct etch_store_io *io,
+ uint8_t cxs,uint8_t growl,uint8_t rate48){
  if(!io||!io->read||!io->program||cxs>=RU_PRESET_ASSIGN_MAX||
-    growl>=RU_PRESET_ASSIGN_MAX)return ETCH_STORE_IO;
+    growl>=RU_PRESET_ASSIGN_MAX||rate48>1u)return ETCH_STORE_IO;
  int selected=select_project_read_region(io);if(selected<0)return selected;
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
- uint8_t current_cxs=RU_PRESET_ASSIGN_DEFAULT,current_growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
- int rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&current_cxs,&current_growl,0);if(rc)return rc;
- if(current_cxs==cxs&&current_growl==growl)return ETCH_STORE_OK;
+ uint8_t current_cxs=RU_PRESET_ASSIGN_DEFAULT,current_growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,
+         current_rate48=0u;
+ int rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&current_cxs,&current_growl,
+     &current_rate48,0);if(rc)return rc;
+ if(current_cxs==cxs&&current_growl==growl&&current_rate48==rate48)return ETCH_STORE_OK;
  uint8_t vol,auto_save,saver,seconds,boot,crt,done,wizard;
  uint32_t free_offset;
  rc=ru_vol_scan(io,(uint32_t)bank,&vol,&auto_save,&saver,&seconds,&boot,
     &free_offset,&crt,&done,&wizard);if(rc)return rc;
- struct ru_vol_record rec=ru_preset_assign_pair_make(cxs,growl),check;
+ struct ru_vol_record rec=ru_preset_assign_pair_make(cxs,growl,rate48),check;
  if(free_offset==0xffffffffu){
   struct ru_vol_record settings=ru_vol_make(vol,auto_save,saver,seconds,boot,crt,done);
   return ru_vol_compact(io,(uint32_t)bank,h,&settings,&rec);
@@ -437,7 +449,29 @@ int etch_store_preset_assign_pair_save(const struct etch_store_io *io,uint8_t cx
  if(io->program(free_offset,&rec,sizeof(rec)))return ETCH_STORE_IO;
  if(io->read(free_offset,&check,sizeof(check)))return ETCH_STORE_IO;
  return ru_preset_assign_record_valid(&check)&&check.magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&
-   check.volume==cxs&&check.opposite==growl?ETCH_STORE_OK:ETCH_STORE_VERIFY;
+   check.volume==cxs&&check.opposite==(uint8_t)(growl|(rate48?128u:0u))?
+   ETCH_STORE_OK:ETCH_STORE_VERIFY;
+}
+int etch_store_usb_rate_load(const struct etch_store_io *io,uint8_t *rate48){
+ if(!io||!rate48)return ETCH_STORE_IO;
+ uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
+ *rate48=0u;
+ int selected=select_project_read_region(io);if(selected<0)return selected;
+ struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
+ if(bank<0)return bank;
+ if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
+ return ru_preset_assign_pair_scan(io,(uint32_t)bank,&cxs,&growl,rate48,0);
+}
+int etch_store_usb_rate_save(const struct etch_store_io *io,uint8_t rate48){
+ if(rate48>1u)return ETCH_STORE_IO;
+ uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
+ int rc=etch_store_preset_assign_pair_load(io,&cxs,&growl);
+ return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48):rc;
+}
+int etch_store_preset_assign_pair_save(const struct etch_store_io *io,uint8_t cxs,uint8_t growl){
+ uint8_t rate48=0u;
+ int rc=etch_store_usb_rate_load(io,&rate48);
+ return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48):rc;
 }
 int etch_store_preset_assign_save(const struct etch_store_io *io,uint8_t assignment){
  uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;

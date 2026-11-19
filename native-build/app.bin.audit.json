@@ -1,60 +1,68 @@
 {
   "target": "M-VAVE FM-1 / JieLi AC791N-WL82 / pi32v2",
-  "app_bytes": 542140,
-  "app_sha256": "b4e687d8bda1ea03cbf01039d064c1265bab776b3023624f3ada5fbac973da66",
+  "app_bytes": 512760,
+  "app_sha256": "3f7a0d1af844211c5f513b275488f0ef4f2dfd977e30c50d10692389dc491db5",
   "app_slot_bytes": 581564,
-  "headroom_bytes": 39424,
+  "headroom_bytes": 68804,
   "expected_start": "0x2000120",
   "entry_stub_ok": true,
   "safe_ram": [
     "0x1c00000",
     "0x1c7f000"
   ],
-  "symbol_count": 1056,
+  "symbol_count": 1119,
   "sections": [
     {
+      "name": ".ram_text",
+      "size": 2904,
+      "vma": 29360128,
+      "lma": 34064224,
+      "file_offset": 511488,
+      "nobits": false
+    },
+    {
       "name": ".text",
-      "size": 539076,
+      "size": 509504,
       "vma": 33554720,
       "lma": 33554720,
       "file_offset": 800,
       "nobits": false
     },
     {
-      "name": ".ram_text",
-      "size": 2904,
-      "vma": 29360128,
-      "lma": 34093796,
-      "file_offset": 540928,
-      "nobits": false
-    },
-    {
       "name": ".uac_ram",
-      "size": 2508,
+      "size": 7116,
       "vma": 29376512,
       "lma": 29376512,
       "file_offset": 512,
       "nobits": true
     },
     {
+      "name": ".c1_ram",
+      "size": 4096,
+      "vma": 29384704,
+      "lma": 29384704,
+      "file_offset": 1024,
+      "nobits": true
+    },
+    {
       "name": ".data",
-      "size": 160,
+      "size": 352,
       "vma": 29392896,
-      "lma": 34096700,
-      "file_offset": 544256,
+      "lma": 34067128,
+      "file_offset": 514816,
       "nobits": false
     },
     {
       "name": ".bss",
-      "size": 94776,
-      "vma": 29393056,
-      "lma": 29393056,
-      "file_offset": 544416,
+      "size": 95160,
+      "vma": 29393248,
+      "lma": 29393248,
+      "file_offset": 515168,
       "nobits": true
     },
     {
       "name": ".pool",
-      "size": 337304,
+      "size": 337336,
       "vma": 29491200,
       "lma": 29491200,
       "file_offset": 1280,

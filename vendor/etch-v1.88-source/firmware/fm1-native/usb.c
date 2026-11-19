@@ -129,6 +129,9 @@ static struct {
 } uac;
 #if FELUCCA_UAC_48K
 #include "uac_fir.h"
+#if ETCH_CPU1_UAC_LIVE_LAB
+#include "rupture_cpu1_uac_block.h"
+#endif
 /* the resampler's input history: the last 32 frames, written twice so a window of UAC_FIR_N never wraps */
 #define RS_H 32u
 _Static_assert(RS_H >= UAC_FIR_N && (RS_H & (RS_H - 1u)) == 0, "the history holds a window");
@@ -140,6 +143,26 @@ static struct {
     uint32_t tone;
 #endif
 } rs __attribute__((section(".uac_ram"),aligned(4)));
+/* RUPTURE V2.0.30: the 48 kHz FIR never runs inside ALNK0. Its 1024-frame
+ * SPSC staging ring contains exact post-gain packed stereo PCM. A short
+ * packed-only transfer buffer lets the foreground release the queue before
+ * doing any FIR work, saving 512 bytes of SRAM and all 32-bit unpack/shift
+ * roundtrips from V2.0.29. FIR coefficients and output arithmetic unchanged. */
+#define RU_UAC_STAGE_N 1024u
+_Static_assert((RU_UAC_STAGE_N & (RU_UAC_STAGE_N - 1u)) == 0u,
+               "USB PCM stage must be power of two");
+static uint32_t ru_uac_stage[RU_UAC_STAGE_N] __attribute__((section(".uac_ram"),aligned(4)));
+static uint32_t ru_uac_block[HALF_FRAMES] __attribute__((section(".uac_ram"),aligned(4)));
+static volatile uint32_t ru_uac_stage_w,ru_uac_stage_r;
+static volatile uint32_t ru_uac_stage_drops;
+#if ETCH_CPU1_UAC_LIVE_LAB
+/* Defined in rupture_cpu1_lab.h after usb.c is included by bringup.c.
+ * CPU1 never accesses this live USB state; only private mailbox copies. */
+static int ru_cpu1_uac_live_poll(void);
+static int ru_cpu1_uac_live_ready(void);
+static int ru_cpu1_uac_live_submit(const uint32_t *packed,uint32_t n);
+static void ru_cpu1_uac_live_reset(void);
+#endif
 #endif
 #endif
 
@@ -302,8 +325,8 @@ static int midi_out_event(uint32_t pkt)             /* from the audio ISR; 0 = r
 
 /* without the console (FELUCCA_CDC=0, or usb_cdc_on = 0): class 0, no IAD, as a plain USB-MIDI / audio device */
 #define CFG_LEN_PLAIN (9 + AUD_LEN)
-static const uint8_t DEV_DESC_PLAIN[18] = {D_DEV(0x0110, 0, 0, 0, 0)};
-static const uint8_t CFG_DESC_PLAIN[] = {D_CFG(CFG_LEN_PLAIN, AUD_NIF), D_AUDIO(0)};
+static uint8_t DEV_DESC_PLAIN[18] = {D_DEV(0x0110, 0, 0, 0, 0)};
+static uint8_t CFG_DESC_PLAIN[] = {D_CFG(CFG_LEN_PLAIN, AUD_NIF), D_AUDIO(0)};
 typedef char cfg_plain_len_ok[sizeof CFG_DESC_PLAIN == CFG_LEN_PLAIN ? 1 : -1];
 #if FELUCCA_CDC
 #define CFG_LEN (9 + 8 + AUD_LEN + CDC_LEN)
@@ -316,13 +339,13 @@ typedef char cfg_plain_len_ok[sizeof CFG_DESC_PLAIN == CFG_LEN_PLAIN ? 1 : -1];
 #define CDC_IF_CDC AUD_NIF
 #endif
 #if FELUCCA_USB_LAYOUT == 2
-static const uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0x00, 0x00, 0x01, 1)};
+static uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0x00, 0x00, 0x01, 1)};
 #elif FELUCCA_USB_LAYOUT == 3
-static const uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0x00, 0x00, 0x00, 1)};
+static uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0x00, 0x00, 0x00, 1)};
 #else
-static const uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0xEF, 0x02, 0x01, 1)};   /* misc / IAD */
+static uint8_t DEV_DESC[18] = {D_DEV(0x0200, 0xEF, 0x02, 0x01, 1)};   /* misc / IAD */
 #endif
-static const uint8_t CFG_DESC[] = {
+static uint8_t CFG_DESC[] = {
     D_CFG(CFG_LEN, USB_NIF),
 #if FELUCCA_USB_LAYOUT == 1
     D_CDC(CDC_IF_CDC)
@@ -344,6 +367,24 @@ static uint8_t usb_cdc_on = FELUCCA_CDC_DEFAULT != 0;      /* the console is pre
 #define AUD_IF 0u
 #endif
 #define UAC_AS_IF (AUD_IF + 2u)
+#if FELUCCA_UAC_48K
+/* RUPTURE V2.0.31: selectable, device-locked UAC1 rate. With a fixed
+ * continuous range (min == max), the Type-I format descriptor remains
+ * exactly 14 bytes: no length or endpoint/layout changes. Both plain and
+ * CDC composite descriptors must agree. Only main-loop code mutates these
+ * descriptors, and only while the USB SIE is stopped. */
+static uint8_t ru_uac_rate48; /* default 44.1 kHz, persistent global setting */
+#include "rupture_usb_rate_descriptor.h"
+static void ru_uac_refresh_descriptors(void)
+{
+    ru_uac_restrict_format(CFG_DESC_PLAIN,sizeof(CFG_DESC_PLAIN),ru_uac_rate48);
+    DEV_DESC_PLAIN[12]=(uint8_t)(BCD_LO(0)+(ru_uac_rate48?1u:0u));
+#if FELUCCA_CDC
+    ru_uac_restrict_format(CFG_DESC,sizeof(CFG_DESC),ru_uac_rate48);
+    DEV_DESC[12]=(uint8_t)(BCD_LO(1)+(ru_uac_rate48?1u:0u));
+#endif
+}
+#endif
 static const uint8_t STR0[4] = {4, 3, 0x09, 0x04};
 static const uint8_t STR1[] = {24, 3, 'S',0,'I',0,'K',0,'K',0,'E',0,'N',0,'W',0,'O',0,'R',0,'K',0,'S',0};
 #ifdef FELUCCA_LOADER
@@ -449,6 +490,11 @@ static void uac_stream(uint32_t alt)                    /* SET_INTERFACE, config
  * stream: silence packets until the next render primes the ring at the new rate. */
 static void uac_rate_set(uint32_t hz)
 {
+#if FELUCCA_UAC_48K
+    /* A host must respect the one-rate Type-I format descriptor. Keep the
+     * requested setting authoritative even on an unexpected SET_CUR. */
+    if(hz!=(ru_uac_rate48?48000u:UAC_RATE))return;
+#endif
     uint8_t r48 = FELUCCA_UAC_48K && hz >= (UAC_RATE + 48000u) / 2u;
     if (r48 == uac.r48)
         return;
@@ -589,8 +635,19 @@ static void ep0_service(void)
 #if FELUCCA_UAC
     if (uac.e0_rx) {                                    /* SET_CUR sampling frequency: 3 bytes, Hz */
         uac.rate_sets++;
-        if (sie_rd(S_COUNT0) >= 3u)
-            uac_rate_set(ep0buf[0] | (uint32_t)ep0buf[1] << 8 | (uint32_t)ep0buf[2] << 16);
+        if (sie_rd(S_COUNT0) < 3u) {
+            uac.e0_rx=0u;
+            goto stall;
+        }
+        uint32_t request_hz=ep0buf[0] | (uint32_t)ep0buf[1] << 8 | (uint32_t)ep0buf[2] << 16;
+#if FELUCCA_UAC_48K
+        /* Do not ACK a host rate that this one-rate descriptor excludes. */
+        if (request_hz!=(ru_uac_rate48?48000u:UAC_RATE)) {
+            uac.e0_rx=0u;
+            goto stall;
+        }
+#endif
+        uac_rate_set(request_hz);
         uac.e0_rx = 0;
         goto ack;
     }
@@ -627,7 +684,11 @@ static void ep0_service(void)
 #if FELUCCA_UAC
         if (usb.config != 1u)
             uac_stream(0);
-        uac_rate_set(UAC_RATE);                         /* a new configuration starts at 44.1 */
+        uac_rate_set(
+#if FELUCCA_UAC_48K
+            ru_uac_rate48?48000u:
+#endif
+            UAC_RATE);                                  /* device-locked current rate */
 #endif
         goto ack;
     case 0x8008:
@@ -724,6 +785,10 @@ static void ep0_service(void)
         if (s[4] != 0x84u || s[3] != 1u)
             goto stall;
 #if FELUCCA_UAC_48K
+        if(s[1]==0x82u || s[1]==0x83u){
+            e0_send(ru_uac_rate48?RATE48:RATE,3,wlength);
+            return;
+        }
         if (s[1] == 0x83u || (s[1] == 0x81u && uac.r48)) {
             e0_send(RATE48, 3, wlength);
             return;
@@ -1013,17 +1078,23 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.go = 0;                                     /* not read (yet / any more): prime when it is */
         return;
     }
+#if FELUCCA_UAC_48K
+    if (uac.r48) {
+        /* 48 kHz FIR and ring priming are foreground-owned. The ISR only
+         * samples queue fill and never spends DSP time on a convolution. */
+        if (!uac.go || uac.ring48 != uac.r48) return;
+        fill = ua_w - ua_r;
+        uac.fill_min = fill;
+        if (fill < uac.fill_lo) uac.fill_lo = fill;
+        if (fill > uac.fill_hi) uac.fill_hi = fill;
+        return;
+    }
+#endif
     if (!uac.go || uac.ring48 != uac.r48) {             /* (re)start: silence ahead, then this render */
         uint32_t r = ua_r, i, prime = UA_PRIME;
         uac.go = 0;
 #if FELUCCA_UAC_48K
         uac.ring48 = uac.r48;
-        if (uac.ring48) {                               /* the resampler starts from silence */
-            prime = UA_PRIME48;
-            for (i = 0; i < 2u * RS_H; i++)
-                rs.l[i] = rs.r[i] = 0;
-            rs.w = rs.ph = 0;
-        }
 #endif
         for (i = 0; i < prime; i++)
             ua_ring[(r + i) & (UA_N - 1u)] = 0;
@@ -1051,7 +1122,7 @@ static inline int32_t uac_s16(int32_t v)
 /* 44.1 -> 48 kHz (x 160 / 147), one block: each input frame enters the history, then the 1 or 2 output
  * frames whose newest input it is: phase ph, the window of UAC_FIR_N frames ending at it, the taps of
  * phase ph (or of 159 - ph backwards: the prototype is symmetric), Q30 into 64-bit sums. */
-static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
+static __attribute__((noinline)) void uac_tap48(const uint32_t *packed, uint32_t n)
 {
     uint32_t w = ua_w, i, j, k = 0, h = rs.w, ph = rs.ph;
     if (UA_N - (w - ua_r) < n + n / 8u + 2u) {         /* nobody reads: drop the block (<= n * 160 / 147 + 1) */
@@ -1060,7 +1131,10 @@ static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
     }
     for (i = 0; i < n; i++) {
         uint32_t s = h & (RS_H - 1u);
-        int16_t l = (int16_t)uac_s16(out[2u * i] >> FELUCCA_UAC_DMA_SHIFT), r = (int16_t)uac_s16(out[2u * i + 1u] >> FELUCCA_UAC_DMA_SHIFT);
+        /* Exact same Q15 pair as the old DMA int32 -> >>7 -> clip path:
+         * the ISR already clipped and packed these samples once. */
+        uint32_t lr = packed[i];
+        int16_t l = (int16_t)(lr & 0xffffu), r = (int16_t)(lr >> 16u);
         rs.l[s] = rs.l[s + RS_H] = l;
         rs.r[s] = rs.r[s + RS_H] = r;
         h++;
@@ -1104,6 +1178,80 @@ static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
     RING_PUBLISH();
     ua_w = w + k;
 }
+
+/* ALNK0-only producer. Record exactly the same 16-bit post-fade samples as
+ * the former inline FIR, without executing any filter coefficient multiply.
+ * A full queue drops USB capture frames, never blocks the synth/DMA ISR. */
+static __attribute__((noinline)) void ru_uac_stage_push(const int32_t *out,uint32_t n)
+{
+    uint32_t w=ru_uac_stage_w,r=ru_uac_stage_r;
+    if(RU_UAC_STAGE_N-(w-r)<n){
+        ru_uac_stage_drops++;
+        uac.overruns++;
+        return;
+    }
+    for(uint32_t i=0u;i<n;i++){
+        int32_t l=uac_s16(out[2u*i]>>FELUCCA_UAC_DMA_SHIFT);
+        int32_t right=uac_s16(out[2u*i+1u]>>FELUCCA_UAC_DMA_SHIFT);
+        ru_uac_stage[(w+i)&(RU_UAC_STAGE_N-1u)]=
+            (uint32_t)(uint16_t)l|((uint32_t)(uint16_t)right<<16);
+    }
+    RING_PUBLISH();
+    ru_uac_stage_w=w+n;
+}
+
+/* Main-loop-only consumer. Copy packed frames and RELEASE the FIFO before
+ * FIR processing. No Q15 -> int32 -> Q15 roundtrip or extra arithmetic;
+ * the FIR taps, phase, history, rounding and UAC output stay identical.
+ * TIMER5 can still serve EP4 and ALNK0 can preempt processing safely. */
+static __attribute__((noinline)) void uac_foreground_service(void)
+{
+#if ETCH_CPU1_UAC_LIVE_LAB
+    /* Never dequeue a second block while an earlier CPU1 job owns the
+     * transfer buffer. On timeout the exact old FIR is still available. */
+    if(ru_cpu1_uac_live_poll())return;
+#endif
+    if(!usb.up||!usb.config||!uac.alt||!uac.flowing||!uac.r48)return;
+    if(!uac.go||uac.ring48!=uac.r48){
+        uint32_t r=ua_r;
+        uac.go=0;
+#if ETCH_CPU1_UAC_LIVE_LAB
+        ru_cpu1_uac_live_reset();
+#endif
+        /* Drop only the already-muted pre-prime history. IRQ is a producer
+         * and may append new frames while this function clears FIR state. */
+        ru_uac_stage_r=ru_uac_stage_w;
+        for(uint32_t i=0u;i<2u*RS_H;i++)rs.l[i]=rs.r[i]=0;
+        rs.w=rs.ph=0u;
+        for(uint32_t i=0u;i<UA_PRIME48;i++)
+            ua_ring[(r+i)&(UA_N-1u)]=0u;
+        RING_PUBLISH();
+        ua_w=r+UA_PRIME48;
+        uac.fill_min=UA_PRIME48;
+        uac.ring48=1u;
+        RING_PUBLISH();
+        uac.go=1u;
+        return;
+    }
+    uint32_t n=HALF_FRAMES;
+#if ETCH_CPU1_UAC_LIVE_LAB
+    if(ru_cpu1_uac_live_ready())n=RU_C1_UAC_IN;
+#endif
+    uint32_t r=ru_uac_stage_r,w=ru_uac_stage_w;
+    if(w-r<n)return;
+    for(uint32_t i=0u;i<n;i++){
+        uint32_t packed=ru_uac_stage[(r+i)&(RU_UAC_STAGE_N-1u)];
+        ru_uac_block[i]=packed;
+    }
+    RING_PUBLISH();
+    ru_uac_stage_r=r+n;
+    if(uac.go&&uac.r48&&uac.ring48){
+#if ETCH_CPU1_UAC_LIVE_LAB
+        if(n==RU_C1_UAC_IN&&ru_cpu1_uac_live_submit(ru_uac_block,n))return;
+#endif
+        uac_tap48(ru_uac_block,n);
+    }
+}
 #endif
 
 static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   /* audio ISR: one block (Q15) */
@@ -1112,8 +1260,8 @@ static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   
     if (!uac.feed)
         return;
 #if FELUCCA_UAC_48K
-    if (uac.ring48) {
-        uac_tap48(out, n);
+    if (uac.r48) {
+        ru_uac_stage_push(out,n);
         return;
     }
 #endif
@@ -1288,7 +1436,11 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 #if FELUCCA_UAC
         uac.e0_rx = 0;
         uac_stream(0);
-        uac_rate_set(UAC_RATE);
+        uac_rate_set(
+#if FELUCCA_UAC_48K
+            ru_uac_rate48?48000u:
+#endif
+            UAC_RATE);
 #endif
         fm1_usb_ep0_buf(ep0buf);
         sie_wr(S_INTRUSBE, 0x07);
@@ -1321,6 +1473,9 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 static void usb_start(void)                             /* boot, or main-loop retry while usb.up == 0 */
 {
     usb.timeouts = 0;
+#if FELUCCA_UAC_48K
+    ru_uac_refresh_descriptors();
+#endif
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
     fm1_usb_attach(ep0buf);
@@ -1353,6 +1508,25 @@ static void usb_detach(void)
     usb.up = 0;
     fm1_usb_off();
 }
+
+#if FELUCCA_UAC_48K
+/* Re-enumerate with the selected one-rate descriptor, while USB TIMER5
+ * cannot touch the SIE. usb_retry attaches the host within one second. */
+static void ru_uac_rate_switch(uint8_t rate48)
+{
+    rate48=(uint8_t)!!rate48;
+    if(rate48==ru_uac_rate48)return;
+    if(usb.up){
+        usb.up=0u;
+        RING_PUBLISH();
+        fm1_usb_off();
+    }
+    usb.config=0u;
+    uac_stream(0u);
+    ru_uac_rate48=rate48;
+    uac_rate_set(rate48?48000u:UAC_RATE);
+}
+#endif
 
 #if FELUCCA_CDC
 /* Present the device with or without the serial console (main loop; at boot before usb_start, or later

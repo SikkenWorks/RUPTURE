@@ -84,7 +84,7 @@
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO","GLIDE","FX LIBRARY","DISTORTION","WAH WAH"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t glide_frame,glide_shake,sub_fear_frame,sub_fear_shake;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
- uint8_t crt_enabled;
+ uint8_t crt_enabled,usb_audio_rate48;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
  uint8_t system_storage_ok,system_storage_empty,system_usb,system_projects_used,system_battery_valid,system_audio_fault;
  uint8_t welcome_phase,welcome_choice,welcome_crt,welcome_status,welcome_hold_pct,welcome_store_ready;
@@ -94,10 +94,19 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  char manager_seq_names[8][13];
  uint16_t diag_wall,diag_dsp,diag_render,diag_copy,diag_slack;
  uint32_t diag_late,diag_guard,diag_scope;uint16_t ota_error;
- /* V1.85: second page of the existing read-only DMA diagnostic. */
+ /* Third diagnostic page compares a saved preset against its reload. */
  uint8_t diag_view;uint8_t diag_midi_batch;
  uint16_t diag_control,diag_nested,diag_live_slack;
  uint32_t diag_midi_queue,diag_midi_deferred,diag_postlate;
+ uint8_t diag_preset_slot,diag_audit_status;
+ uint16_t diag_preset_wall,diag_preset_render,diag_preset_slack;
+ uint32_t diag_preset_late,diag_preset_guard;
+ /* Read-only V2.0.39 note-on/off DMA profiles, cumulative per power-up. */
+ uint32_t diag_note_on,diag_note_off,diag_note_on_late,diag_note_off_late;
+ uint16_t diag_note_on_wall,diag_note_off_wall;
+ uint16_t diag_note_on_render,diag_note_off_render;
+ uint32_t diag_preset_core,diag_preset_fx;
+ uint32_t diag_expected_core,diag_expected_fx;
  uint8_t fx_types[8],fx_enabled,fx_picker,fx_error,fx_legacy,seq_slide;
  uint8_t preset_assign,preset_category,preset_cursor,preset_save_stage,preset_save_progress;
  uint8_t preset_edit_mode,preset_cxs_assign,preset_growl_assign;
@@ -682,13 +691,116 @@ static void ru_seq_screen(const RuState *v){
    (v->seq_recording&&!v->seq_playing?"REC ARMED / PLAY TO START":
     (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+K4 SLIDE / SAVE SEQUENCES")));
 }
-/* V2.0.1: lossless 1-bit Signal Breach loading sprites. 12 exact 240x240
- * images share the existing framebuffer; no heap, DSP, or audio IRQ work. */
+/* Legacy V2.0.1 Signal Breach assets remain available and unchanged. */
 #include "rupture_v2_signal_breach_sprites.h"
-#define RU_SPLASH_STEPS RU_V2_BREACH_FRAMES
+#include "rupture_intro_timeline.h"
+#include "rupture_sikkenworks_boot_logo.h"
+#define RU_SPLASH_STEPS RU_INTRO_FRAMES
+
+/* Case-sensitive intro lettering. Regular UI font remains untouched. */
+static const uint8_t ru_intro_lower[26][7]={
+ {0,0,14,1,15,17,15},   /* a */
+ {16,16,30,17,17,17,30},/* b */
+ {0,0,15,16,16,16,15},  /* c */
+ {1,1,15,17,17,17,15},  /* d */
+ {0,0,14,17,31,16,15},  /* e */
+ {6,9,8,28,8,8,8},      /* f */
+ {0,15,17,17,15,1,14},  /* g */
+ {16,16,30,17,17,17,17},/* h */
+ {4,0,12,4,4,4,14},     /* i */
+ {2,0,6,2,2,18,12},     /* j */
+ {16,16,18,20,24,20,18},/* k */
+ {12,4,4,4,4,4,14},     /* l */
+ {0,0,26,21,21,21,21}, /* m */
+ {0,0,30,17,17,17,17}, /* n */
+ {0,0,14,17,17,17,14}, /* o */
+ {0,30,17,17,30,16,16},/* p */
+ {0,15,17,17,15,1,1},  /* q */
+ {0,0,22,24,16,16,16}, /* r */
+ {0,0,15,16,14,1,30},  /* s */
+ {8,8,28,8,8,9,6},     /* t */
+ {0,0,17,17,17,19,13}, /* u */
+ {0,0,17,17,17,10,4},  /* v */
+ {0,0,17,17,21,21,10}, /* w */
+ {0,0,17,10,4,10,17},  /* x */
+ {0,17,17,17,15,1,14}, /* y */
+ {0,0,31,2,4,8,31}     /* z */
+};
+static const uint8_t ru_intro_bayer[4][4]={
+ {0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}
+};
+#define RU_INTRO_GLYPH_STEP 11
+#define RU_INTRO_GLYPH_SCALE 2
+static void ru_intro_set(int x,int y,uint8_t opacity){
+ if(opacity==0u||(unsigned)x>=RU_W||(unsigned)y>=RU_H)return;
+ if(opacity==16u||ru_intro_bayer[y&3][x&3]<opacity)ru_set(x,y);
+}
+static const uint8_t *ru_intro_glyph(char c){
+ if(c>='a'&&c<='z')return ru_intro_lower[(uint8_t)(c-'a')];
+ for(unsigned i=0;ru_font_chars[i];i++)if(ru_font_chars[i]==c)return ru_font[i];
+ return ru_font[36]; /* unknown -> blank */
+}
+static void ru_intro_text(const char *str,int x,int y,uint8_t opacity){
+ for(;*str;str++,x+=RU_INTRO_GLYPH_STEP){
+  const uint8_t *glyph=ru_intro_glyph(*str);
+  for(int row=0;row<7;row++)for(int col=0;col<5;col++)
+   if(glyph[row]&(uint8_t)(16u>>col))
+    for(int yy=0;yy<RU_INTRO_GLYPH_SCALE;yy++)
+     for(int xx=0;xx<RU_INTRO_GLYPH_SCALE;xx++)
+      ru_intro_set(x+col*RU_INTRO_GLYPH_SCALE+xx,
+                   y+row*RU_INTRO_GLYPH_SCALE+yy,opacity);
+ }
+}
+static int ru_intro_width(const char *str){int n=0;while(str[n])n++;return n*RU_INTRO_GLYPH_STEP;}
+static void ru_intro_center(const char *str,int y,uint8_t opacity){
+ ru_intro_text(str,(RU_W-ru_intro_width(str))/2,y,opacity);
+}
+/* Prefix, word and suffix occupy fixed slots. Shake is clipped to the word
+ * slot; the rest of the paragraph cannot move by even one pixel. */
+static void ru_intro_last_line(const RuIntroFrame *frame){
+ static const char prefix[]="the ";
+ static const char suffix[]=" began.";
+ static const char normal[]="Rupture";
+ static const char changed[]="RUPTURE";
+ const int x=(RU_W-ru_intro_width(prefix)-ru_intro_width(normal)-ru_intro_width(suffix))/2;
+ const int word_x=x+ru_intro_width(prefix);
+ const int suffix_x=word_x+ru_intro_width(normal);
+ const int y=184;
+ ru_intro_center("And then",160,frame->opacity);
+ ru_intro_text(prefix,x,y,frame->opacity);
+ ru_intro_text(suffix,suffix_x,y,frame->opacity);
+ if(frame->word_visible){
+  const char *word=frame->uppercase?changed:normal;
+  const int px=word_x+frame->word_dx,py=y+frame->word_dy;
+  for(int i=0;word[i];i++){
+   const uint8_t *glyph=ru_intro_glyph(word[i]);
+   for(int row=0;row<7;row++)for(int col=0;col<5;col++){
+    if(!(glyph[row]&(uint8_t)(16u>>col)))continue;
+    for(int yy=0;yy<RU_INTRO_GLYPH_SCALE;yy++)for(int xx=0;xx<RU_INTRO_GLYPH_SCALE;xx++){
+     const int xpos=px+i*RU_INTRO_GLYPH_STEP+col*RU_INTRO_GLYPH_SCALE+xx;
+     if(xpos>=word_x&&xpos<suffix_x)
+      ru_intro_set(xpos,py+row*RU_INTRO_GLYPH_SCALE+yy,frame->opacity);
+    }
+   }
+  }
+ }
+}
+/* The FM1's ST7789 is RGB565. Reserve the monochrome UI framebuffer for
+ * text; the boot photograph has a dedicated grayscale LCD stripe renderer. */
+static uint8_t ru_intro_gray_pending;
 static void ru_brand(const RuState *v){
- uint8_t frame=v->boot_step?(uint8_t)(v->boot_step-1u):0u;
- ru_v2_breach_decode(ru_bits,frame);
+ uint8_t index=v->boot_step?(uint8_t)(v->boot_step-1u):0u;
+ RuIntroFrame frame=ru_intro_frame_desc(index);
+ if(frame.scene==RU_INTRO_SCENE_LOGO){
+  /* +1 distinguishes an all-black logo fade from a text/UI frame. */
+  ru_intro_gray_pending=(uint8_t)(frame.opacity+1u);
+  return;
+ }
+ ru_intro_center("And lo, the heavens",50,frame.opacity);
+ ru_intro_center("fell silent, and the",74,frame.opacity);
+ ru_intro_center("earth trembled",98,frame.opacity);
+ ru_intro_center("beneath mankind.",122,frame.opacity);
+ ru_intro_last_line(&frame);
 }
 /* V1.30: pixel meadow fracturing into a canyon. Visual work is exclusively
  * in the UI loop. No DSP, additional framebuffer, floats, heap or random IO.
@@ -980,7 +1092,7 @@ choices:
  ru_center("TURN SELECT   SEL OK",120,204,1);
  ru_rect(7,226,226,1);ru_center("RUPTURE FIRST RUN",120,232,1);
 }
-static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
+static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
  static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","GLIDE","PROJECTS","MIDI"};
@@ -1226,7 +1338,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V2.0.14","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V2.0.43","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){
@@ -1248,7 +1360,42 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
   ru_footer("SEL DETAILS / HOME BACK");return;
  }
  if(page==RU_PAGE_DIAG){
-  if(v->diag_view){
+  if(v->diag_view==3u){
+   const char *names[]={"NOTE ON", "NOTE OFF", "ON LATES", "OFF LATES",
+    "ON WALL MAX", "OFF WALL MAX", "ON DSP MAX", "OFF DSP MAX"};
+   uint32_t vals[]={v->diag_note_on,v->diag_note_off,
+    v->diag_note_on_late,v->diag_note_off_late,
+    v->diag_note_on_wall,v->diag_note_off_wall,
+    v->diag_note_on_render,v->diag_note_off_render};
+   ru_center("READ ONLY / NOTE EDGES",120,53,1);
+   for(int i=0;i<8;i++){
+    int y=77+i*17;char value[12];ru_uint(vals[i],value);
+    ru_text(names[i],10,y,1);ru_text(value,151,y,1);
+    if(i>=4)ru_text("%",211,y,1);
+   }
+   ru_footer("SEL MAIN / HOME BACK");return;
+  }
+  if(v->diag_view==2u){
+   const char *status=v->diag_audit_status==1u?"MATCH":
+    v->diag_audit_status==2u?"CORE DIFF":
+    v->diag_audit_status==3u?"FX DIFF":
+    v->diag_audit_status==4u?"BOTH DIFF":"NO SAVE REF";
+   const char *names[]={"PATCH","SAVE / LOAD","CORE HASH","FX HASH",
+    "WALL PEAK","RENDER PEAK","LATE SINCE","GUARD SINCE"};
+   uint32_t vals[]={v->diag_preset_slot+1u,0u,v->diag_preset_core,
+    v->diag_preset_fx,v->diag_preset_wall,v->diag_preset_render,
+    v->diag_preset_late,v->diag_preset_guard};
+   ru_center("READ ONLY / PRESET AUDIT",120,53,1);
+   for(int i=0;i<8;i++){
+    int y=77+i*17;
+    ru_text(names[i],10,y,1);
+    if(i==1)ru_text(status,151,y,1);
+    else {char value[12];ru_uint(vals[i],value);ru_text(value,151,y,1);}
+    if(i==4||i==5)ru_text("%",211,y,1);
+   }
+   ru_footer("SEL NOTE / HOME BACK");return;
+  }
+  if(v->diag_view==1u){
    const char *names[]={"CONTROL MAX","NESTED MAX","SLACK LAST","MIDI BATCH","MIDI QUEUE","MIDI DEFER","GUARD","POST LATE"};
    uint32_t vals[]={v->diag_control,v->diag_nested,v->diag_live_slack,
     v->diag_midi_batch,v->diag_midi_queue,v->diag_midi_deferred,
@@ -1259,7 +1406,7 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
     ru_text(names[i],10,y,1);ru_text(value,151,y,1);
     if(i<3)ru_text("%",211,y,1);
    }
-   ru_footer("SEL MAIN / HOME BACK");return;
+   ru_footer("SEL PRESET / HOME BACK");return;
   }
   const char *names[]={"WALL MAX","DSP MAX","RENDER","PUBLISH","MIN SLACK","LATE","GUARD","SCOPE SKIP"};
   uint32_t vals[]={v->diag_wall,v->diag_dsp,v->diag_render,v->diag_copy,
@@ -1451,9 +1598,10 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
  }
  if(page==RU_PAGE_SETTINGS){
   if(v->settings_open==0u){
-   static const char *const names[]={"MASTER VOLUME","PRESETS KNOB","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK"};
-   for(int i=0;i<7;i++){
-    int y=52+i*24;ru_frame(12,y,216,23);
+   static const char *const names[]={"MASTER VOLUME","PRESETS KNOB","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK","USB-C AUDIO"};
+   int top=v->selected>=7u?1:0;
+   for(int i=top;i<top+7;i++){
+    int y=52+(i-top)*24;ru_frame(12,y,216,23);
     if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+8,3,12);}
     ru_text(names[i],27,y+8,1);
     if(i==0){char num[12];ru_uint(v->master,num);int l=ru_strlen(num);if(l<9){num[l]='%';num[l+1]=0;}
@@ -1467,9 +1615,21 @@ static void ru_render_raw(const RuState *v){ru_clear();if(v->page==RU_PAGE_WELCO
     if(i==2){ru_center(v->auto_save?"ON":"OFF",195,y+8,1);}
     if(i==3){if(v->boot_choice==0)ru_center("NEW",199,y+8,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+8,1);}}
     if(i==6)ru_center(v->crt_enabled?"ON":"OFF",195,y+8,1);
+    if(i==7)ru_center(v->usb_audio_rate48?"48K":"44.1K",194,y+8,1);
     if(v->selected==(uint8_t)i)ru_text(">",217,y+8,1);
    }
-   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL ASSIGN PRESETS":v->selected==2u?"SEL TOGGLE AUTO SAVE":v->selected==6u?"SEL TOGGLE CRT / VCR":"SELECT / SEL OPEN");return;
+   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL ASSIGN PRESETS":v->selected==2u?"SEL TOGGLE AUTO SAVE":v->selected==6u?"SEL TOGGLE CRT / VCR":v->selected==7u?"SEL USB-C AUDIO":"SELECT / SEL OPEN");return;
+  }
+  if(v->settings_open==5u){
+   ru_center("USB-C AUDIO RATE",120,48,1);
+   for(uint8_t i=0u;i<2u;i++){
+    int y=80+(int)i*48;
+    ru_frame(13,y,214,43);
+    if(v->usb_audio_rate48==i){ru_rect(18,y+6,3,30);ru_text("*",204,y+16,1);}
+    ru_text(i?"48.0 KHZ":"44.1 KHZ",32,y+17,1);
+   }
+   ru_center("USB RECONNECTS ON CHANGE",120,192,1);
+   ru_footer("SELECT RATE / SEL BACK");return;
   }
   if(v->settings_open==4u){
    ru_center("PRESETS KNOB / MODE",120,49,1);

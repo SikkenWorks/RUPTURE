@@ -9,11 +9,12 @@ static struct etch_native_pattern p,q;
 static struct etch_project_settings cfg,got;
 static struct etch_preset_dsp_bank bank,loadbank;
 static uint8_t archive[ETCH_PROJECT_MAX_BYTES];
-/* Regression guard: all project commit paths MUST keep the PJT33 marker. */
+/* Regression guard: current commits must retain PJT33 memory inside PJT35,
+ * including the later eight-slot insert chain. Old PJT33 read tests remain. */
 static void assert_capture_version(void){
  FILE *f=fopen("vendor/etch-v1.88-source/firmware/fm1-native/wave_store_target.c","rb");
  assert(f);char buf[12000];size_t n=fread(buf,1,sizeof(buf)-1,f);fclose(f);buf[n]=0;
- assert(strstr(buf,"native_project_cfg.source_version=34;")!=NULL);
+ assert(strstr(buf,"native_project_cfg.source_version=35u;")!=NULL);
 }
 static void setup(void){
  memset(&a,0,sizeof(a));memset(&b,0,sizeof(b));

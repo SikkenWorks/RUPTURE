@@ -31,6 +31,32 @@ struct rupture_fx_chain {
  uint8_t independent;
  uint16_t parameter[RU_FX_SLOTS][4];
 };
+/* A chain snapshot is fixed for an entire 128-frame ALNK0 render. Trailing
+ * EMPTY slots have no fade, DSP state or tank work; keep their scan out of
+ * the sample loop. Interior EMPTY slots must stay in their original order. */
+static inline uint8_t ru_chain_span(const struct rupture_fx_chain *c){
+ if(!c)return 0u;
+ for(uint8_t n=RU_FX_SLOTS;n>0u;n--)
+  if(c->type[n-1u]!=RU_FX_EMPTY)return n;
+ return 0u;
+}
+/* V2.0.22: an immutable, eight-byte slot list for one published ALNK block.
+ * Include bypassed effects: their fade and feedback tails still need work.
+ * EMPTY positions have neither state nor audio work and can be skipped even
+ * when a later occupied slot keeps the chain span at eight. */
+struct rupture_fx_dispatch {
+ uint8_t span,count;
+ uint8_t slot[RU_FX_SLOTS];
+};
+static inline struct rupture_fx_dispatch ru_chain_prepare_dispatch(const struct rupture_fx_chain *c){
+ struct rupture_fx_dispatch d={0};
+ if(!c)return d;
+ for(uint8_t n=0u;n<RU_FX_SLOTS;n++)if(c->type[n]!=RU_FX_EMPTY){
+  d.slot[d.count++]=n;
+  d.span=(uint8_t)(n+1u);
+ }
+ return d;
+}
 static inline void ru_chain_slot_defaults(struct rupture_fx_chain *c,uint8_t slot,uint8_t type){
  if(slot>=RU_FX_SLOTS)return;
  uint16_t *p=c->parameter[slot];

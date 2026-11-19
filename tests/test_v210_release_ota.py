@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RUPTURE V2.0.14: retain EQ hotfix and trusted OTA with expression return."""
+"""RUPTURE V2.0.43: both FWSCs retain trusted OTA/PJT35 and sample identity."""
 from pathlib import Path
 import base64
 import hashlib
@@ -15,9 +15,170 @@ import fm1_fwsc as fw
 
 sha = lambda data: hashlib.sha256(data).hexdigest()
 manifest = json.loads((R / 'RELEASE-MANIFEST.json').read_text())
-assert manifest['version'] == '2.0.14'
-assert manifest['firmware_file'] == 'RUPTURE-V2.0.14.fwsc'
+assert manifest['version'] == '2.0.43'
+intro=manifest['sikkenworks_intro_v243']
+assert intro['frames']==86 and intro['duration_ms']==5160
+assert intro['existing_41_key_led_boot_wave_preserved']
+assert intro['logo_grayscale8_bytes']==57600 and intro['logo_scaling']=='crop_transparent_gutters_aspect_fit_nearest_neighbor'
+assert intro['logo_unique_gray_levels']==242 and intro['logo_dithered'] is False
+assert intro['fade']=='16_alpha_levels_applied_to_exact_grayscale_on_RGB565_LCD'
+assert intro['logo_source']=='assets/boot-sikkenworks-photo-v243.png'
+assert intro['case_sensitive_intro_font'] and intro['all_other_text_pixels_static_during_word_flicker']
+assert intro['before_audio_engine_start'] and intro['dsp_pcm_unchanged']
+assert manifest['firmware_file'] == 'RUPTURE-V2.0.43-STABLE.fwsc'
+assert manifest['experimental_firmware_file'] == 'RUPTURE-V2.0.43-CORE2-EXPERIMENTAL.fwsc'
+assert manifest['note_release_guard_v243']['group_capture_preserves_note_off']
+assert manifest['note_release_guard_v243']['panel_mono_stack_reconciled_per_pcm_block']
+assert not manifest['note_release_guard_v243']['hardware_verified']
+assert manifest['fx_dispatch_v221']['trailing_empty_skipped_once_per_block']
+assert manifest['fx_dispatch_v221']['host_stereo_frames_exact'] == 294912
+assert manifest['fx_dispatch_v222']['interior_empty_positions_skipped']
+assert manifest['fx_dispatch_v222']['host_stereo_frames_exact'] == 983040
+assert manifest['fx_control_cache_v223']['host_stereo_frames_exact'] == 368640
+assert manifest['fx_control_cache_v223']['hidden_legacy_modulation_forces_full_validation']
+assert manifest['distortion_coeff_cache_v224']['host_stereo_frames_exact'] == 524288
+assert manifest['distortion_coeff_cache_v224']['no_extra_pcm_buffers']
+assert manifest['growl_mip_cache_v225']['host_carrier_formant_frames_exact'] == 1048576
+assert manifest['growl_mip_cache_v225']['generated_waves_unchanged']
+assert manifest['fx_matrix_sand_v226']['host_configurations'] == 48064
+assert manifest['fx_matrix_sand_v226']['host_stereo_frames_sample_exact'] == 7532032
+assert manifest['fx_matrix_sand_v226']['real_sub1_cxs_frames'] == 491520
+assert not manifest['fx_matrix_sand_v226']['physical_fm1_dma_improvement_verified']
+sram = manifest['fx_sram_hotpath_v227']
+assert sram['xip_to_sram_only_no_dsp_math_change']
+assert sram['ram_text_region_bytes'] == 16384
+assert sram['ram_text_budget_bytes'] == 13312
+assert len(sram['hot_functions']) == 7
+assert sram['cxs_main_source_unchanged'] and sram['fx_algorithm_unchanged']
+assert sram['boot_copy_precedes_irqs'] and sram['pc_guard_includes_ram_text']
+assert not sram['physical_fm1_dma_margin_verified']
+recovery = manifest['fx_deadline_recovery_v228']
+assert recovery['experimental_partial_sram_fx_disabled']
+assert recovery['large_program_native_fx_flag_removed']
+assert recovery['fx_fade_32bit_bounded_exact_division']
+assert recovery['fade_64bit_reference_retained_for_host_parity']
+assert recovery['first_held_key_not_started_during_analog_mute']
+assert recovery['all_currently_playing_audio_effects_retained']
+assert recovery['cxs_engine_source_unchanged']
+assert not recovery['physical_fm1_no_dma_lates_verified']
+usb229 = manifest['usb_uac_foreground_v229']
+assert usb229['negotiated_rate_observed_on_device']
+assert usb229['usb_44100_direct_path_unchanged']
+assert usb229['usb_48000_fir_coefficients_unchanged']
+assert usb229['usb_48000_fir_24tap_q30_stereo_outside_audio_isr']
+assert usb229['host_fir_output_pcm_bit_exact']
+assert usb229['fx_audible_pcm_unchanged'] and usb229['cxs_main_source_unchanged']
+assert not usb229['physical_fm1_no_dma_lates_verified']
+assert not usb229['physical_garageband_usb_capture_verified']
+usb230 = manifest['usb_packed_scope_v230']
+assert usb230['usb_48000_fir_q30_math_unchanged']
+assert usb230['usb_48000_packed_pcm_byte_exact']
+assert usb230['usb_ram_bytes_saved'] == 512
+assert usb230['scope_output_decision_unchanged']
+assert usb230['all_audio_and_effects_preserved']
+assert not usb230['physical_dma_lates_zero_verified']
+usb231 = manifest['usb_rate_settings_v231']
+assert usb231['sample_rates_hz'] == [44100, 48000]
+assert usb231['format_descriptor_length_bytes_unchanged']
+assert usb231['usb_reenumerates_after_change']
+assert usb231['persistent_device_global_nor_preference']
+assert usb231['legacy_presets_and_project_format_unchanged']
+assert usb231['cxs_pcm_unchanged'] and usb231['fx_pcm_unchanged']
+assert not usb231['second_dsp_core_enabled']
+assert not usb231['ios_garageband_44100_48000_physically_verified']
+assert not usb231['hardware_dma_lates_zero_verified']
+cpu1 = manifest['cpu1_ram_integrity_v232']
+assert not cpu1['default_firmware_cpu1_enabled']
+assert cpu1['lab_app_cpu1_enabled']
+assert not cpu1['lab_app_firmware_fwsc_exported']
+assert not cpu1['cpu1_executes_audio_dsp']
+assert cpu1['host_fault_injection_cases'] == 5162
+assert cpu1['core0_recomputes_each_output']
+assert cpu1['bad_read_or_timeout_retires_until_poweroff']
+assert cpu1['cxs_and_fx_pcm_unchanged']
+assert not cpu1['physical_cpu1_startup_tested']
+probe = manifest['cpu1_shadow_fir_v233']
+assert probe['opt_in_lab_flag']=='--dual-core-lab'
+assert probe['uses_unchanged_usb_fir_24_taps_q30']
+assert probe['cpu0_recalculates_every_stereo_sample']
+assert probe['host_probe_cases']==7243
+assert not probe['cpu1_live_usb_offload_enabled']
+assert not probe['physical_cpu1_verified']
+live = manifest['cpu1_live_uac_v234']
+assert live['lab_only_live_cpu1_offload']
+assert not live['standard_fwsc_cpu1_enabled']
+assert live['cpu0_full_parity_probation_blocks']==64
+assert live['cpu0_periodic_full_parity_interval_blocks']==256
+assert live['cpu0_live_spot_checks_per_block']==8
+assert live['cpu0_failure_fallback_original_fir']
+assert live['host_checked_output_frames']==142664
+assert live['host_outputs_sample_exact']
+assert not live['single_corrupted_sample_guaranteed_detected']
+assert not live['physical_fm1_verified']
+guard = manifest['cpu1_auto_recovery_v235']
+assert guard['lab_only'] and guard['normal_fwsc_single_core_only']
+assert guard['active_usb_rate_hz'] == 48000
+assert guard['core0_detects_new_dma_late'] and guard['core0_detects_new_dma_guard']
+assert guard['core0_detects_new_usb_underrun'] and guard['core0_detects_new_usb_stage_drop']
+assert guard['core0_detects_audio_stop']
+assert guard['live_cpu1_response_deadline_ticks_24mhz'] == 36000
+assert guard['early_abort_min_usb_pcm_ring_frames'] == 64
+assert guard['retire_cpu1_for_session_after_pressure']
+assert guard['pending_core1_result_never_accepted_after_retirement']
+assert guard['fallback_original_cpu0_fir']
+assert guard['sound_algorithms_and_coefficients_unchanged']
+assert not guard['isolated_corrupt_cpu1_pcm_guaranteed_detected']
+assert not guard['physical_fm1_verified'] and not guard['no_dma_lates_guaranteed']
+assert not guard['host_underrun_already_occurred_reversible']
+both=manifest['cpu1_dual_fwsc_v239']
+assert both['fwsc_count_per_iteration']==2
+assert both['stable_filename']==manifest['firmware_file']
+assert both['experimental_filename']==manifest['experimental_firmware_file']
+assert not both['stable_cpu1_enabled'] and both['experimental_cpu1_enabled']
+assert not both['experimental_live_usb_fir_enabled']
+assert manifest['cpu1_full_fx_v243']['experimental_full_fx_owner']=='core2_after_probation'
+assert both['both_fwscs_verified'] and both['same_trusted_ota_loader']
+assert both['same_protected_bootheader']
+assert both['embedded_web_installers_select_both']
+assert both['web_installer_stable_default']
+assert both['web_installer_core2_requires_extra_ack']
+assert both['experimental_requires_physical_recovery_ready']
+assert not both['experimental_physical_fm1_qualified']
+assert both['clean_full_project_zip']
+assert manifest['preset_audit_v220']['audio_pcm_engine_unchanged']
+assert manifest['preset_audit_v220']['save_reference_ram_only']
+assert not manifest['preset_audit_v220']['physical_fm1_preset_open_verified']
+open219 = manifest['preset_open_realtime_v219']
+assert open219['preset_wave_rebuild_deferred_while_voice_active']
+assert open219['preset_ramp_pcm_bit_identical_to_v218']
+assert not open219['physical_fm1_preset_open_verified']
+sub218 = manifest['sub_realtime_expression_v218']
+assert sub218['main_cxs_rate_hz'] == sub218['main_growl_rate_hz'] == 44100
+assert sub218['sub_cxs_internal_rate_hz'] == 11025
+assert sub218['sub_cxs_interpolated_output_rate_hz'] == 44100
+assert not sub218['sub_cxs_pcm_bit_identical_to_v217']
+assert not sub218['other_sub_modes_bit_identical_to_v217']
+assert sub218['off_sub_pcm_bit_identical_to_v217']
+assert sub218['active_sub_types_quarter_rate'] == ['CXS', 'CLASSIC', 'SQUARE', 'SAW']
+assert sub218['expression_q8_fractional_formant_interpolation']
+assert sub218['new_cxs_sub_state_bytes_bss'] == 12
+assert not sub218['hardware_dma_late_zero_verified']
 assert manifest['growl_performance_v214']['assignment_ids'] == [94, 95]
+assert manifest['growl_reference_v215']['dominant_harmonics'] == [3, 4]
+assert manifest['growl_reference_v215']['new_per_sample_pcm_operations'] == 0
+saved = manifest['growl_preset_reboot_v217']
+assert saved['save_project_format'] == 35
+assert saved['previous_buggy_save_project_format'] == 34
+assert saved['distortion_and_fx_chain_survive_reboot']
+assert saved['dual_sub_and_blend_survive_reboot']
+assert not saved['audio_processing_changed']
+assert saved['new_per_sample_pcm_operations'] == 0
+auto = manifest['growl_automation_v216']
+assert auto['enabled_by_default'] and auto['foreground_only_lfo_computation']
+assert auto['new_per_sample_pcm_operations'] == 0
+assert auto['manual_knob_priority_fade_ms'] == 450
+assert auto['expression_modes_retained'] == ['EXPRESSION LATCH', 'EXPRESSION RETURN']
+assert auto['expression_zero_remains_audible'] and not auto['pitch_drift']
 assert manifest['growl_performance_v213']['growl_default']=='EXPRESSION'
 assert manifest['growl_performance_v213']['two_independent_device_global_preset_knob_assignments']
 assert manifest['growl_performance_v213']['new_per_sample_pcm_operations']==0
@@ -117,9 +278,9 @@ app = (R / 'native-build/app.bin').read_bytes()
 assert not fw.validate_app_binary(app)
 assert sha(app) == manifest['app_sha256'] and len(app) == manifest['app_bytes']
 assert app == (N / 'build/fm1-native-storage-updater-uac48-p05/app.bin').read_bytes()
-assert b'V2.0.14' in app
+assert b'V2.0.43' in app
 options = json.loads((R / 'native-build/native-build-options.json').read_text())
-assert options['version'] == 'RUPTURE V2.0.14'
+assert options['version'] == 'RUPTURE V2.0.43'
 assert options['storage_writes'] and options['ota_writes']
 new_fw = (R / manifest['firmware_file']).read_bytes()
 old_fw = (R / 'reference/firmware/RUPTURE-V2.0.9.fwsc').read_bytes()
@@ -135,6 +296,26 @@ key = fw.extract_stock_assets(R / 'reference/firmware/RUPTURE-V1.86.1.fwsc')['ke
 encrypted = bytearray(new['flash.bin'][0x4000:0x4000+0x120+len(app)])
 fw.sfc_xor(encrypted, 0, len(encrypted), 0, key)
 assert encrypted[0x120:] == app
+experimental_file=R/manifest['experimental_firmware_file']
+experimental=experimental_file.read_bytes()
+assert len(experimental)==manifest['experimental_firmware_bytes']==len(new_fw)
+assert sha(experimental)==manifest['experimental_firmware_sha256']
+assert fw.verify_fwsc(experimental_file)[1]==[]
+live=entries(experimental)
+assert live['ota.bin']==new['ota.bin']==old['ota.bin']
+assert live['flash.bin'][:0x4000]==new['flash.bin'][:0x4000]
+live_app=(R/'native-build/cpu1-fx-app.bin').read_bytes()
+assert len(live_app)==manifest['experimental_app_bytes']
+assert sha(live_app)==manifest['experimental_app_sha256']
+assert live_app!=app and b'V2.0.43' in live_app
+live_bin=bytearray(live['flash.bin'][0x4000:0x4000+0x120+len(live_app)])
+fw.sfc_xor(live_bin,0,len(live_bin),0,key)
+assert live_bin[0x120:]==live_app
+live_options=json.loads((R/'native-build/cpu1-fx-build-options.json').read_text())
+assert live_options['cpu1_audio_offload_enabled']
+assert live_options['cpu1_full_fx_live_lab_enabled']
+assert not live_options['cpu1_live_usb_fir_lab_enabled']
+assert not options['cpu1_audio_offload_enabled']
 
 for name, expected in {
     'hal/fm1_audio.h': '9e711bbff254561c06376bbfd2f875d2eadeedc55dd412ed16bedf9b0b71e5cf',
@@ -149,35 +330,42 @@ for name, expected in {
     'rupture_hold_sprites.h': 'f4c46311fd4982a0663069801af3547a3337d4f220bd783b38c4a0b71e32204a',
     'rupture_panel_anim.h': '61a06441a2174a8f1535ee44b31bff442e6abc41c65716a6a99c270fb8f87659',
     'rupture_bend_sprites.h': 'acf8d1a0966567d80ff94fa5767e896db71a8ca94439ebd68781e3dd53922781',
-    'audio_target.c': '4181b7fbc35f1fdcef68c99c0f44b42234ceb8a3c0faadf535fb40728d44e2d4',
+    'audio_target.c': 'b5af317243517c50e9b44b95c517f3d920282e53bbbeb4440bc652e19d57599c',
     'ota.c': 'c77217b9a650beda39827a2754e76a8502ee97c8244ce07087e05c87dc9e34e6',
     'native_panel_midi.c': '29e5d831f453c723e1999cefb95abeddb69d7760c1f1056519fecc2bef90aa2a',
-    'usb.c': '3e484359d55c68e7510b3b588315e1e781ca30d3946f7d0fea4288895cb6dbef',
     'ota_target.c': '1d9a9ceb0489d98211d9757eafcd9ed021b9f7d57efa4e0ef3631824f2a44c5a',
-    'wave_store_target.c': '2027c9d68ddc801da4541c6fbfd1339824c51db2699ffbb4ffa7124459131813',
     'hal/fm1_flash_id.h': 'c77ff4febd1e1efc1cea73e0080aedb7846be431d44dc4983862f3e2c34a0aac',
 }.items():
-    # OTA and wave-store source hashes may be refreshed by targeted source tests,
-    # but native startup artwork, runtime identity and flash IDs must stay intact.
+    # Wave-store V2.0.17 captures PJT35. Audio_target V2.0.28 deliberately
+    # gates live keys only during silent codec warm-up. Other paths are fixed.
     assert sha((SRC/name).read_bytes()) == expected, f'Unrelated source changed: {name}'
 
-# Pin unchanged CXS / SUB / FX / EQ code. audio_core.c intentionally
-# changes only MAIN GROWL coefficient caching and the new processor call.
+store_source = (SRC/'wave_store_target.c').read_text()
+assert 'native_project_cfg.source_version=35u;' in store_source
+assert 'ru_fx_store_to_project();' in store_source
+assert 'native_project_capture();' in store_source
+
+# Pin unchanged CXS / SUB / EQ code. V2.0.22 updates only the native FX
+# dispatch and audio callsite; pin the exact new source alongside the fully
+# untouched CXS/SUB source to detect accidental drift in later releases.
 for name, expected in {
-    'native_fx.c': '14ee2663a0d89d2eff1eeae93fdfe355b28fefd747bcd90c68a487fc6d03b578',
+    'native_fx.c': 'd7a7b55f99011d92a98f8ce8f20a6d2ec3374fc8f67fdcac48c70a05d248412a',
     'native_cxs_q15.c': '86f4a39ad9bdbd6eabb79a34d9453e0fb0e150936667806e94eb2f00b57ca18f',
     'rupture_subosc.h': '056a5cf04b79a7ab77966297748ced3eb529d17aae0af1fec28ff0d7b0bfb2e0',
     'native_performance.c': '47d8a7d8d5d9c971deadaf89e0ee94252e041d0195fc378b177b2130fc9e49e0',
-    'native_fx.h': '4548bbd8df9b6bbdc8b2db55de63a329d58a86323ff7f5935786c1dc6f27911a',
+    'native_fx.h': '139cfb967b8bcff1ca1236cc0823a1c165ccec64c825c8767fb67bec9498223c',
 }.items():
     assert sha((SRC/name).read_bytes()) == expected, f'Audio source changed: {name}'
+assert sha((SRC/'audio_core.c').read_bytes()) == '6499bf5d022ac8e61457d52a7400f109794c5d5ae790d6ec3899972bcd1062c9'
+assert sha((SRC/'rupture_growl_mip_cache.h').read_bytes()) == '7be268d9414f93ca8b33ed8e204e7f4569d77a8dcab3fa73c76b8fd9ca9ceae4'
+assert sha((SRC/'rupture_fx_chain.h').read_bytes()) == 'db9927aad8399301157de624c065882703c990d5bf72fbb15115d95e5f863fe6'
 
-assert 'ru_growl_read(s->cxs.phase,pitch_inc)' in (SRC/'audio_core.c').read_text()
+assert 'ru_growl_read_cached(s->cxs.phase,pitch_inc,&growl_mip_cache)' in (SRC/'audio_core.c').read_text()
 assert 'ru_growl_make_params(c->cxs_pressure' in (SRC/'audio_core.c').read_text()
 assert 'ru_growl_process(&s->growl,growl,&growl_params)' in (SRC/'audio_core.c').read_text()
 assert '"GROWL"' in (SRC/'rupture_ui.c').read_text()
 assert sha((SRC/'audio_core.h').read_bytes()) == 'a5947492d780c323e5f24e38b126afef6b06084ac46eda7a2431ab8696a62660'
-assert sha((SRC/'rupture_growl_waves.h').read_bytes()) == '812f8a09aa9a78af3c51cbcbf882647aa25781587b0140e560560ab81e7efc39'
+assert sha((SRC/'rupture_growl_waves.h').read_bytes()) == 'd19ee1953eedf0a1e98cf43a9e632fd704fb9bab7eba8d041943ed202e1725aa'
 
 flash_id = (SRC/'hal/fm1_flash_id.h').read_text()
 assert '0x856014u' in flash_id and '0xB36014u' in flash_id
@@ -203,9 +391,10 @@ ui = (SRC/'rupture_ui.c').read_text()
 assert 'ru_center("PORTAMENTO",120,82,1)' in ui
 assert '#include "rupture_v2_signal_breach_sprites.h"' in ui
 assert '#include "rupture_splash_bitmap.h"' not in ui
-assert 'ru_v2_breach_decode(ru_bits,frame)' in ui
-assert 'ru_v2_breach_ms[f]' in bringup
-assert 'ru_v2_breach_frame_at(elapsed)' in bringup
+assert '#include "rupture_intro_timeline.h"' in ui
+assert 'ru_intro_frame_desc(index)' in ui
+assert 'RU_INTRO_FRAME_MS' in bringup
+assert 'ru_intro_frame_at(elapsed)' in bringup
 assert 'ru_sub_fear_play_step(etch_ms,held,' in bringup
 assert 'ru_sub1_stare_step(etch_ms,held,' in bringup
 assert '&ru_sub_fear_shake' in bringup
@@ -242,9 +431,17 @@ for name in ('WebInstaller.html', 'index.html'):
     html = (R/name).read_text()
     firmware_b64 = re.search(r'<script id="firmware"[^>]*>(.*?)</script>', html, re.S).group(1)
     assert base64.b64decode(firmware_b64) == new_fw
+    experimental_b64 = re.search(r'<script id="firmware-experimental"[^>]*>(.*?)</script>', html, re.S).group(1)
+    assert base64.b64decode(experimental_b64) == experimental
     assert f"const PKG_HASH='{sha(new_fw)}'" in html
     assert f'const PKG_LEN={len(new_fw)}' in html
-    assert 'V2.0.14' in html
+    assert f"const EXP_PKG_HASH='{sha(experimental)}'" in html
+    assert f'const EXP_PKG_LEN={len(experimental)}' in html
+    assert '<option value="stable" selected>' in html
+    assert '<option value="core2">' in html
+    assert 'id="experimental-ack"' in html
+    assert "if(pkg.edition==='core2')" in html
+    assert 'V2.0.43' in html
     assert 'Stop at the FIRST NUL' in html and 'read-only identity queries' in html
     if name == 'index.html':
         for tag, source in (('fallback-readme','README.md'),
@@ -253,9 +450,9 @@ for name in ('WebInstaller.html', 'index.html'):
             assert m and base64.b64decode(m.group(1)) == (R/source).read_bytes()
         m=re.search(r'<script id="site-release-meta"[^>]*>(.*?)</script>',html,re.S)
         site_meta=json.loads(m.group(1))
-        assert site_meta['version']=='2.0.14'
+        assert site_meta['version']=='2.0.43'
         assert site_meta['sha256']==sha(new_fw) and site_meta['bytes']==len(new_fw)
 
-print('PASS V2.0.14 FWSC/flash decryption and both web installer payloads')
+print('PASS V2.0.43 TWO FWSCs decrypted exactly; unchanged loader and dual-choice web installers')
 print('PASS trusted OTA, protected bootheader, POPFIX and both flash IDs')
 print('PASS new boot sprites, untouched GLIDE and unaffected native subsystems')

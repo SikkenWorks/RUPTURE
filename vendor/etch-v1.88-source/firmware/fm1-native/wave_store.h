@@ -111,6 +111,10 @@ int etch_store_user_settings_load(const struct etch_store_io*,uint8_t *volume,ui
  * legacy magic values remain readable, no new flash regions. */
 int etch_store_user_settings_welcome_version_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
 int etch_store_user_settings_welcome_load(const struct etch_store_io*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*,uint8_t*);
+/* Device-wide USB-C audio rate: 0=44.1k (default), 1=48k. Shares the
+ * existing CRC-protected PRESETS preference journal without a format bump. */
+int etch_store_usb_rate_load(const struct etch_store_io*,uint8_t*);
+int etch_store_usb_rate_save(const struct etch_store_io*,uint8_t);
 int etch_store_user_settings_welcome_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_preset_assign_load(const struct etch_store_io*,uint8_t*);
 int etch_store_preset_assign_save(const struct etch_store_io*,uint8_t);

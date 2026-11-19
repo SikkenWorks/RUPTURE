@@ -159,6 +159,8 @@ struct etch_native_fx {
  } ru_slot_fuzz[RU_FX_SLOTS];
  struct {
   int32_t pole1,pole2,body,mix,soft_slew,warm_slew,smooth_slew;
+  /* V2.0.26: save the exact /100 mix conversion for unchanged slot knobs. */
+  uint16_t mix_param,mix_target;
  } ru_slot_sand[RU_FX_SLOTS];
  uint32_t ru_slot_chorus_phase[RU_FX_SLOTS];
  uint16_t ru_slot_delay_samples[RU_FX_SLOTS],ru_slot_delay_time[RU_FX_SLOTS];
@@ -181,6 +183,40 @@ void rupture_fx_process_ordered(struct etch_native_fx *state,int16_t sample,
  uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
  const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
  uint32_t bypass,int16_t *left,int16_t *right);
+/* PCM-equivalent render using a chain span staged once per DMA block. */
+void rupture_fx_process_ordered_compact(struct etch_native_fx *state,int16_t sample,
+ uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
+ const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
+ uint32_t bypass,int16_t *left,int16_t *right,uint8_t span);
+/* The FM1 render callback precomputes the ordered non-empty slots once per
+ * block. Legacy and compact entrypoints remain source/PCM compatible. */
+void rupture_fx_process_ordered_packed(struct etch_native_fx *state,int16_t sample,
+ uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
+ const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
+ uint32_t bypass,int16_t *left,int16_t *right,
+ const struct rupture_fx_dispatch *dispatch);
+/* RUPTURE FM1 control-rate variant. `control_checked` lives on the audio
+ * callback stack and must be reset when the 32-sample FX snapshot refreshes.
+ * The public PCM APIs above remain unchanged for legacy/host callers. */
+void rupture_fx_process_ordered_cached(struct etch_native_fx *state,int16_t sample,
+ uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
+ const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
+ uint32_t bypass,int16_t *left,int16_t *right,
+ const struct rupture_fx_dispatch *dispatch,uint8_t *control_checked);
+/* At most 50 bytes of V2.0.24 ISR-local distortion coefficients. A bit is
+ * cleared whenever the 32-frame control publication changes. No allocation
+ * or extra PCM history is added; all three fields are exact fixed-point
+ * results from the existing DISTORTION setup equations. */
+struct rupture_fx_distortion_cache {
+ uint8_t valid_mask;
+ struct {uint16_t gain_q8,alpha;int16_t bias;} slot[RU_FX_SLOTS];
+};
+void rupture_fx_process_ordered_fast(struct etch_native_fx *state,int16_t sample,
+ uint16_t chorus,uint16_t delay,uint16_t reverb,uint16_t mosfet,
+ const struct etch_fx_settings *settings,const struct rupture_fx_chain *chain,
+ uint32_t bypass,int16_t *left,int16_t *right,
+ const struct rupture_fx_dispatch *dispatch,uint8_t *control_checked,
+ struct rupture_fx_distortion_cache *distortion_cache);
 #endif
 static inline void etch_fx_defaults(struct etch_fx_settings *s){
  if(!s)return;

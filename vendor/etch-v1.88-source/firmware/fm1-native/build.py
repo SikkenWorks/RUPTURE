@@ -7,10 +7,17 @@ ap.add_argument("--updater",action="store_true",help="compile experimental MIDI 
 ap.add_argument("--hardware-test",action="store_true",help="read-only full-app diagnostics: no storage and NO updater writes; Stage 0 remains the minimal first-boot probe")
 ap.add_argument("--usb-audio",action="store_true",help="experimental class-compliant stereo USB capture at 44.1 kHz; no device test")
 ap.add_argument("--usb-audio-48k",action="store_true",help="EXPERIMENTAL: host-selectable 48 kHz FIR capture; implies --usb-audio")
+ap.add_argument("--dual-core-lab",action="store_true",help="DANGEROUS LAB ONLY: start CPU1 and run guarded RAM integrity jobs; NO audio offload")
+ap.add_argument("--dual-core-live-uac-lab",action="store_true",help="HIGH-RISK EXPERIMENT: core1 runs actual 48k USB FIR with per-block CPU0 checks/fallback; requires --dual-core-lab")
+ap.add_argument("--dual-core-fx-live-lab",action="store_true",help="HIGH-RISK EXPERIMENT: second core executes full 64-frame FX lanes while first core renders CXS; USB FIR reverts to CPU0")
 ap.add_argument("--multi-project",action="store_true",help="EXPERIMENTAL: twelve capacity-bounded project slots in one A/B snapshot; capacity limited")
 ap.add_argument("--extended-store",action="store_true",help="LAB ONLY: expanded A/B flash region; refuses foreign data; backup and recovery required")
 args=ap.parse_args()
 if args.usb_audio_48k:args.usb_audio=True
+if args.dual_core_lab and not args.usb_audio_48k:ap.error("--dual-core-lab requires --usb-audio-48k")
+if args.dual_core_live_uac_lab and not args.dual_core_lab:ap.error("--dual-core-live-uac-lab requires --dual-core-lab")
+if args.dual_core_fx_live_lab and not args.dual_core_lab:ap.error("--dual-core-fx-live-lab requires --dual-core-lab")
+if args.dual_core_lab and args.hardware_test:ap.error("--dual-core-lab excludes read-only hardware test mode")
 if args.multi_project and not args.storage:ap.error("--multi-project requires --storage")
 # V0.95: persistent FM1 builds MUST include the implemented PROJECTS browser.
 # Do not silently generate a firmware that displays PROJECTS DISABLED again.
@@ -25,7 +32,7 @@ from pathlib import Path
 src=Path(__file__).resolve().parent
 root=src.parents[1]
 tc=Path(os.environ.get('JIELI_TOOLCHAIN',str(Path.home()/'.jieli/toolchain'))).resolve()
-out=root/('build/fm1-native'+('-storage' if args.storage else '')+('-test' if args.hardware_test else '-updater' if args.updater else '')+('-uac48' if args.usb_audio_48k else '-uac' if args.usb_audio else '')+('-ext' if args.extended_store else '')+('-p05' if args.multi_project else ''));out.mkdir(parents=True,exist_ok=True)
+out=root/('build/fm1-native'+('-storage' if args.storage else '')+('-test' if args.hardware_test else '-updater' if args.updater else '')+('-uac48' if args.usb_audio_48k else '-uac' if args.usb_audio else '')+('-ext' if args.extended_store else '')+('-p05' if args.multi_project else '')+('-c1fx' if args.dual_core_fx_live_lab else '-c1live' if args.dual_core_live_uac_lab else '-c1lab' if args.dual_core_lab else ''));out.mkdir(parents=True,exist_ok=True)
 cc=tc/'pi32v2/bin/clang';ld=tc/'pi32v2/bin/ld'
 if not cc.exists() or not ld.exists():sys.exit('Set JIELI_TOOLCHAIN to the directory containing pi32v2 and common.')
 # V0.62: never accidentally drift away from the bundled Felucca HAL/boot
@@ -33,9 +40,9 @@ if not cc.exists() or not ld.exists():sys.exit('Set JIELI_TOOLCHAIN to the direc
 # their physical behaviour is not claimed to be verified.
 subprocess.run([sys.executable,str(root/'tools/audit_felucca_core.py')],check=True)
 objs=[]
-for name in ['bringup.c','audio_core.c','native_cxs_q15.c','native_performance.c','native_seq_ui.c','native_pattern_bank.c','native_project_codec.c','native_wave_fx.c','native_fx.c','rupture_eq2.c','native_factory.c','wave_editor.c','wave_store.c','native_digest.c','native_panel_midi.c','native_performance_midi.c','crt0.S','hal/fm1_vec.S','hal/fm1_isr.S']:
+for name in ['bringup.c',('audio_core_core2.c' if args.dual_core_fx_live_lab else 'audio_core.c'),'native_cxs_q15.c','native_performance.c','native_seq_ui.c','native_pattern_bank.c','native_project_codec.c','native_wave_fx.c','native_fx.c','rupture_eq2.c','native_factory.c','wave_editor.c','wave_store.c','native_digest.c','native_panel_midi.c','native_performance_midi.c','crt0.S',('hal/rupture_cpu1_vec.S' if args.dual_core_lab else 'hal/fm1_vec.S'),'hal/fm1_isr.S']+(['hal/rupture_cpu1_entry.S'] if args.dual_core_lab else []):
  obj=out/(Path(name).stem+'.o');cmd=[str(cc),'-target','pi32v2']
- if name.endswith('.c'):cmd+=['-Os','-fno-builtin','-ffunction-sections','-I'+str(src/'hal'),'-DETCH_FLASH_READ_ONLY='+str(int(read_only)),'-DETCH_NATIVE_STORAGE='+str(int(args.storage)),'-DETCH_NATIVE_OTA='+str(int(args.updater)),'-DETCH_TEST_RESTORE_ONLY='+str(int(args.hardware_test)),'-DETCH_NATIVE_UAC='+str(int(args.usb_audio)),'-DETCH_NATIVE_UAC_48K='+str(int(args.usb_audio_48k)),'-DETCH_P04_EXPANDED='+str(int(args.extended_store)),'-DETCH_P05_MULTI='+str(int(args.multi_project)),'-DRUPTURE_BUILD=1','-DETCH_STORE_SPARE_ENABLED=0','-DETCH_STORE_OWNED_ENABLED='+str(int(args.storage))]
+ if name.endswith('.c'):cmd+=['-Os','-fno-builtin','-ffunction-sections','-I'+str(src/'hal'),'-DETCH_CPU1_LAB='+str(int(args.dual_core_lab)),'-DETCH_CPU1_UAC_LIVE_LAB='+str(int(args.dual_core_live_uac_lab)),'-DETCH_CPU1_FX_LIVE_LAB='+str(int(args.dual_core_fx_live_lab)),'-DETCH_FLASH_READ_ONLY='+str(int(read_only)),'-DETCH_NATIVE_STORAGE='+str(int(args.storage)),'-DETCH_NATIVE_OTA='+str(int(args.updater)),'-DETCH_TEST_RESTORE_ONLY='+str(int(args.hardware_test)),'-DETCH_NATIVE_UAC='+str(int(args.usb_audio)),'-DETCH_NATIVE_UAC_48K='+str(int(args.usb_audio_48k)),'-DETCH_P04_EXPANDED='+str(int(args.extended_store)),'-DETCH_P05_MULTI='+str(int(args.multi_project)),'-DRUPTURE_BUILD=1','-DETCH_STORE_SPARE_ENABLED=0','-DETCH_STORE_OWNED_ENABLED='+str(int(args.storage))]
  subprocess.run(cmd+['-c',str(src/name),'-o',str(obj)],check=True);objs.append(obj)
 elf=out/'etch-native.elf'
 subprocess.run([str(ld),'--gc-sections','-e','_start','-T',str(src/('app-uac.ld' if args.usb_audio else 'app.ld')),*map(str,objs),'-o',str(elf)],check=True)
@@ -46,4 +53,4 @@ if read_only:
 print('Compiled native audio candidate. Compile-time read-only:',read_only,'; persistent writes enabled:',args.storage,'; updater writes:',args.updater,'; hardware verification is still required.')
 
 import json,hashlib
-(out/'native-build-options.json').write_text(json.dumps({'app_sha256':hashlib.sha256((out/'app.bin').read_bytes()).hexdigest(),'storage_writes':args.storage,'ota_writes':args.updater,'readonly_hardware_test':args.hardware_test,'flash_read_only':read_only,'version':'RUPTURE V2.0.14','hardware_verified':False,'usb_audio_44100':args.usb_audio,'usb_audio_48000_experimental':args.usb_audio_48k,'extended_store_experimental':args.extended_store,'multi_project_experimental':args.multi_project,'product':'FM-1_968', 'application':'RUPTURE CXS/GROWL mono + ladder', 'release_ready':False},indent=2)+'\n')
+(out/'native-build-options.json').write_text(json.dumps({'app_sha256':hashlib.sha256((out/'app.bin').read_bytes()).hexdigest(),'storage_writes':args.storage,'ota_writes':args.updater,'readonly_hardware_test':args.hardware_test,'flash_read_only':read_only,'version':'RUPTURE V2.0.43','hardware_verified':False,'cpu1_ram_integrity_lab_enabled':args.dual_core_lab,'cpu1_shadow_fir_probe_enabled':args.dual_core_lab,'cpu1_audio_offload_enabled':args.dual_core_live_uac_lab or args.dual_core_fx_live_lab,'cpu1_live_usb_fir_lab_enabled':args.dual_core_live_uac_lab and not args.dual_core_fx_live_lab,'cpu1_full_fx_live_lab_enabled':args.dual_core_fx_live_lab,'cpu1_fx_chunk_frames':64 if args.dual_core_fx_live_lab else 0,'cpu1_live_fail_closed_guard_v235':args.dual_core_live_uac_lab,'usb_audio_44100':args.usb_audio,'usb_audio_48000_experimental':args.usb_audio_48k,'extended_store_experimental':args.extended_store,'multi_project_experimental':args.multi_project,'product':'FM-1_968', 'application':'RUPTURE CXS/GROWL mono + ladder', 'release_ready':False},indent=2)+'\n')

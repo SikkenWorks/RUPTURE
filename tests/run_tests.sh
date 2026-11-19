@@ -1,7 +1,133 @@
 #!/usr/bin/env sh
 set -eu
 cd "$(dirname "$0")/.."
+python3 tests/test_v243_dual_fwsc.py
+python3 tests/test_v243_webinstaller_choice.py
+python3 tests/test_v243_clean_project.py
+python3 tests/test_v243_core2_fx_wiring.py
+python3 tests/test_v243_led_intro_wiring.py
+python3 tests/test_v243_png_branding.py
+python3 tests/test_v243_note_release_wiring.py
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v243_note_release.c -o /tmp/rupture_v243_note_release && /tmp/rupture_v243_note_release
+"${CC:-gcc}" -std=c11 -O2 -w -DRUPTURE_BUILD \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v243_note_release_runtime.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/audio_core.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
+ -lm -o /tmp/rupture_v243_note_runtime && /tmp/rupture_v243_note_runtime
+"${CC:-gcc}" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_CPU1_FX_LIVE_LAB=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v243_core2_fx_pcm.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/audio_core_core2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
+ -lm -o /tmp/rupture_v243_core2_fx_pcm && /tmp/rupture_v243_core2_fx_pcm
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v243_intro.c -o /tmp/rupture_v243_intro && /tmp/rupture_v243_intro
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v239_note_fx_lcd_guard.c -o /tmp/rupture_v239_note_fx && /tmp/rupture_v239_note_fx
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v239_note_dma_meter.c -o /tmp/rupture_v239_note_dma && /tmp/rupture_v239_note_dma
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v239_note_scope_guard.c -o /tmp/rupture_v239_note_scope && /tmp/rupture_v239_note_scope
+python3 tests/test_v239_note_dma_wiring.py
+python3 tests/test_v239_scope_wiring.py
+python3 tests/test_v235_offload_wiring.py
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v235_offload_guard.c -o /tmp/rupture_v235_guard && /tmp/rupture_v235_guard
+python3 tests/test_v234_live_wiring.py
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v234_live_uac_fir.c -o /tmp/rupture_v234_live_uac && /tmp/rupture_v234_live_uac
+python3 tests/test_v239_source_parity.py
+python3 tests/test_v233_cpu1_wiring.py
 cc="${CC:-gcc}"
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v233_cpu1_fir_probe.c -o /tmp/rupture_v233_cpu1_fir && /tmp/rupture_v233_cpu1_fir
+python3 tests/test_v232_cpu1_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v232_cpu1_protocol.c -o /tmp/rupture_v232_c1proto && /tmp/rupture_v232_c1proto
+python3 tests/test_v231_usb_rate_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v231_usb_descriptor.c -o /tmp/rupture_v231_usb_descriptor && /tmp/rupture_v231_usb_descriptor
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native tests/test_v231_usb_preference.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ -lm -o /tmp/rupture_v231_usb_preference && /tmp/rupture_v231_usb_preference
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v230_uac_packed_pcm.c -o /tmp/rupture_v230_uac_packed && /tmp/rupture_v230_uac_packed
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v230_scope_guard.c -o /tmp/rupture_v230_scope_guard && /tmp/rupture_v230_scope_guard
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v228_fx_fade_math.c -o /tmp/rupture_v228_fade_math && /tmp/rupture_v228_fade_math
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v228_note_warmup_gate.c -o /tmp/rupture_v228_note_gate && /tmp/rupture_v228_note_gate
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD -DRU_FX_FADE_64_REF=1 \
+ tests/test_v228_mosfet_distortion_reverb.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v228_mdr_ref
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD \
+ tests/test_v228_mosfet_distortion_reverb.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v228_mdr_candidate
+v228_mdr_ref=$(/tmp/rupture_v228_mdr_ref)
+v228_mdr_candidate=$(/tmp/rupture_v228_mdr_candidate)
+[ "$v228_mdr_ref" = "$v228_mdr_candidate" ] || { printf 'V2.0.28 MOSFET/DIST/REVERB PCM mismatch\n'; exit 1; }
+printf 'PASS V2.0.28 MOSFET/DIST/REVERB/SUB1 exact: %s\n' "$v228_mdr_candidate"
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD \
+ -DRU_FX_FADE_64_REF=1 tests/test_v226_fx_combinations.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v226_matrix_reference
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD \
+ tests/test_v226_fx_combinations.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v226_matrix_candidate
+v226_ref=$(/tmp/rupture_v226_matrix_reference | sed -n '1p')
+v226_candidate=$(/tmp/rupture_v226_matrix_candidate | sed -n '1p')
+[ "$v226_ref" = "$v226_candidate" ] || { printf 'V2.0.28 PCM regression: %s != %s\n' "$v226_ref" "$v226_candidate"; exit 1; }
+printf 'PASS V2.0.28 sample-exact FX combinations: %s\n' "$v226_candidate"
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror \
+ tests/test_v225_growl_mip_cache.c -o /tmp/rupture_v225_mip && /tmp/rupture_v225_mip
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v224_distortion_coeff_pcm.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v224_distortion && /tmp/rupture_v224_distortion
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v223_fx_control_cache_pcm.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v223_fx_cache && /tmp/rupture_v223_fx_cache
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v222_packed_fx_pcm.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v222_packed_fx && /tmp/rupture_v222_packed_fx
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v221_fx_span_pcm.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm -o /tmp/rupture_v221_fx_span && /tmp/rupture_v221_fx_span
+python3 tests/test_v221_fx_span_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v220_preset_audit.c -o /tmp/rupture_v220_audit && /tmp/rupture_v220_audit
+python3 tests/test_v220_preset_audit_wiring.py
 "$cc" -std=c11 -O2 -Wall -Wextra src/cxs.c tests/test_cxs.c -lm -o /tmp/rupture_test_cxs && /tmp/rupture_test_cxs
 "$cc" -std=c11 -O2 -Wall -Wextra src/native_cxs_q15.c tests/test_q15.c -o /tmp/rupture_test_q15 && /tmp/rupture_test_q15
 "$cc" -std=c11 -O2 -Wall -Wextra src/rupture_data.c src/rupture_midi.c tests/test_data_midi.c -o /tmp/rupture_test_data_midi && /tmp/rupture_test_data_midi
@@ -356,6 +482,14 @@ python3 tests/test_v210_target_codegen.py
 python3 tests/test_v213_knob_wiring.py
 "$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v214_growl_expression.c \
  -lm -o /tmp/rupture_v214_growl && /tmp/rupture_v214_growl
+# V2.0.15: revised reference harmonics, 0..100 vowel expression,
+# amplitude headroom across four notes, block-level motion transient.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v215_growl_reference.c \
+ -lm -o /tmp/rupture_v215_growl && /tmp/rupture_v215_growl
+# V2.0.16: deterministic free-running LFO, smooth timbre drift,
+# manual priority, continuous GROWL PCM and preserved quiet expression.
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror tests/test_v216_growl_auto.c \
+ -lm -o /tmp/rupture_v216_growl && /tmp/rupture_v216_growl
 # V2.0.10: minimum EQ frequency, negative/positive gain and HIGH AIR must
 # bypass the empty FX rack and preserve the V2.0.9 guarded EQ response.
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -D_DEFAULT_SOURCE \
@@ -425,6 +559,21 @@ bash tests/pop_fix/run_pop_tests.sh
 
 # V1.90: ordered fixed-memory insert chain, per-patch GLIDE and step SLIDE,
 # PJT35 write/read compatibility with the complete PJT34 archive.
+python3 tests/test_v217_capture_wiring.py
+python3 tests/test_v219_preset_load_wiring.py
+"$cc" -std=c11 -O3 -Wall -Wextra -Werror \
+ tests/test_v219_preset_load_rt.c -o /tmp/rupture_v219_preset_rt && /tmp/rupture_v219_preset_rt
+"$cc" -std=c11 -O3 -Wall -Wextra -Werror -DRUPTURE_BUILD \
+ tests/test_v218_sub_realtime_expression.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ -lm -o /tmp/rupture_v218_sub && /tmp/rupture_v218_sub
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v217_growl_sub_distortion_save.c vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm \
+ -o /tmp/rupture_v217_coldboot && /tmp/rupture_v217_coldboot
 "$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -Ivendor/etch-v1.88-source/firmware/fm1-native \
  tests/test_v190_fx_chain.c vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -o /tmp/rupture_v190_fx && /tmp/rupture_v190_fx

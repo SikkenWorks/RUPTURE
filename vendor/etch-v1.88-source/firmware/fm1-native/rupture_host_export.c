@@ -105,7 +105,12 @@ else ru_render(&v);
   * This makes web previews represent the firmware's real RGB565 scanlines. */
  fprintf(f,"P6\n240 240\n255\n");
  for(uint32_t y=0;y<240u;y++)for(uint32_t x=0;x<240u;x++){
-  uint16_t c=ru_crt_pixel(ru_bits,x,y,(uint8_t)(v.crt_enabled&&v.page!=RU_PAGE_BUG_REPORT));
+  uint16_t c;
+  if(ru_intro_gray_pending){
+   uint32_t opacity=(uint32_t)ru_intro_gray_pending-1u;
+   uint32_t gray=((uint32_t)ru_sikkenworks_logo_gray[y*240u+x]*opacity+8u)>>4;
+   c=(uint16_t)(((gray>>3)<<11u)|((gray>>2)<<5u)|(gray>>3));
+  }else c=ru_crt_pixel(ru_bits,x,y,(uint8_t)(v.crt_enabled&&v.page!=RU_PAGE_BUG_REPORT));
   unsigned char rgb[3]={
    (unsigned char)(((c>>11)&31u)*255u/31u),
    (unsigned char)(((c>>5)&63u)*255u/63u),

@@ -15,10 +15,13 @@ MEMORY
     XIP    (rx)  : ORIGIN = 0x02000120, LENGTH = 0x8DFBC
     RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x4000
     UAC_RAM (rw) : ORIGIN = 0x01C04000, LENGTH = 0x2000
+    C1_RAM  (rw) : ORIGIN = 0x01C06000, LENGTH = 0x2000
     RAM    (rwx) : ORIGIN = 0x01C08000, LENGTH = 96K
     POOL   (rw)  : ORIGIN = 0x01C20000, LENGTH = 0x54000
     NOINIT (rw)  : ORIGIN = 0x01C7C000, LENGTH = 0x3D50
 }
+/* Keep at least 3 KiB free for the flash driver and linker call veneers. */
+ASSERT(SIZEOF(.ram_text) <= 0x3400, "RUPTURE FX SRAM hot path exceeds 13 KiB budget")
 SECTIONS
 {
     .text : { KEEP(*(.text.crt0)) *(.text*) *(.rodata*) . = ALIGN(4); _etext = .; } > XIP
@@ -27,6 +30,14 @@ SECTIONS
     /* USB-audio scratch is zero-load but each read is gated by a completed
      * producer write. Runtime code never relies on pre-boot contents. */
     .uac_ram (NOLOAD) : { . = ALIGN(4); _uac_start = .; *(.uac_ram*) . = ALIGN(4); _uac_end = .; } > UAC_RAM
+    /* V2.0.32 LAB: formerly unused 8 KiB. CPU1 mailbox + own guarded
+     * 4 KiB stack, never overlapping USB DMA or live synth/FX state. */
+    .c1_ram (NOLOAD) : {
+        . = ALIGN(64); _ru_c1_mail_start = .; *(.c1_ram*) . = ALIGN(32);
+        _ru_c1_stack_lo = .; . += 4096; _ru_c1_stack_hi = .;
+    } > C1_RAM
+    _ru_c1_ustack_top = _ru_c1_stack_lo + 3072;
+    _ru_c1_sstack_top = _ru_c1_stack_hi;
     .data : { . = ALIGN(4); _data_start = .; *(.data*) *(.sdata*) . = ALIGN(4); _data_end = .; } > RAM AT > XIP
     _data_load = LOADADDR(.data);
     .bss (NOLOAD) : { _bss_start = .; *(.bss*) *(.sbss*) *(COMMON) . = ALIGN(4); _bss_end = .; } > RAM

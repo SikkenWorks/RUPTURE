@@ -2,7 +2,11 @@
 #include <stdio.h>
 #include "../vendor/etch-v1.88-source/firmware/fm1-native/rupture_ui.c"
 int main(void){
- assert(RU_PRESET_ASSIGN_COUNT<96u && RU_PRESET_ASSIGN_COUNT>80u);
+ /* Later versions append two persistent GROWL expression assignments
+  * (94/95). Keep old IDs unchanged and test the expanded list. */
+ assert(RU_PRESET_ASSIGN_COUNT>=96u && RU_PRESET_ASSIGN_COUNT<128u);
+ assert(RU_PRESET_ASSIGN_EXPRESSION==94u);
+ assert(RU_PRESET_ASSIGN_EXPRESSION_RETURN==95u);
  assert(ru_preset_targets[0].page==RU_PRESET_ASSIGN_OFF_PAGE);
  assert(ru_preset_targets[1].page==RU_PAGE_SEQ&&ru_preset_targets[1].control==1u);
  unsigned guide_root=0u;
@@ -10,7 +14,9 @@ int main(void){
   const RuPresetAssign *t=&ru_preset_targets[id];
   assert(t->group<RU_PRESET_GROUP_COUNT);
   assert(t->page==RU_PRESET_ASSIGN_OFF_PAGE||t->page<RU_PAGE_COUNT);
-  assert(t->control<=RU_PRESET_ASSIGN_SUB_BLEND);
+  if(t->group==9u)
+   assert(t->control==4u||t->control==5u);
+  else assert(t->control<=RU_PRESET_ASSIGN_SUB_BLEND);
   if(id)assert(ru_preset_targets[id-1u].group<=t->group);
   if(t->page==RU_PAGE_GUIDE&&t->control==0u)guide_root=id;
  }

@@ -1,3 +1,478 @@
+# RUPTURE V2.0.43 — Note OFF- en MIDI-herstel
+
+## V2.0.43 (2026-11-19)
+
+- **Aantoonbare hangende-noot-fout opgelost:** GROUPS MIDI-leermodus
+  onderschepte vroeger ook Note OFF van al eerder gespeelde noten.
+  Nu wordt uitsluitend echte Note ON voor toewijzing opgevangen; velocity-0
+  Note ON en normale Note OFF komen altijd bij de mono-engine aan.
+- De fysieke 27 toetsen worden eenmaal per audiobuffer op actuele
+  contactstatus gecontroleerd. Verweesde of gedupliceerde fysieke
+  noten worden hersteld zonder MIDI-sustain of lang aangehouden toetsen
+  af te kappen.
+- Bij overvolle of verbroken USB-/TRS-MIDI-verbinding maakt MIDI-panic
+  alleen onbetrouwbare MIDI-noten los en synchroniseert de mono-stem opnieuw;
+  fysiek nog ingedrukte toetsen en sequencernoten blijven behouden.
+- Het mono-stack-aantal is begrensd vóór iedere kritieke indexering;
+  precies dezelfde nootbeveiliging is in STABLE en CORE2 ingebouwd.
+- CXS en FX-broncode zijn byte-identiek aan V2.0.42. Hostregressietests
+  uitgebreid; echte FM1-validatie vereist, dus geen absoluut anti-hangbewijs.
+- Twee verifieerbare FWSCs, een installer met keuze en een schone source-ZIP.
+
+## V2.0.42 (2026-11-19)
+
+- **Branding gerepareerd:** de 1-bit Bayer-dithering van V2.0.41 verwijderd.
+  Het RGB565-scherm geeft nu de originele 8-bit grijstinten van de geüploade
+  PNG rechtstreeks weer. Alleen transparante buitenranden en de noodzakelijke
+  nearest-neighbor-verkleining naar 240×240 zijn toegepast. 242 grijsniveaus
+  blijven na schaling vertegenwoordigd, zonder extra puntjespatroon.
+- De bestaande LCD-DMA-stagingbuffer toont de afbeelding in 48-regelige
+  stroken; een ongewijzigd logo-hold-frame wordt niet opnieuw verstuurd.
+  Geen nieuwe framebuffer, heap of audio-DSP-taken nodig.
+- Snelle 5,16-secondenintro, `Rupture`-woordflikkering, 41-toetsen LED-golf,
+  STABLE-audio en volledige experimentele core2-FX-route zijn behouden.
+- Twee nieuwe FWSC's, een tweekeuze-installer en een opgeschoonde project-ZIP.
+  Op fysiek FM1-hardware nog niet geverifieerd.
+
+## V2.0.41 (2026-11-19)
+
+- Bootlogo vervangen door de **daadwerkelijk geüploade PNG** met portret en
+  sterrenachtergrond. Transparante gutters bijgesneden, nearest-neighbor
+  passend in 240×240 en 4×4 geordend geditherd naar 1-bit.
+- Snellere fades: logo 420 ms in/uit; tekst 480 ms in/uit.
+  De totale filmische intro is nu 5,16 seconden. De trillende `Rupture`
+  blijft op zijn plaats en is met dezelfde native framebuffer gecontroleerd.
+- De originele 41-toetsen LED-golfanimatie (27 ms per toets) blijft behouden;
+  deze start zoals voorheen na de splash en hardware-initialisatie.
+- Nieuw `--dual-core-fx-live-lab`: bij gekwalificeerde CPU1 berekent core 2
+  **de gehele 8-slot-FX-route** in twee opdrachten van 64 samples. Core 1
+  bouwt droog CXS/GROWL/SUB terwijl core 2 aan FX werkt. Latere post-gain,
+  metronoom en DMA blijven op core 1.
+- Effecttanks blijven één gedeelde state; C-FX-modulatie gebruikt vier
+  sample-exacte 32-frame control-snapshots. Geen verdubbelde effectbuffers.
+- Host-PCM-validatie: 100 geordende paren (alle 10 typen inclusief dubbelen)
+  en 6 zware vier-slotketens; 81.408 stereoframes exact gelijk aan CPU0.
+- Core2 jobtimeout retireert de core vóór de onvoltooide FX-verwerking op
+  CPU0 doorgaat. USB 48k FIR blijft op core 1 om interferentie te voorkomen.
+- De diagnostiek geeft in de nieuwe variant `FX JOBS`, `FB`, `FX MAX US`
+  en `FX TIMEOUT` weer, in plaats van de oude misleidende `LIVE FIR`-telling.
+- STABLE blijft de ongewijzigde enkel-core DSP-route. Twee apart controleerbare
+  FWSC-installers en installerkeuze blijven verplicht.
+- **Experimenteel, hardware niet getest**: memory-read-issues, een DSP-fout
+  halverwege een sample, DMA LATES en crashes zijn nog niet uitgesloten.
+
+## Eerdere release: V2.0.40
+
+## V2.0.40 (2026-11-19)
+
+- New native 240×240 one-bit SikkenWorks intro sourced pixel-for-pixel
+  from `assets/boot-final.png`, shown with 16-level ordered-dither
+  fade-in, hold and fade-out.
+- Case-sensitive pixel font renders the original two-paragraph English
+  text centered in six readable lines. `Rupture` alone flickers and
+  shakes into `RUPTURE`, constrained to its fixed word rectangle.
+  The rest of the text does not move. Full text then holds and fades out.
+- 100 pre-audio frames at 60ms (6 seconds), with watchdog feeding;
+  existing safe/recovery skip path and all regular pages are preserved.
+- Retains the legacy Signal Breach sprite data and all existing DSP, CSX,
+  FX, USB and MIDI algorithms byte-for-byte. Added host tests of logo
+  pixel identity, word isolation and all intro phases.
+- Two separate flashable FWSCs, STABLE-default dual-choice WebInstaller
+  and clean full source ZIP. Hardware display and DMA behavior still
+  require validation on a real FM1.
+
+## Previous release: V2.0.39
+
+## V2.0.39 (2026-11-19)
+
+- Added a note-aware optional oscilloscope guard in ALNK0. With 3+ active
+  FX it skips nonessential scope averaging/copying for 24 DMA halves after
+  each note-on/off. It also skips with ANY FX count when the preceding
+  buffer had 20% or less deadline slack. Does not skip audio, FX, MIDI,
+  USB or preset ramps.
+- No new allocation or per-sample timer; the optional scope can briefly
+  freeze and existing SCOPE DEFERRED diagnostics reflect its skipped blocks.
+- Proved byte-identical native CXS, FX, USB and synth source, and audited the
+  ALNK0 difference against V238 byte-for-byte after removing just the
+  optional scope changes. Full old PCM parity suite remains required.
+- Two standalone flashable FWSCs, dual-choice WebInstaller and current clean
+  project ZIP. Hardware still unverified; no zero-DMA-LATES guarantee.
+
+## Previous release: V2.0.38
+
+## V2.0.38 (2026-11-19)
+
+- New fourth `AUDIO DIAGNOSTICS` page separates note-on and note-off event
+  counts, ALNK DMA LATES and maximum render/wall percentages. Counters use
+  already existing render and DMA timing, one classification per 128-frame
+  interrupt and no per-sample timer operations. Counts are cumulative and
+  may overlap when distinct note edges occur in the same DMA block.
+- During a sustained sounding note with three or more enabled, nonempty FX
+  slots, defer only cosmetic LCD frames to a 120 ms minimum interval.
+  Retain V2.0.37's 64 ms note-edge LCD gate and immediate UI commands.
+- FX algorithms, CXS/CSX, GROWL, SUB, MIDI and the USB FIR remain unchanged.
+  CPU1 still executes only the guarded 48 kHz USB FIR in the unqualified
+  CORE2 experimental FWSC, *not* the mutable FX chain.
+- Two flashable FWSCs, WebInstaller two-way menu, clean source ZIP, host
+  telemetry tests and full old FX/PCM regression suite. Hardware still
+  requires a real FM1 note stress run; no zero-DMA-LATES guarantee.
+
+## Previous release: V2.0.37
+
+## V2.0.37 (2026-11-19)
+
+- A single note-on or note-off with three active FX could still trigger an
+  urgent full-screen LCD transfer competing with XIP fetch and ALNK DMA. The
+  earlier note-paint budget only suppressed *bursts* after three key edges.
+- With at least three actually enabled, non-empty FX slots, defer only
+  cosmetic LCD/SPI repaints for 64 ms after each panel or MIDI note edge.
+  Both presses and releases qualify. Buttons, knob edits, page changes,
+  warnings and recovery controls retain their existing priority.
+- All sample generation, CSX/CXS, GROWL, SUB, FX DSP and USB FIR math are
+  unchanged. Core 2 still processes only guarded 48 kHz USB FIR in the
+  high-risk experimental image; moving mutable FX DSP to core 2 is not yet
+  hardware-safe, and this build does not claim to have done so.
+- Two independent firmware images, dual-choice WebInstaller, clean full ZIP,
+  host note-edge/LCD arbitration tests. No physical FM1 DMA-LATE=0 claim.
+
+## Previous release: V2.0.36
+
+## V2.0.36 (2026-11-19)
+
+- From now on, build and verify two independent flashable FM1 packages:
+  `RUPTURE-V2.0.36-STABLE.fwsc` (single-core CPU0) and
+  `RUPTURE-V2.0.36-CORE2-EXPERIMENTAL.fwsc` (live CPU1 USB FIR).
+- Both FWSCs share the same pinned, trusted FM1 OTA loader and protected
+  flash bootheader. Host decryption confirms each image carries the correct
+  distinct app binary. Both Web MIDI installers have a STABLE-default choice
+  menu; CORE2 requires an extra recovery acknowledgement and explicit warning.
+- Clean, deterministic full project export removes prior `.fwsc` binaries,
+  obsolete historical packagers, build caches and scratch outputs while
+  preserving every current source module, asset and test.
+- CXS, GROWL, SUB and all FX DSP algorithms remain unchanged. The live
+  experimental FWSC is unverified on hardware and requires a confirmed
+  physical recovery path before testing.
+
+## Previous release: V2.0.35
+
+## V2.0.35 (2026-11-19)
+
+- Added lab-only CPU0 observation of fresh DMA LATES, blocked DMA buffers,
+  USB underruns, stage FIFO drops and audio stop during 48 kHz recording.
+  Retire CPU1 on any new fault for this power session.
+- Fail early when unfinished CPU1 FIR work coincides with fewer than 64
+  USB PCM frames available. Also reject a finished response beyond 1.5 ms.
+  Both cases retain the exact old CPU0 FIR for the pending block.
+- Reject any pending CPU1 response after the worker has been retired. Show
+  maximum reply wait and CPU1 safety trip details on the USB AUDIO page.
+- Host guard policy tests added. CXS, all effects, USB filter taps/rounding,
+  audio DMA and the normal installable single-core image remain unchanged.
+  Physical FM1 recording with GarageBand iOS still needs qualification.
+
+## Previous release: V2.0.34
+
+## V2.0.34 (2026-11-19)
+
+- New separate `--dual-core-live-uac-lab` app with real 48 kHz USB FIR
+  processing on CPU1. Blocks are 64 input frames with separate 24-frame
+  history and at most 72 output frames in isolated core1 RAM.
+- First 64 blocks are compared in full against the original CPU0 FIR; later
+  blocks use input/phase/hash validation and eight exact PCM spot checks.
+  Failed or late blocks fall back to the original CPU0 code and retire CPU1.
+- The normal FWSC and both Web installers remain single-core; all CXS,
+  oscillator, FX and audible code is unchanged. No physical FM1 validation.
+- Host-test 142,664 stereo outputs exact and the original FIR history exact.
+  Spot checks are NOT a hard guarantee against an undetected wrong sample.
+
+## Previous release: V2.0.33
+
+## V2.0.33 (2026-11-19)
+
+- Added a dual-core lab-only 24-tap Q30 FIR shadow computation using the
+  existing, unchanged USB FIR coefficient table.
+- CPU0 independently checks all 64 synthetic stereo outputs; wrong input,
+  wrong job kind, bad output, late response or fault disables core 1.
+- Only scheduled with silent voices/sequencer and no USB recording; diagnostic
+  `FIR PROBES` counter added. CXS, SUB, GROWL, FX, USB PCM and DMA unmodified.
+- Host-tested 7,243 valid/corrupt FIR cases. Normal FWSC remains single-core.
+  No performance increase, USB audio offload or real FM1 verification claimed.
+
+## Previous release: V2.0.32
+
+## V2.0.32 (2026-11-19)
+- Kept the public firmware's real-time DSP on core 0, bit-identical to V2.0.31.
+- Added an independent optional AC791N CPU1 startup, RAM-resident worker,
+  dedicated 8 KiB memory partition with its own 4 KiB stack, clocked handshake
+  and isolated input/output buffers. No DMA, audio or project state is shared.
+- Core 0 reconstructs every word of every diagnostic result. Bad job fields,
+  bad input/output values, CPU1 exception and deadline violations permanently
+  disable CPU1 for the remainder of the power session.
+- A soft reset after CPU1 was active disables it on the next boot. An explicit
+  `--dual-core-lab` flag is required to build the experimental binary.
+- 5,162 host integrity/corruption tests passed; both native variants compiled.
+  Physical CPU1 startup, stability and actual DSP throughput are **unverified**.
+
+# RUPTURE V2.0.31 — persistent USB-C audio rate selection
+
+## V2.0.31 (2026-11-19)
+- Added `SETTINGS > USB-C AUDIO` with 44.1 and 48 kHz. The selected
+  frequency is the only one exposed by the UAC1 Type-I format descriptor.
+- Switching stops the current USB connection and re-enumerates after about
+  one second. A rate-dependent USB device revision helps avoid host cache.
+- Save the rate in the existing 8-byte device-global NOR journal without
+  expanding the physical flash layout or changing the PJT35 project format.
+  Existing preset mappings, 12 project slots and prior journals remain valid.
+- UAC1 descriptor lengths, CXS/Main/Sub/GROWL PCM, audio ISR, reverb and
+  every FX DSP calculation remain unchanged from V2.0.30.
+- Second DSP core remains disabled pending physical shared-SRAM/fault tests.
+- Native build and host descriptor/NOR tests pass; iOS host negotiation,
+  real-time DMA deadline and audio dropouts are not physically verified.
+
+# RUPTURE V2.0.30 — packed USB FIR and deadline-aware optional scope
+
+## V2.0.30 (2026-11-19)
+- Keep V2.0.29's 48 kHz USB sample-rate conversion in foreground, not
+  ALNK0. Replace its 1024-byte int32 unpack buffer with a 512-byte packed
+  Q15 stereo transfer buffer. Consume the unchanged, once-clipped exact
+  PCM data directly in the original Q30 FIR, without a redundant pair of
+  multiply/shift/saturation conversions for every captured stereo frame.
+- Save 512 B of tight USB SRAM (`.uac_ram` 7628 -> 7116 B). The FIR
+  coefficients, phase, impulse response, output rounding and 44.1 kHz
+  direct route are retained.
+- Avoid optional `native_mono` sample work inside ALNK0 when scope is
+  already suppressed by UI pressure or MIDI backlog. Preserve the exact
+  prior decision to render/suppress the scope and all PCM DMA writes.
+- Source checks pin CXS/FX binaries. Host regression: 65,536 input frames,
+  71,332 stereo output frames, packed/ref bit identity; 502,784 scope
+  capture decisions identical. All historic effect tests must pass.
+- SHRUB itself is closed-source: these are independent, test-backed FM1
+  optimizations, not a claim of inspecting SHRUB's internal DSP.
+- Software-only release candidate. Physical DMA LATES and GarageBand
+  dropouts remain unverified until tested on the user's FM1.
+
+# RUPTURE V2.0.29 — GarageBand USB capture deadline isolation
+
+## V2.0.29 (2026-11-19)
+- Reported on a physical FM1: CXS + SUB OSC1 + REVERB causes DMA LATES
+  when USB-C is used to record to GarageBand on iOS. Host sample rate
+  cannot be inferred from the app alone.
+- Display the *actual negotiated* UAC rate on SYSTEM USB AUDIO, with USB
+  underrun, overrun, missed and stall counters still visible.
+- Run the original, mathematically identical stereo 24-tap USB 48 kHz FIR
+  in the main loop using a 1024-frame PCM staging FIFO. ALNK0 DMA ISR
+  now only stages 16-bit samples. A full FIFO counts overrun and drops USB
+  capture rather than blocking synth DMA, so physical USB continuity still
+  needs stress-testing.
+- Leave UAC 44.1 kHz direct path, CXS MAIN/SUB, every audible effect,
+  effects' parameters, firmware startup/OTA loader and protected bootheader
+  unchanged. Host parity: 65,536 input frames, 71,332 exact output frames
+  with 7e3c4501ccbf5fbb result hash.
+- Release candidate **software-verified, hardware-unverified**. Test
+  GarageBand iOS at its negotiated rate and the heavy FX combinations.
+
+# RUPTURE V2.0.28 — recover AUDIO STOP margin, exact FX fades
+
+## V2.0.28 (2026-11-18)
+- User hardware reports: after V2.0.27, first notes seem buffered;
+  MOSFET + DISTORTION + REVERB can produce a latched AUDIO STOP.
+- Roll back the *experimental* partial FX SRAM relocation to XIP and remove
+  the long-call native FX compiler option. Preserve startup PC protection,
+  the trusted OTA loader and the unmodified firmware boot header.
+- Use exact, overflow-proven signed 32-bit per-slot FX fade math. During
+  onset/reordering it avoids the original 64-bit fade products/divisions
+  without changing the PCM result. Keep optional old path for regression.
+- Gate the first held panel note until the established analog/LCD mute
+  interval finishes, avoiding an inaudible early attack during boot.
+- CXS MAIN DSP source and every established audible FX formula remain
+  intact. New release remains hardware-**unverified** until the user measures
+  RENDER/WALL PEAK, DMA LATES and GUARD in the failure combination.
+
+# RUPTURE V2.0.27 — zero-tone-change SRAM FX hot path (reverted)
+
+## V2.0.27 (2026-11-18)
+- Move the full ordered FX dispatcher, SPRING/ROOM/HALL REVERB, SANDPAPER,
+  channel EQ and wet-safety limiter from flash execution to the established
+  SRAM `.ram_text` section, copied before the IRQ and included in PC guards.
+- Enable the pi32v2 SDK's large-program long calls only for `native_fx.c`;
+  the separated SRAM/XIP address ranges cannot use short branches.
+- Linker explicitly caps RAM hot code to 13 KiB with spare reserved for
+  flash-update routines. Both firmware layout and CXS module identities
+  are checked by the build/tests.
+- The CXS engine, oscillator coefficients, GROWL formants, SUBs, filters,
+  insert DSP arithmetic and storage formats are not changed. No quality
+  degradation, polyphony shedding or forced bypass is introduced.
+- The stock FM1 hardware must still verify actual reduction in RENDER/WALL
+  PEAK and absence of DMA LATES for the reported heavy saved presets.
+
+# RUPTURE V2.0.26 — SANDPAPER exact hot-path and FX combination audit
+
+## V2.0.26 (2026-11-18)
+- SANDPAPER MIX Q15 conversion is cached on parameter publication/changes.
+  Both legacy and independent FX chains continue the original sample-by-sample
+  smoothing, filtering and saturation equations.
+- Replace bounded `/32767` in SANDPAPER with an exact bit-shift/remainder
+  correction, including correct truncation toward zero at negative values.
+- Exhaustive host coverage of all 5,860 ordered 1..4-effect distinct chains,
+  every subset of up to 8 of 10 types, 100 ordered pairs (with repeats),
+  repeated eight-slot effects, 3 REVERB engines, independent/legacy modes,
+  and SUB1 CXS + REVERB + every effect in both orders.
+- 48,064 configurations / 7,532,032 host stereo frames produced an identical
+  PCM hash between reference and optimized renderers. Physical FM1 DMA
+  headroom and saved-preset crackle still require measured confirmation.
+
+# RUPTURE V2.0.25 — GROWL bandlimited mip decision cache
+
+## V2.0.25 (2026-11-18)
+- Reuse the same bandlimited GROWL wavetable level and crossfade ratio for
+  consecutive samples with exactly the same pitch increment. Recalculate
+  immediately when glide, bend, modulation or note changes pitch.
+- Original generated wavetable ROM, phase interpolation and GROWL two-pole
+  formant processing are sample-identical; CXS, both SUBs and FX unchanged.
+- 1,048,576 host carrier+formant frames matched the old renderer, including
+  646,656 reused pitch decisions in a mixed steady/dynamic workload.
+- The small (<=12-byte) cache is stack-local to each DMA render; no extra
+  PCM buffer, project storage or OTA change. Physical FM1 DMA and preset-open
+  crackle require hardware verification.
+
+# RUPTURE V2.0.24 — DISTORTION coefficient cache
+
+## V2.0.24 (2026-11-18)
+- Reuse exact Q8 DRIVE gain, BIAS and TONE alpha within a published
+  32-sample FX control segment for each occupied DISTORTION slot.
+- All per-sample distortion DSP, saturation curves, smoothing, stereo output,
+  bypass fades, independent/repeated insert states and hidden FX are retained.
+- 524,288 stereo frames matched V2.0.23 exactly across 64 changing scenarios;
+  the new 50-byte-or-less ISR stack cache adds no PCM buffers or flash data.
+- The earlier V2.0.22/V2.0.23 FX scan/control optimizations are retained.
+  Firmware build and real FM1 DMA/preset crackle still need validation.
+
+# RUPTURE V2.0.23 — FX control-segment cache
+
+## V2.0.23 (2026-11-18)
+- Skip redundant comparisons of seventeen legacy FX coefficient fields on
+  subsequent PCM frames within one unchanged 32-sample control segment.
+- The cache invalidates on every FX snapshot, wet/dry compatibility fallback,
+  DSP reset or hidden legacy modulation path. The original public FX API and
+  per-sample DSP equations remain unchanged.
+- 368,640 stereo frames matched V2.0.22 exactly across 60 host scenarios with
+  changing knobs, bypass/fade, independent slot effects and reset events.
+- Both flash IDs, all project/preset saves, CXS/GROWL/SUB, diagnostics,
+  existing OTA and bootheader are retained. Actual FM1 DMA and preset-open
+  crackle remain unverified without physical measurements.
+
+# RUPTURE V2.0.22 — prepacked sparse effect scheduling
+
+## V2.0.22 (2026-11-18)
+- Compute an ordered list of non-EMPTY FX slots once per 128-frame audio
+  block. Skip interior holes even when an effect occupies slot 8. Preserve
+  bypassed-slot fades, repeated FX, original effect order and shared tanks.
+- Dense chains retain their compact sequential loop. Legacy/compact public
+  APIs continue to work without a precomputed list.
+- Tested 983,040 host stereo frames across 120 ordered/independent/repeated
+  layouts against the V2.0.21 compact renderer; all samples match exactly.
+- CXS/GROWL, quarter-rate SUB, distortion equations, PJT35, preset diagnostics,
+  both flash IDs and verified OTA/bootheader unchanged. FM1 hardware DMA
+  margins and audible after-restart preset crackle remain unverified.
+
+# RUPTURE V2.0.21 — empty FX slot dispatch optimization
+
+## V2.0.21 (2026-11-18)
+- Compute the highest populated effect slot once per 128-frame audio block.
+  Do not scan trailing EMPTY slots at 44.1 kHz; preserve interior holes,
+  effect order, fading, shared delay memory and original DSP code.
+- Keep the legacy FX API unchanged. The FM1 render callback calls the
+  compact equivalent with an immutable block-level span.
+- Verified 294,912 host-rendered stereo frames bit-for-bit equal for 24 FX
+  scenarios, including GROWL-related DISTORTION and bypass transitions.
+- Retain V2.0.20 preset diagnostics, PJT35 saves, both flash IDs and the
+  trusted OTA loader and protected bootheader. Actual DMA relief on the
+  physical FM1 is still unverified.
+
+# RUPTURE V2.0.20 — PRESET LOAD diagnostics without changing audio
+
+## V2.0.20 (2026-11-18)
+- Third read-only AUDIO DIAGNOSTICS page: per-PRESET OPEN wall/render peak,
+  DMA LATES and pre-write DMA GUARD delta.
+- On verified PRESET SAVE, record explicit CXS/GROWL, SUB, shaping and FX
+  parameter hashes in RAM. On PRESET OPEN, compare restored parameters with
+  the known save reference; report MATCH / CORE DIFF / FX DIFF / BOTH DIFF.
+- After a power cycle, reference hashes are unknown by design, not stored in
+  the project or its flash. Measured DMA load still works after reboot.
+- The single-voice audio path and sample output are unchanged. Hardware
+  DMA-margin / crackle resolution cannot be confirmed by compilation.
+
+# RUPTURE V2.0.19 — PRESET OPEN DMA headroom
+
+## V2.0.19 (2026-11-18)
+- Physical FM1 feedback: GROWL/CXS with SUB runs clean when adjusted live,
+  but the same sound crackles after opening a saved PRESET.
+- PRESET LOAD no longer recompiles the unrelated ETCH waveform bank while
+  any FM1 voice or release tail is still active. It rebuilds once idle.
+- Live PRESETS 256-frame click-free ramp remains sample-for-sample identical,
+  using explicit bounded division-free Q8 arithmetic inside audio ISR.
+- PJT35 preset and FX serialization, CXS/GROWL/SUB core, GROWL EXPRESSION,
+  bootheader, trusted OTA and Web MIDI installers are retained.
+- Physical DMA LATE count and audible preset loading still require device test.
+
+# RUPTURE V2.0.18 — SUB realtime budget and expression smoothing
+
+## V2.0.18 (2026-11-18)
+- A physical FM1 shows DMA LATES with one SUB oscillator under both GROWL
+  and CXS. All active SUB types (CXS, CLASSIC, SQUARE, SAW) are now
+  calculated at 1/4 audio rate and interpolated to every output sample.
+  Compensated CXS smoothing preserves its bass energy.
+- HOST nominal SUB tests: energy ratio 0.988–1.010, correlation 0.989–1.000,
+  with reduced CXS SUB processing time. **Not FM1 hardware cycle numbers**.
+- Original CXS/GROWL MAIN runs at 44.1kHz; OFF SUB is sample-identical.
+- Main CXS parameters are assigned once per DMA block instead of per sample.
+- GROWL EXPRESSION now uses fractional Q8 smoothing between encoder detents
+  and prevents a single click from firing a sudden extra rasp transient.
+- V2.0.17 PJT35 save/reboot fix and OTA/boot protection remain intact.
+- Hardware DMA headroom and acoustic quality still need a fresh FM1 test.
+
+# RUPTURE V2.0.17 — GROWL/SUB/DISTORTION preset reboot fix
+
+## V2.0.17 (2026-11-18)
+- Fixed common SAVE path still forcing PJT34 and silently discarding the
+  saved eight-slot PJT35 FX chain, distortion type and per-slot parameters.
+- Preset SAVE and autosave now capture the same SUB BLEND levels, enabled
+  FX, bypass bits and versioned chain as PROJECT SAVE.
+- Kept backwards-compatible read support for old PJT34 projects. FX-chain
+  bytes omitted by the old buggy save cannot be recreated automatically.
+- Added a cold-boot GROWL+dual-SUB+DISTORTION memory-codec reproduction and
+  static save-route integration tests. No PCM, DSP, OTA or flash layout changes.
+- Real FM1 DMA LATE behavior after re-saving needs hardware verification.
+
+# RUPTURE V2.0.16 — Autonomous GROWL voice movement
+
+## V2.0.16 (2026-11-18)
+- GROWL gains automatic breathing movement (free slow and small faster LFO)
+  plus smoothly interpolated, nonperiodic formant drift.
+- Manual EXPRESSION has temporary priority, with 450ms depth fade-back.
+  LATCH and RETURN remain the two persisted PRESETS knob modes.
+- Timbral modulation calculated in existing 25ms UI foreground service.
+  No new per-sample PCM operations or voices, CXS and SUB untouched.
+- Automatic modulation deliberately makes no pitch changes to avoid
+  destabilizing the already resource-limited FM1 audio ISR.
+- New sustained-note auto-modulation and spectral safety host tests.
+- The reference-inspired harmonic GROWL engine from V2.0.15 is retained.
+- Physical FM1 sound and DMA load have not yet been verified.
+
+# RUPTURE V2.0.15 — Seaboard-style GROWL articulation
+
+## V2.0.15 (2026-11-18)
+- Retuned the synthesized seven-band GROWL oscillator according to several
+  stable D1 sections of the reference video: strong 3rd/4th harmonics,
+  with 2nd harmonic support after the formant filtering. No sampled audio.
+- Reworked one-dimensional EXPRESSION into a nonlinear, continuously
+  changing closed / open / strained throat character, with stronger
+  pressure, formant and asymmetrical wavefold response.
+- Added a small bounded motion-triggered transient in block coefficient
+  generation. No added PCM-sample calculations or oscillators.
+- Kept EXPRESSION 0 audible with a deep-dark gain floor; LEVEL 0 still mutes.
+- Preserved LATCH, RETURN, CXS, controls, presets, storage, OTA and layout.
+- Host audio range and headroom tests passed. FM1 DMA LATE still unverified.
+
 # RUPTURE V2.0.14 — GROWL LATCH / RETURN
 
 ## V2.0.14 (2026-11-17)

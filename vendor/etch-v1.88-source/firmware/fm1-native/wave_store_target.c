@@ -84,9 +84,14 @@ static void native_library_load(void){
 }
 static void native_project_capture(void){
 #ifdef RUPTURE_BUILD
- /* PJT34 carries RUPTURE project FX and EQ 2.0; preserves PJT32
-  * DSP sound/sub fields. Every flash-writing entry point must use PJT34. */
- native_project_cfg.source_version=34;
+ /* V2.0.17: every SAVE, including preset SAVE and autosave, must persist
+  * the PJT35 FX chain and its independent distortion parameters. The old
+  * PJT34 assignment silently omitted the whole chain on reboot. Capture
+  * the current SUB blend/bypass settings here too: preset SAVE previously
+  * skipped these even when the separate PROJECT SAVE path included them.
+  * No flash writes occur until the usual verified A/B journal commit. */
+ ru_fx_store_to_project();
+ native_project_cfg.source_version=35u;
 #else
  native_project_cfg.source_version=30;
 #endif

@@ -9,18 +9,32 @@ volatile uint8_t ru_metronome_enabled=0u;
 volatile uint8_t ru_metronome_volume=65u;
 /* Device-global, live one-byte gesture target. Never written by the ISR. */
 volatile uint8_t ru_growl_expression=50u;
+/* Foreground-generated, bounded automatic GROWL micro-movement. */
+volatile int8_t ru_growl_auto_offset=0;
+volatile int8_t ru_growl_auto_drift=0;
 static uint8_t ru_growl_expression_smooth=50u;
+/* Q8 expression follows encoder detents smoothly. Only the control block
+ * updates this value, never the per-sample DSP path. */
+static int32_t ru_growl_expression_q8=50*256;
+/* Gesture velocity lives outside the PCM loop. Approx. 30-60ms of extra
+ * pressure after a knob movement, then the selected vowel holds steady. */
+static uint8_t ru_growl_motion_energy=0u;
 static struct RuMetroClick ru_metronome_click;
 #include "rupture_countin.h"
 volatile struct RuCountIn ru_countin={0};
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_mono_policy.h"
+#include "rupture_note_release_guard.h"
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
 #include "rupture_saw_tone.h"
 #include "rupture_growl_waves.h"
+#include "rupture_growl_mip_cache.h"
+#include "rupture_sub_realtime.h"
+/* Separate BSS, never grow the saturated FM1 DSP POOL. */
+static RuSubRt ru_sub_rt_state[2];
 #include "rupture_ladder_fast.h"
 #include "rupture_filter_fast.h"
 #endif
@@ -191,6 +205,9 @@ void etch_native_reset(struct etch_native_audio *s){
  }preview_mix=0u;preview_selected=0u;filter_cutoff_smooth=0;filter_resonance_smooth=0;drive_smooth=0;
 #ifdef RUPTURE_BUILD
  for(uint32_t i=0;i<ETCH_NATIVE_VOICES;i++){filter_transition[i].last=0;filter_transition[i].held=0;filter_transition[i].mode=0;filter_transition[i].remaining=0;}
+ for(uint32_t i=0;i<2u;i++)ru_sub_rt_reset(&ru_sub_rt_state[i]);
+ ru_growl_expression_q8=50*256;ru_growl_expression_smooth=50u;
+ ru_growl_motion_energy=0u;
 #endif
  s->voice_limit=8u;s->poly_div_q10=4096;
 #ifdef RUPTURE_BUILD
@@ -312,6 +329,7 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
  s->growl.low=0;s->growl.throat=0;
  ru_sub_init(&s->sub[0],target,0x3c102acd);
  ru_sub_init(&s->sub[1],target,0xd477629f);
+ ru_sub_rt_reset(&ru_sub_rt_state[0]);ru_sub_rt_reset(&ru_sub_rt_state[1]);
  s->mono_current_inc=s->mono_target_inc=target;s->mono_glide_left=0u;
  if(should_glide && old_pitch){
   s->mono_current_inc=old_pitch;s->mono_glide_left=(uint32_t)s->mono_glide_ms*44u;
@@ -321,6 +339,7 @@ static void mono_switch(struct etch_native_audio *s,const struct etch_mono_held 
 }
 static void mono_resume(struct etch_native_audio *s){
  struct etch_native_voice *v=&s->voice[0];
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;v->held=v->down=0u;v->gate_left=0u;return;}
  if(!s->mono_count){v->down=v->held=0;v->gate_left=0;return;}
  const struct etch_mono_held *top=&s->mono_stack[mono_winner(s)];
  if(v->active && v->held && v->note==top->id && v->inc==etch_note_inc[top->pitch]){
@@ -330,6 +349,7 @@ static void mono_resume(struct etch_native_audio *s){
 }
 static void mono_push(struct etch_native_audio *s,uint8_t pitch,uint16_t id,
                       uint8_t velocity,uint32_t gate){
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;s->voice[0].held=s->voice[0].down=0u;}
  if(s->mono_count==ETCH_MONO_STACK){
   for(uint8_t i=1;i<ETCH_MONO_STACK;i++)s->mono_stack[i-1u]=s->mono_stack[i];
   --s->mono_count;
@@ -346,6 +366,7 @@ static void mono_push(struct etch_native_audio *s,uint8_t pitch,uint16_t id,
  }
 }
 static void mono_release(struct etch_native_audio *s,uint16_t id,uint8_t sustain){
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;mono_resume(s);return;}
  for(uint8_t i=0;i<s->mono_count;i++){
   if(s->mono_stack[i].id!=id || !s->mono_stack[i].down)continue;
   if(sustain){s->mono_stack[i].down=0u;mono_resume(s);return;}
@@ -395,8 +416,19 @@ static uint8_t mono_perf_tick(struct etch_native_audio *s){
 #endif
 }
 void etch_native_midi_panic(struct etch_native_audio *s){
+#ifdef RUPTURE_BUILD
+ s->sustain=0u;ru_mono_midi_panic(s);
+ for(uint32_t i=0;i<16u;i++)s->bend[i]=65536u;
+ mono_resume(s); /* An interrupted MIDI stream cannot latch voice[0]. */
+#else
  s->sustain=0;s->mono_count=0;for(uint32_t i=0;i<16;i++){s->bend[i]=65536;}
+#endif
+#ifdef RUPTURE_BUILD
+ for(uint32_t i=0;i<8;i++)if(s->voice[i].note>=128u&&s->voice[i].note<2176u)
+  {s->voice[i].held=s->voice[i].down=0u;}
+#else
  for(uint32_t i=0;i<8;i++)if(s->voice[i].note>=128){s->voice[i].held=s->voice[i].down=0;}
+#endif
 }
 void etch_native_midi(struct etch_native_audio *s,uint8_t status,uint8_t d1,uint8_t d2){
  if(!s)return;
@@ -890,6 +922,13 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
  s->harmony=c->harmony;
  struct etch_native_controls perf_control=*c;
  if(c->preview_wave){perf_control.arp_mode=0u;perf_control.seq_run=0u;}
+#ifdef RUPTURE_BUILD
+ /* Guard the physical keyboard's LEVEL against orphaned mono-stack keys.
+  * A missed edge cannot make a key sound after its actual contact is up.
+  * MIDI and sequencer gates, including sustain, remain independently owned.
+  * This runs ONCE per 128-frame block and does not change CXS/FX PCM math. */
+ if(ru_mono_panel_reconcile(s,keys))mono_resume(s);
+#endif
  uint32_t changed=keys^s->keys;
  /* Releases use each voice's original pitch; changing octave cannot strand a key. */
  for(uint32_t k=0;k<27;k++)if(changed&(1u<<k)){
@@ -979,29 +1018,71 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   * slewing itself is unchanged and stays click-free. */
  const int32_t gain_target=(int32_t)(c->gain>32767?32767:c->gain)*65536;
 #ifdef RUPTURE_BUILD
+ /* The controls are immutable inside the 128-frame render callback. CXS
+  * parameter clamps/assignments were needlessly repeated at 44.1kHz.
+  * Publishing them once per block retains exact PCM and frees ISR time for
+  * the SUB oscillator. The CXS and GROWL modes share this same structure. */
+ rupture_q15_params(&s->cxs,c->cxs_pressure,c->cxs_balance,
+                     c->cxs_memory,c->cxs_density);
+ s->cxs.edge=c->cxs_edge;
  /* The eight GROWL controls are stable during this DMA render. Resolve all
   * nonlinear drive/formant coefficients once, outside the sample/voice loop.
   * Preserve the CXS->GROWL crossfade by caching during its short tail too. */
  RuGrowlParams growl_params={0};
+ RuGrowlMipCache growl_mip_cache={0};
  if(c->main_wave || s->main_saw_mix){
   /* Rate-limit rapid knob reversals on the block boundary; no added
    * per-sample multiply, divide, delay line, oscillator or allocation. */
   uint8_t target=ru_growl_expression>100u?100u:ru_growl_expression;
-  uint8_t step=(uint8_t)(1u+(frames>>6));
-  if(ru_growl_expression_smooth<target){
-   uint8_t distance=(uint8_t)(target-ru_growl_expression_smooth);
-   ru_growl_expression_smooth+=(distance<step?distance:step);
-  }else if(ru_growl_expression_smooth>target){
-   uint8_t distance=(uint8_t)(ru_growl_expression_smooth-target);
-   ru_growl_expression_smooth-=(distance<step?distance:step);
-  }
+  uint8_t prior_expression=ru_growl_expression_smooth;
+  ru_growl_expression_smooth=target;
   growl_params=ru_growl_make_params(c->cxs_pressure,c->cxs_balance,
                       c->cxs_memory,c->cxs_density,c->cxs_edge,
                       c->cxs_weight,c->cxs_bite,c->cxs_punch);
-  ru_growl_apply_expression(&growl_params,ru_growl_expression_smooth);
+  int32_t voiced_expression=(int32_t)target+
+                            (int32_t)ru_growl_auto_offset;
+  if(voiced_expression<0)voiced_expression=0;
+  if(voiced_expression>100)voiced_expression=100;
+  /* About 35ms smoothing (128 frames ≈ 2.9ms at 44.1kHz). The follower
+   * retains a Q8 fraction, so a single encoder detent produces a sweep
+   * rather than a discrete timbral step. No PCM-loop work is added. */
+  int32_t target_q8=voiced_expression*256;
+  int32_t delta=target_q8-ru_growl_expression_q8;
+  if(delta){
+   int32_t adjustment=(delta*20)/256;
+   if(!adjustment)adjustment=delta>0?1:-1;
+   if((delta>0&&adjustment>delta)||(delta<0&&adjustment<delta))adjustment=delta;
+   ru_growl_expression_q8+=adjustment;
+  }
+  ru_growl_apply_expression_q8(&growl_params,(uint16_t)ru_growl_expression_q8);
+  ru_growl_apply_auto_drift(&growl_params,ru_growl_auto_drift);
+  if(prior_expression!=ru_growl_expression_smooth){
+   uint8_t distance=prior_expression>ru_growl_expression_smooth?
+      prior_expression-ru_growl_expression_smooth:
+      ru_growl_expression_smooth-prior_expression;
+   /* A single physical detent must not punch the distortion coefficient
+    * abruptly. Only genuinely fast multi-step gestures add the optional
+    * transient. The underlying Q8 expression always follows each detent. */
+   if(distance>=3u){
+    uint8_t impact=(uint8_t)(distance>8u?36u:(distance-2u)*6u);
+    if(impact>ru_growl_motion_energy)ru_growl_motion_energy=impact;
+   }
+  }
+  if(ru_growl_motion_energy){
+   ru_growl_apply_motion(&growl_params,ru_growl_motion_energy);
+   ru_growl_motion_energy--;
+  }
  }
 #endif
 
+#ifdef RUPTURE_BUILD
+ /* FX topology is immutable throughout this published audio block. Build
+  * the non-EMPTY ordered slot list once, including bypassed fading slots. */
+ const struct rupture_fx_dispatch ru_fx_dispatch=
+   ru_chain_prepare_dispatch(c->fx_chain_active?&c->fx_chain:0);
+ uint8_t ru_fx_control_checked=0u;
+ struct rupture_fx_distortion_cache ru_distortion_coefficients={0};
+#endif
  for(uint32_t f=0;f<frames;f++){
   if(s->clock_samples<1000000u)++s->clock_samples;
   if(s->clock_samples>44100u&&s->clock_running){s->clock_running=0;}
@@ -1102,7 +1183,11 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   /* Restore dynamic locks without copying the large control struct 128x. */
   locked.morph=c->morph;locked.depth=c->depth;locked.cutoff=c->cutoff;
   locked.chorus=c->chorus;locked.delay=c->delay;locked.reverb=c->reverb;
-  if((f&31u)==0u)locked.fx_settings=c->fx_settings;
+  if((f&31u)==0u){
+   locked.fx_settings=c->fx_settings;
+   ru_fx_control_checked=0u;
+   ru_distortion_coefficients.valid_mask=0u;
+  }
   if(motion_play){
    const struct etch_motion_clip *motion=c->motion;
    const uint32_t at=s->motion_sample++;
@@ -1310,9 +1395,6 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    uint16_t blend=s->main_saw_mix;
    int32_t sample=0;
    if(blend!=32768u){
-    rupture_q15_params(&s->cxs,c->cxs_pressure,c->cxs_balance,
-       c->cxs_memory,c->cxs_density);
-    s->cxs.edge=c->cxs_edge;
     sample=rupture_q15_sample(&s->cxs);
     /* Original CXS shaping path is left bit-for-bit intact. */
     sample=rupture_shape_sample(&s->cxs_body_low,sample,c->cxs_weight,c->cxs_bite,
@@ -1325,7 +1407,7 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    if(blend){
     /* One bandlimited wavetable carrier, one bounded two-state throat,
      * one precomputed eight-control waveshaper: no additional voice/tank. */
-    int32_t growl=ru_growl_read(s->cxs.phase,pitch_inc);
+    int32_t growl=ru_growl_read_cached(s->cxs.phase,pitch_inc,&growl_mip_cache);
     growl=ru_growl_process(&s->growl,growl,&growl_params);
     /* CXS and SUB modes remain unchanged, including live 64-sample fades. */
     sample=(int32_t)(((sample*(int32_t)(32768u-blend))+(growl*(int32_t)blend))>>15);
@@ -1333,9 +1415,9 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
    /* Independent subs are added before filters/ADSR. With both OFF, sample
     * remains bit-identical to V1.8. No extra voices or wavetable path. */
    if(i==0u){
-    int32_t sub0=ru_sub_tick(&s->sub[0],c->sub_type[0],c->sub_octave[0],c->sub_detune[0],c->sub_drift[0],pitch_inc,
+    int32_t sub0=ru_sub_rt_tick(&ru_sub_rt_state[0],&s->sub[0],c->sub_type[0],c->sub_octave[0],c->sub_detune[0],c->sub_drift[0],pitch_inc,
        c->cxs_pressure,c->cxs_balance,c->cxs_memory,c->cxs_density);
-    int32_t sub1=ru_sub_tick(&s->sub[1],c->sub_type[1],c->sub_octave[1],c->sub_detune[1],c->sub_drift[1],pitch_inc,
+    int32_t sub1=ru_sub_rt_tick(&ru_sub_rt_state[1],&s->sub[1],c->sub_type[1],c->sub_octave[1],c->sub_detune[1],c->sub_drift[1],pitch_inc,
        c->cxs_pressure,c->cxs_balance,c->cxs_memory,c->cxs_density);
     /* 0..100 project-scoped mix per oscillator. Compute in 32-bit; preserve exact dry main at BLEND=0. */
     uint16_t gain0=ru_sub_smooth_blend(&s->sub[0],c->sub_blend[0]);
@@ -1555,9 +1637,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   etch_fxb_mask_master(c->fx_bypass_mask,&locked.fx_settings,&locked.chorus,&locked.delay,&locked.reverb);
   int16_t l=0,r=0;
 #ifdef RUPTURE_BUILD
-  if(c->fx_chain_active)rupture_fx_process_ordered(&s->fx,(int16_t)clamp15(mix),
+  if(c->fx_chain_active)rupture_fx_process_ordered_fast(&s->fx,(int16_t)clamp15(mix),
     locked.chorus,locked.delay,locked.reverb,c->fx_chain_drive,&locked.fx_settings,
-    &c->fx_chain,c->fx_bypass_mask,&l,&r);
+    &c->fx_chain,c->fx_bypass_mask,&l,&r,&ru_fx_dispatch,&ru_fx_control_checked,
+    &ru_distortion_coefficients);
   else
 #endif
   etch_fx_process_stereo_masked(&s->fx,(int16_t)clamp15(mix),locked.chorus,locked.delay,locked.reverb,&locked.fx_settings,c->fx_bypass_mask,&l,&r);

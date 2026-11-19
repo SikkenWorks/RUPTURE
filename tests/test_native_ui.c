@@ -30,18 +30,19 @@ int main(void){
  RuState v={0};v.page=RU_PAGE_PLAY;v.octave=rupture_octave_display(RUPTURE_BASS_OCTAVE);v.show_battery=1;v.battery=-1;
  v.k[0]=40;v.k[1]=50;v.k[2]=60;v.k[3]=70;
  ru_render(&v);assert(ru_get(7,5));
- v.page=RU_PAGE_LOADING;v.boot_step=RU_SPLASH_STEPS;ru_render(&v);
+ v.page=RU_PAGE_LOADING;v.boot_step=(uint8_t)(RU_INTRO_LOGO_IN+1u);ru_render(&v);
  int pixels=0;for(int y=0;y<240;y++)for(int x=0;x<240;x++)pixels+=ru_get(x,y);
- assert(pixels>400);
+ assert(pixels==0 && ru_intro_gray_pending==17u); /* Full gray LCD artwork, not a 1-bit bitmap */
  v.boot_step=1;ru_render(&v);int small=0;
  for(int y=0;y<240;y++)for(int x=0;x<240;x++)small+=ru_get(x,y);
- assert(small>0 && small<pixels);
- /* V2.0.1: original art stays byte-exact in every other frame. The eleven
-    transitions must also differ from both adjacent original keyframes. */
+ assert(small==0 && ru_intro_gray_pending>1u && ru_intro_gray_pending<17u);
+ /* The historical V2.0.1 frames are preserved as data and decode exactly
+  * as before, though the user-visible boot now uses SikkenWorks + text. */
  const uint32_t expected[12]={0xd691cef7u,0x59831236u,0xe834d223u,0xc14fdc20u,
   0xfd2c317eu,0x4f9c3a98u,0xde73e8a8u,0xba60a873u,0xd6c48935u,
   0x08acfa7eu,0xbf216867u,0xdd2e6ce1u};
- assert(RU_SPLASH_STEPS==23u);
+ assert(RU_SPLASH_STEPS==86u);
+ assert(RU_INTRO_DURATION_MS==5160u);
  assert(RU_V2_BREACH_DURATION_MS==1770u);
  assert(ru_v2_breach_frame_at(0u)==0u);
  assert(ru_v2_breach_frame_at(34u)==0u);
@@ -49,11 +50,10 @@ int main(void){
  assert(ru_v2_breach_frame_at(769u)==21u);
  assert(ru_v2_breach_frame_at(770u)==22u);
  assert(ru_v2_breach_frame_at(1770u)==22u);
- v.boot_step=RU_SPLASH_STEPS;ru_render(&v);
  unsigned int changed=0;unsigned int earlier=0;
  uint32_t prior_hash=0u;
- for(unsigned int f=1;f<=RU_SPLASH_STEPS;f++){
-  v.boot_step=(uint8_t)f;ru_render(&v);
+ for(unsigned int f=1;f<=RU_V2_BREACH_FRAMES;f++){
+  ru_v2_breach_decode(ru_bits,(uint8_t)(f-1u));
   uint32_t hash=2166136261u;
   unsigned int visible=0;
   for(unsigned int i=0;i<7200u;i++){
@@ -68,6 +68,8 @@ int main(void){
   if(f==11u)earlier=visible;
  }
  assert(changed==22u && earlier>0u);
+ v.boot_step=RU_SPLASH_STEPS;ru_render(&v);
+ for(int y=0;y<240;y++)for(int x=0;x<240;x++)assert(!ru_get(x,y));
  puts("PASS: RUPTURE OCT 0 bass reference, octave LEDs, pitch unchanged, 101-position knobs and native screen");
  return 0;
 }

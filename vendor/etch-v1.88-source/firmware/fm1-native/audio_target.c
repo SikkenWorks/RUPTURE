@@ -9,6 +9,12 @@
 #include "native_performance_midi.h"
 #include "native_midi_rt_budget.h"
 #include "native_preset_ramp.h"
+#ifdef RUPTURE_BUILD
+#include "rupture_note_warmup_gate.h"
+#include "rupture_note_release_guard.h"
+#include "rupture_note_dma_meter.h"
+#include "rupture_note_scope_guard.h"
+#endif
 static struct etch_native_audio native_audio __attribute__((section(".pool")));
 /* V1.81: published control snapshot resides in zeroed shared DSP pool.
  * This reclaims main SRAM without changing the ISR ABI or flash layout. */
@@ -60,6 +66,25 @@ static volatile uint8_t native_midi_batch_peak,native_midi_backlog;
 
 /* DMA pre-publish guard hits: block writes into a buffer that may be active. */
 static volatile uint32_t native_dma_blocked;
+#ifdef RUPTURE_BUILD
+/* Only the ALNK0 interrupt writes these counters; foreground reads 32-bit
+ * snapshots. They are intentionally cumulative across audio restarts. */
+static volatile ru_note_dma_meter_t native_note_dma;
+/* Owned by ALNK0: protects ONLY oscilloscope samples, never PCM or MIDI. */
+static ru_note_scope_guard_t native_note_scope_guard;
+/* Preset-local peaks permit apples-to-apples DMA diagnosis without touching
+ * the oscillator or effect PCM path. The foreground resets these counters
+ * inside the same short IRQ-off handoff as the newly loaded parameters. */
+static volatile uint32_t native_preset_wall_peak,native_preset_render_peak;
+static volatile uint32_t native_preset_min_slack;
+static volatile uint32_t native_preset_late_base,native_preset_guard_base;
+static void native_preset_profile_reset(void){
+ native_preset_wall_peak=0u;native_preset_render_peak=0u;
+ native_preset_min_slack=ETCH_NATIVE_FRAMES*544u;
+ native_preset_late_base=native_late;
+ native_preset_guard_base=native_dma_blocked;
+}
+#endif
 static volatile uint8_t native_missed_streak;
 static volatile uint16_t native_healthy_blocks;
 static volatile uint32_t native_voice_shed_count;
@@ -129,6 +154,13 @@ static uint8_t native_draw_brush;
 /* SPECTRAL rebuilds are not realtime. Keep the edited points pending until
  * no voices remain; a bank swap transiently doubles oscillator work. */
 static uint8_t native_spectral_bank_pending;
+/* A RUPTURE preset changes CXS/GROWL DSP parameters, never the played
+ * ETCH carrier table. Keep its optional editor/table rebuild pending until
+ * the synth is silent. Otherwise the three-bank compiler can compete with
+ * a heavy GROWL + dual SUB + DISTORTION note for the DMA deadline. */
+#ifdef RUPTURE_BUILD
+static uint8_t native_patch_wave_pending;
+#endif
 static uint8_t native_blend_audio_busy(void);
 /* Three already allocated mip banks are reused when GROUPS is enabled:
  * bank 0 = currently edited main sound; bank 1/2 = group preset waves.
@@ -220,11 +252,14 @@ static void native_midi_drain(uint8_t play){
   uint32_t pkt=midi_in_q[mi_r%MQ];RING_PUBLISH();++mi_r;
   if(play){
    uint8_t status=(uint8_t)(pkt>>8),note=(uint8_t)(pkt>>16),velocity=(uint8_t)(pkt>>24);
-   if(native_group_capture_active && (status&0xf0u)==0x90u && velocity && note<128u){
+   if(ru_midi_capture_attack(native_group_capture_active,status,velocity)&&note<128u){
     if(!native_group_midi_pending){native_group_midi_note=note;native_group_midi_pending=1u;}
     continue;
    }
-   if(native_group_capture_active && ((status&0xf0u)==0x80u || (status&0xf0u)==0x90u))continue;
+   /* V2.0.43: do NOT swallow MIDI NOTE OFF during group-key capture.
+    * Previously this silently discarded the release of a note that was
+    * already sounding when capture began, leaving a latched mono voice.
+    * A capture-only key attack was never voiced, so its later OFF is safe. */
    etch_native_midi(&native_audio,status,note,velocity);
   }
  }
@@ -294,6 +329,12 @@ void fm1_alnk0_irq(void){
 mi_r=mi_w;RING_PUBLISH();
 #endif
 etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
+#ifdef RUPTURE_BUILD
+  const uint32_t nd_old_keys=native_audio.keys;
+  const uint32_t nd_old_serial=native_audio.alloc_serial;
+  const uint8_t nd_old_stack=native_audio.mono_count;
+  const uint8_t nd_old_held=native_audio.voice[0].held;
+#endif
 #if ETCH_NATIVE_USB
   native_midi_drain(native_output_enabled?1u:0u);
 #endif
@@ -318,12 +359,28 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   if(!native_output_enabled && !native_output_analog_ready){
    for(uint32_t i=0;i<ETCH_NATIVE_FRAMES*2;i++)native_stereo[i]=0;
   }else{
-   /* Prime all oscillators/FX while the DMA output remains silent. */
-   etch_native_render_stereo(&native_audio,&c,keys,native_stereo,ETCH_NATIVE_FRAMES);
+   /* Prime DSP while output is muted. Do not silently consume the first
+    * held panel notes while the codec/LCD settle gate is still closed.
+    * Once audio is audible, unchanged keys enter the original renderer. */
+#ifdef RUPTURE_BUILD
+   uint32_t render_keys=ru_note_keys_while_output_gated(keys,native_output_enabled);
+#else
+   uint32_t render_keys=keys;
+#endif
+   etch_native_render_stereo(&native_audio,&c,render_keys,native_stereo,ETCH_NATIVE_FRAMES);
    if(!native_output_enabled && native_prepared_blocks<65535u)native_prepared_blocks++;
   }
   uint32_t render_elapsed=(uint32_t)(fm1_ticks()-render_start);
+#ifdef RUPTURE_BUILD
+  const uint8_t nd_edges=native_output_enabled?
+    ru_note_dma_edge(nd_old_keys,native_audio.keys,nd_old_serial,
+      native_audio.alloc_serial,nd_old_stack,native_audio.mono_count,
+      nd_old_held,native_audio.voice[0].held):0u;
+#endif
   if(render_elapsed>native_render_wall_peak)native_render_wall_peak=render_elapsed;
+#ifdef RUPTURE_BUILD
+  if(render_elapsed>native_preset_render_peak)native_preset_render_peak=render_elapsed;
+#endif
 #if ETCH_NATIVE_PANEL_MIDI
   etch_perf_midi_update(&native_perf_out,&native_audio,&c,(uint8_t)(usb.config && !native_suspended),ETCH_NATIVE_FRAMES,native_panel_usb_emit,0);
 #endif
@@ -332,6 +389,10 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    * If that happens we stop playback rather than corrupting live samples. */
   if(!etch_audio_dma_preflight(half,fm1_audio_free_half(),start,
       fm1_ticks(),ETCH_NATIVE_FRAMES*544u)){
+#ifdef RUPTURE_BUILD
+   ru_note_dma_record(&native_note_dma,nd_edges,render_elapsed,
+                      (uint32_t)(fm1_ticks()-start),1u);
+#endif
    fm1_audio_ack_half();
    ++native_dma_blocked;++native_late;
    /* Drop extra voice load (8 > 6 > 4 > 3 > 2) before the watchdog
@@ -346,6 +407,28 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    etch_preset_ramp_begin(&native_preset_ramp);
   }
   uint32_t block_peak=0,block_clips=0;
+  /* The mono scope is optional, and a loaded RUPTURE deliberately skips
+   * the scope at ui_pressure >= 16 or with MIDI backlog. Do not spend
+   * division/write cycles preparing 128 unused scope samples then. The
+   * gate is read once; both flags are audio-ISR-owned and remain stable
+   * until the next block. PCM DMA, USB and FX samples are untouched. */
+  uint8_t prepare_scope=(uint8_t)(!native_midi_backlog&&native_ui_pressure<16u);
+#ifdef RUPTURE_BUILD
+  /* Skip mono scope averaging/capture around note on/off with 3+ FX, or
+   * at <=20% slack for ANY chain, including MOSFET+REVERB. Never run an FX count in the
+   * common no-pressure/no-edge case. All 128 PCM frames still publish. */
+  const uint32_t scope_budget=ETCH_NATIVE_FRAMES*544u;
+  const uint32_t scope_slack=native_last_dma_slack;
+  const uint8_t inspect_fx=(uint8_t)(nd_edges||
+      native_note_scope_guard.quiet_halves);
+  const uint8_t scope_fx=inspect_fx?
+      ru_note_fx_active_count(&c.fx_chain,c.fx_chain_active):0u;
+  const uint8_t normal_scope=prepare_scope;
+  prepare_scope=ru_note_scope_capture_allow(&native_note_scope_guard,
+      prepare_scope,nd_edges,scope_fx,scope_slack,scope_budget);
+  if(normal_scope&&!prepare_scope&&native_scope_deferred<UINT32_MAX)
+   ++native_scope_deferred;
+#endif
   for(uint32_t i=0;i<ETCH_NATIVE_FRAMES;i++){
    int32_t left=native_stereo[2*i],right=native_stereo[2*i+1];
    /* Hold digital silence during codec warmup, then smoothly fade in.
@@ -363,7 +446,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    uint32_t pl=(uint32_t)(left<0?-left:left),pr=(uint32_t)(right<0?-right:right);
    if(pl>block_peak)block_peak=pl;if(pr>block_peak)block_peak=pr;
    if(pl>=32767u||pr>=32767u)block_clips++;
-   native_mono[i]=(int16_t)((left+right)/2);
+   if(prepare_scope)native_mono[i]=(int16_t)((left+right)/2);
    dst[2*i]=left*128;dst[2*i+1]=right*128;
   }
 #if ETCH_NATIVE_UAC
@@ -379,7 +462,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    * sample, a MIDI event or an FX sample, and does not touch storage.
    * The scope freezes briefly under load rather than stealing deadline.
    * Hysteresis uses the already-owned ISR pressure state. */
-  if(!native_midi_backlog &&
+  if(prepare_scope &&
      etch_audio_scope_may_capture((uint32_t)(fm1_ticks()-start),
         ETCH_NATIVE_FRAMES*544u,native_ui_pressure)){
    uint8_t scope_to=native_scope_ready^1u;
@@ -419,12 +502,22 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   struct etch_audio_timing measure=etch_audio_timing_end(start,fm1_ticks(),
       native_nested_ticks,ETCH_NATIVE_FRAMES*544u,
       (uint8_t)(fm1_audio_free_half()!=half));
+#ifdef RUPTURE_BUILD
+  ru_note_dma_record(&native_note_dma,nd_edges,render_elapsed,
+                     measure.wall_ticks,measure.late);
+#endif
   if(measure.render_ticks>native_max_ticks)native_max_ticks=measure.render_ticks;
   if(measure.wall_ticks>native_max_wall_ticks)native_max_wall_ticks=measure.wall_ticks;
+#ifdef RUPTURE_BUILD
+  if(measure.wall_ticks>native_preset_wall_peak)native_preset_wall_peak=measure.wall_ticks;
+#endif
   uint32_t slack=measure.wall_ticks>=ETCH_NATIVE_FRAMES*544u?0u:
      ETCH_NATIVE_FRAMES*544u-measure.wall_ticks;
   native_last_dma_slack=slack;
   if(slack<native_min_dma_slack)native_min_dma_slack=slack;
+#ifdef RUPTURE_BUILD
+  if(slack<native_preset_min_slack)native_preset_min_slack=slack;
+#endif
   if(measure.nested_ticks>native_max_nested_ticks)native_max_nested_ticks=measure.nested_ticks;
   /* LCD frames are expensive SPI DMA transfers. Track recent wall-time
    * pressure so the UI backs off before repeated audio underruns. This
@@ -452,6 +545,10 @@ static void native_start(void){
   * remain cumulative too, so LATE == GUARD + POST LATE stays meaningful. */
  native_midi_batch_peak=0u;native_midi_backlog=0u;
  native_min_dma_slack=native_last_dma_slack=ETCH_NATIVE_FRAMES*544u;
+#ifdef RUPTURE_BUILD
+ native_preset_profile_reset();
+ native_note_scope_guard.quiet_halves=0u;
+#endif
  native_output_enabled=0;native_output_analog_ready=0;native_boot_audio_released=0;native_output_fade=0;native_prepared_blocks=0;native_halves=0;
  native_preset_ramp_requested=0u;etch_preset_ramp_reset(&native_preset_ramp);
 #if ETCH_NATIVE_USB

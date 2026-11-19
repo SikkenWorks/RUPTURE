@@ -27,10 +27,16 @@ assert 'SEQ + PRESETS' in main or 'Hold SEQ + PRESETS' in main
 assert 'ASSIGN GROWL PRESETS' in ui
 assert 'PRESETS KNOB / MODE' in ui
 assert 'v->settings_open==4u' in ui
-assert 'if(ru_growl_expression_smooth<target)' in audio
-assert 'ru_growl_apply_expression(&growl_params,ru_growl_expression_smooth);' in audio
+# V2.0.18 replaces coarse integer-step smoothing with a Q8 follower and
+# keeps bounded automatic movement at the GROWL coefficient setup.
+assert 'ru_growl_expression_smooth=target;' in audio
+assert 'int32_t voiced_expression=(int32_t)target+' in audio
+assert '(int32_t)ru_growl_auto_offset;' in audio
+assert 'int32_t target_q8=voiced_expression*256;' in audio
+assert 'ru_growl_apply_expression_q8(&growl_params,(uint16_t)ru_growl_expression_q8);' in audio
+assert 'ru_growl_apply_auto_drift(&growl_params,ru_growl_auto_drift);' in audio
 assert 'RU_PRESET_ASSIGN_PAIR_MAGIC' in store
 assert 'ru_preset_assign_pair_scan(io,source_bank' in store
 assert 'ru_preset_assign_pair_scan(io,(uint32_t)bank' in store
 assert 'ru_vol_compact' in store
-print('PASS V2.0.14: CXS/GROWL mapping, LATCH/RETURN main-loop service')
+print('PASS V2.0.18: CXS/GROWL mapping, LATCH/RETURN, smooth+auto expression wiring')

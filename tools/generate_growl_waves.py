@@ -13,16 +13,21 @@ OUT = (Path(__file__).resolve().parents[1] /
        "vendor/etch-v1.88-source/firmware/fm1-native/rupture_growl_waves.h")
 SIZE = 256
 LEVELS = (1, 2, 4, 8, 16, 32, 64)
-# Approximate harmonic weights relative to harmonic four = 1.0.
-# A finite bass fundamental is deliberately retained for keyboard tracking.
-WEIGHTS = (0.15, 0.62, 0.86, 1.0, 0.19, 0.12, 0.16, 0.10,
-           0.09, 0.08, 0.07, 0.06, 0.07, 0.055, 0.045, 0.055)
+# Re-analysis of several D1 sustains in the supplied Seaboard recording:
+# partial four repeatedly wins over partial two, with partial three moving
+# between them. Frequency-dependent throat filtering in the old engine
+# attenuated partials two and three more than the source wavetable suggested;
+# compensate in the additive profile without removing the strong fourth.
+# These are synthetic harmonics, NOT a copied audio loop. Keep fundamental
+# audible on small speakers and when BRIGHT/EXPRESSION are both at zero.
+WEIGHTS = (0.11, 0.72, 0.95, 1.0, 0.16, 0.12, 0.11, 0.09,
+           0.07, 0.065, 0.055, 0.07, 0.055, 0.047, 0.04, 0.045)
 
 
 def harmonic(n):
     if n <= len(WEIGHTS):
         return WEIGHTS[n - 1]
-    return 0.032 * (16.0 / n) ** 1.15
+    return 0.027 * (16.0 / n) ** 1.2
 
 
 def table(partials):

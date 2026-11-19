@@ -49,13 +49,16 @@ try:
   (root/'ui/screens'/old).unlink(missing_ok=True)
  frame_dir=root/'ui/loading-frames'
  frame_dir.mkdir(exist_ok=True)
- # V2.0.1 uses 23 1-bit frames: twelve original art keyframes and eleven
- # deterministic interstitials. Remove obsolete output after the sequence.
+ # V2.0.43: sample 23 meaningful frames from the 86-frame intro. Include
+ # the exact black logo/text handover frame and the final fade-to-black.
+ # The original Signal Breach sprite header remains untouched in firmware.
  for legacy in range(24,25):
   (frame_dir/f'frame-{legacy:02d}.png').unlink(missing_ok=True)
+ intro_samples=(0,2,7,11,15,19,23,25,26,29,33,38,44,47,51,55,59,62,69,75,78,82,85)
  for step in range(1,24):
   pgm=frame_dir/(f'frame-{step:02d}.pgm')
-  subprocess.run([str(exe),'24',str(pgm),str(step)],check=True)
+  intro_step=1+intro_samples[step-1]
+  subprocess.run([str(exe),'24',str(pgm),str(intro_step)],check=True)
   Image.open(pgm).save(pgm.with_suffix('.png'),optimize=True)
   pgm.unlink()
 finally:exe.unlink(missing_ok=True)
