@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Package V2.0.62 from audited native builds, preserving trusted boot/OTA."""
+"""Package V2.0.65 from audited native builds, preserving trusted boot/OTA."""
 from pathlib import Path
 import base64, hashlib, json, re, shutil, sys
 ROOT=Path(__file__).resolve().parents[1]
-V='2.0.62'
+V='2.0.65'
 N=ROOT/'vendor/etch-v1.88-source'
 sys.path.insert(0,str(N/'tools'))
 import fm1_fwsc as fw
@@ -48,15 +48,15 @@ for experimental,subdir,prefix in (
 assert packages[0]!=packages[1]
 manifest.update(
  version=V,
- release_feature='New startup animation',
- release_note='Intro1, then Intro2, then RUPTURE or first-run setup.',
+ release_feature='Dedicated SikkenWorks startup playback',
+ release_note='Play all eight RGB565 branding frames from the foreground startup loop before Intro2.',
  physical_fm1_verified=False,hardware_verified=False,release_ready=False,
  release_stage='SOFTWARE_RC_PENDING_HARDWARE_VALIDATION',
- boot_intro={'intro1_frames':8,'intro1_frame_ms':100,'intro2_frames':135,'intro2_frame_ms':34,'duration_ms':5390},
+ boot_intro={'intro1_frames':8,'intro1_frame_ms':150,'intro2_frames':135,'intro2_frame_ms':50,'nominal_duration_ms':7950},
 )
 (ROOT/'RELEASE-MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
 for filename in ('WebInstaller.html','index.html'):
- path=ROOT/filename;old=path.read_text();new=old.replace('V2.0.61',f'V{V}')
+ path=ROOT/filename;old=path.read_text();new=old.replace('V2.0.64',f'V{V}')
  # Require already embedded trusted boot/OTA before replacing either payload.
  for tag,pkg,prefix in (('firmware',packages[0],''),('firmware-experimental',packages[1],'EXP_')):
   pattern=r'(<script id="'+tag+r'"[^>]*>)(.*?)(</script>)'
@@ -86,7 +86,7 @@ for filename in ('WebInstaller.html','index.html'):
    if re.search(r'type=["\'](?:application/octet-stream|application/json|text/plain)',attrs):continue
    body=re.sub(r"const (EXP_)?PKG_HASH='[0-9a-f]{64}'",r"const \1PKG_HASH='HASH'",body)
    body=re.sub(r'const (EXP_)?PKG_LEN=\d+',r'const \1PKG_LEN=0',body)
-   scripts.append((attrs,body.replace('V2.0.61','VERSION').replace('V'+V,'VERSION')))
+   scripts.append((attrs,body.replace('V2.0.64','VERSION').replace('V'+V,'VERSION')))
   return scripts
  assert executable(old)==executable(new),filename+' executable installer logic changed'
  path.write_text(new)

@@ -1,13 +1,13 @@
 {
-  "version": "2.0.62",
+  "version": "2.0.65",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V2.0.62-STABLE.fwsc",
+  "firmware_file": "RUPTURE-V2.0.65-STABLE.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "5d017e6f385e6cfc832a58a7e5195348ffe6697a68b0d124489230cc3e8e8014",
-  "app_bytes": 552684,
-  "app_sha256": "927580acf99be0737ee10652862179e1562c124b3631c09bc1e93a626d036381",
+  "firmware_sha256": "2c2dfa2b20f85192bd53a933672e736305e9e96c0dd60ed9e53c376f7232f7c4",
+  "app_bytes": 552844,
+  "app_sha256": "6c195a47a6f95aa3a19806503bf310001917bb9187dbeed1c81e5a3d96378f2c",
   "native_screens": 126,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -198,7 +198,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "New startup animation",
+  "release_feature": "Dedicated SikkenWorks startup playback",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -330,7 +330,7 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "Intro1, then Intro2, then RUPTURE or first-run setup.",
+  "release_note": "Play all eight RGB565 branding frames from the foreground startup loop before Intro2.",
   "headroom_qualification": "Native link/app allocation audits pass. Real DSP overhead and analogue jack behavior are unmeasured.",
   "v180": {
     "reverb_engines": [
@@ -1425,11 +1425,11 @@
     "no_dma_lates_guaranteed": false,
     "host_underrun_already_occurred_reversible": false
   },
-  "experimental_firmware_file": "RUPTURE-V2.0.62-CORE2-EXPERIMENTAL.fwsc",
+  "experimental_firmware_file": "RUPTURE-V2.0.65-CORE2-EXPERIMENTAL.fwsc",
   "experimental_firmware_bytes": 610086,
-  "experimental_firmware_sha256": "b49a4e7d42470de76a593d32e2514acea7a47bb22e45baaa2d69d2e93ce02c0c",
+  "experimental_firmware_sha256": "334214600899ac880f25f2a4276f9e50269ab907388e111ff432bab64c1f2f21",
   "experimental_app_bytes": 559644,
-  "experimental_app_sha256": "94caf9dc86958f5bdc00a8c5bca2da7e12d2de355315306a9c760d4673575255",
+  "experimental_app_sha256": "4479bb5fc84d09c7134d638e7a188a0c00e5a17a2d97a342da1bcd5587b42fc2",
   "cpu1_dual_fwsc_v236": {
     "fwsc_count_per_iteration": 2,
     "stable_filename": "RUPTURE-V2.0.36-STABLE.fwsc",
@@ -2619,9 +2619,9 @@
   },
   "boot_intro": {
     "intro1_frames": 8,
-    "intro1_frame_ms": 100,
+    "intro1_frame_ms": 150,
     "intro2_frames": 135,
-    "intro2_frame_ms": 34,
-    "duration_ms": 5390
+    "intro2_frame_ms": 50,
+    "nominal_duration_ms": 7950
   }
 }

@@ -284,11 +284,13 @@ static void ru_commit(void){
    uint32_t frame=ru_intro_logo_pending-1u;
    const uint16_t *palette=ru_intro_palettes+frame*256u;
    uint16_t *output=(uint16_t*)((uint8_t*)etch_scope_canvas+7200u);
-   uint8_t *indices=(uint8_t*)output;
+   /* Keep the indexed input and DMA output disjoint. The canvas has
+    * room for both, including the monochrome framebuffer at its start. */
+   uint8_t *indices=(uint8_t*)(output+240u*48u);
    for(uint32_t band=0;band<5u;band++){
     ru_intro_unpack(ru_intro_logo_offsets[frame*5u+band],indices,240u*48u);
-    /* Expand backwards so writing RGB565 never overwrites unread indices. */
-    for(uint32_t count=240u*48u;count;count--)output[count-1u]=palette[indices[count-1u]];
+    for(uint32_t pixel=0;pixel<240u*48u;pixel++)
+     output[pixel]=palette[indices[pixel]];
     lcd_blit(0,band*48u,240u,48u,output);
     lcd_sync();
    }
@@ -321,22 +323,36 @@ static void ru_commit(void){
  ru_band_valid=1u;
  etch_display_invalidate(&etch_panel_cache);
 }
-/* Start Intro1 and Intro2 before loading projects. Display
- * is serviced at safe foreground milestones; the synth/codec warm up while
- * these frames are on screen, never inside a real-time audio interrupt. */
+/* Play both intros from the foreground startup loop. Start the frame clock
+ * after transfer so each logo frame gets its full on-screen hold. */
 extern volatile uint32_t etch_ms;
 static uint32_t ru_boot_intro_since_ms;
 static uint8_t ru_boot_intro_started,ru_boot_intro_last_frame;
 static void ru_boot_intro_pump(void){
  if(!ru_boot_intro_started)return;
- uint32_t elapsed=(uint32_t)(etch_ms-ru_boot_intro_since_ms);
- uint8_t frame=ru_intro_frame_at(elapsed);
- if(ru_boot_intro_last_frame==(uint8_t)frame)return;
- ru_boot_intro_last_frame=(uint8_t)frame;
+ uint8_t frame=0u;
+ if(ru_boot_intro_last_frame!=255u){
+  uint32_t elapsed=(uint32_t)(etch_ms-ru_boot_intro_since_ms);
+  if(ru_boot_intro_last_frame<RU_INTRO_LOGO_COUNT){
+   uint32_t logo_end=(ru_boot_intro_last_frame+1u)*RU_INTRO_LOGO_MS;
+   if(elapsed<logo_end)return;
+   /* Show each logo frame and start the second sequence at frame zero. */
+   frame=ru_boot_intro_last_frame+1u;
+  }else{
+   frame=ru_intro_frame_at(elapsed);
+   if(ru_boot_intro_last_frame==frame)return;
+  }
+ }
  RuState v={0};v.page=RU_PAGE_LOADING;
- /* Use the supplied animation frames without CRT processing. */
  v.boot_step=(uint8_t)(frame+1u);v.crt_enabled=0u;ru_crt_active=0u;
  ru_render(&v);ru_commit();
+ if(frame<=RU_INTRO_LOGO_COUNT){
+  uint32_t frame_start=frame<RU_INTRO_LOGO_COUNT ?
+    frame*RU_INTRO_LOGO_MS : RU_INTRO_LOGO_DURATION_MS;
+  /* Count the hold from completion of the LCD transfer. */
+  ru_boot_intro_since_ms=etch_ms-frame_start;
+ }
+ ru_boot_intro_last_frame=frame;
 }
 static void ru_boot_intro_begin(void){
  ru_boot_intro_since_ms=etch_ms;
@@ -6041,11 +6057,6 @@ void fm1_cstart(void){
  /* SEQ is physical button 11. REC Safe Mode and OCT- ROM recovery
   * always take priority over controller boot. Keep this mode transient. */
  native_keyboard_mode=etch_keyboard_boot_requested(safe,fm1_in.buttons);
-#ifdef RUPTURE_BUILD
- /* Begin the logo immediately, then prepare engines/presets during the intro.
-  * PLAY must not become visible until the codec and DMA are safely primed. */
- if(!safe && !native_keyboard_mode){ru_boot_intro_begin();ru_band_valid=0u;}
-#endif
  #ifdef RUPTURE_BUILD
  native_workflow_pending=0u; /* Never run ETCH's original startup workflow chooser. */
 #else
@@ -6068,9 +6079,6 @@ void fm1_cstart(void){
 #endif
  }
  usb_start();
-#ifdef RUPTURE_BUILD
- ru_boot_intro_pump();
-#endif
  etch_editor_init(&native_editor);
  etch_fx_defaults(&native_fx_settings);
  etch_factory_seed(&native_library);
@@ -6110,9 +6118,6 @@ void fm1_cstart(void){
  etch_native_groups_configure(&native_preset_dsp.groups);
  etch_native_groups_patch_bank(native_library.patches);
  if(!safe){native_library_boot();
-#ifdef RUPTURE_BUILD
-  ru_boot_intro_pump();
-#endif
   if(native_store_status==ETCH_STORE_FOREIGN)native_flash_probe=etch_flash_probe_read(native_store_io.read);
   /* Prompt is opt-in and only for an occupied ETCH-target region.
    * Do not offer format in Safe Mode, on read I/O failures, or for healthy
@@ -6144,9 +6149,6 @@ void fm1_cstart(void){
  if(safe)etch_boot_stable(&etch_boot,1);
  /* Safe Mode never reads a patch or project from damaged/foreign storage. */
  if(!safe)native_project_restore();
-#ifdef RUPTURE_BUILD
- ru_boot_intro_pump();
-#endif
  native_morph_a=native_library.selection[0];native_morph_b=native_library.selection[1];
  native_browser_slot=native_library.selection[0];native_browser_target=0;native_morph_focus=0;
  fm1_adc_init();(void)fm1_adc_read(FM1_ADC_MASTER);
@@ -6220,9 +6222,6 @@ void fm1_cstart(void){
  if(!safe&&native_store_status==ETCH_STORE_OK&&native_library.reserved>=1&&native_library.reserved<=ETCH_PATCH_SLOTS){native_patch_slot=native_library.reserved-1;native_project_restore();native_patch_load(0);if(native_project_cfg.source_version==3)native_project_restore();native_restore_project_bpm();}
  native_editor.dirty=1;native_compile_edit();
  native_parameter_publish();
-#ifdef RUPTURE_BUILD
- ru_boot_intro_pump();
-#endif
  int32_t pot=fm1_adc_read(FM1_ADC_MASTER);
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
  /* Establish the panel load before powering the codec. PC6 alone
@@ -6237,8 +6236,12 @@ void fm1_cstart(void){
   /* The original 41-key LED startup wave runs while the two intro
    * sequences are displayed. Keep the codec's clock/analog/LED-quiet gates
    * and the extra 500 ms screen-quiet interval at their proven durations. */
+  /* USB, storage and project setup have finished. Give the logo an
+   * uninterrupted foreground display path before starting Intro2. */
+  ru_boot_intro_begin();
   uint32_t ru_boot_led_last_ms=etch_ms;
-  while((uint32_t)(etch_ms-ru_boot_intro_since_ms)<RU_INTRO_DURATION_MS ||
+  while(ru_boot_intro_last_frame<RU_INTRO_LOGO_COUNT ||
+        (uint32_t)(etch_ms-ru_boot_intro_since_ms)<RU_INTRO_DURATION_MS ||
         (boot_audio && !native_audio_clock_live && !native_tripped) ||
         (boot_audio && native_audio_clock_live && !native_screen_gate.ready && !native_screen_gate.timed_out)){
 #if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K

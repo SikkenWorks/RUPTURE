@@ -1,4 +1,16 @@
+## V2.0.65
+
+- Play the SikkenWorks branding from the foreground startup loop after USB, storage, and project setup. Give each of the eight RGB565 frames a full 150 ms after transfer. Decode indexed pixels into separate scratch space before expanding them into the LCD DMA buffer.
+
+## V2.0.64
+
+- Slowed the SikkenWorks intro to 150 ms per frame and the RUPTURE intro to 50 ms per frame. The nominal total is 7.95 seconds.
+
 ## V2.0.61 | Plop bij de knopverlichting
+
+## V2.0.63
+
+- Display all eight Intro1 frames in order. Each stays visible for at least 100 ms after transfer, even when startup work delays rendering. Intro2 begins at its first frame.
 
 ## V2.0.62
 

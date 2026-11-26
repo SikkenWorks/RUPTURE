@@ -7,7 +7,7 @@ sys.path.insert(0,str(R/'vendor/etch-v1.88-source/tools'))
 import fm1_fwsc as fw
 sha=lambda data:hashlib.sha256(data).hexdigest()
 m=json.loads((R/'RELEASE-MANIFEST.json').read_text())
-assert m['version']=='2.0.62'
+assert m['version']=='2.0.65'
 assert not m['hardware_verified'] and not m['release_ready']
 assert not m['storage_audio_v260']['poweroff_pop_fixed']
 trusted=R/'reference/firmware/RUPTURE-V1.86.1.fwsc'
@@ -19,16 +19,16 @@ for prefix,apppath,optpath,experimental in (
  ('experimental_','cpu1-fx-app.bin','cpu1-fx-build-options.json',True),
 ):
  name=m[prefix+'firmware_file'];pkg=(R/name).read_bytes()
- assert name=='RUPTURE-V2.0.62-'+('CORE2-EXPERIMENTAL' if experimental else 'STABLE')+'.fwsc'
+ assert name=='RUPTURE-V2.0.65-'+('CORE2-EXPERIMENTAL' if experimental else 'STABLE')+'.fwsc'
  assert fw.verify_fwsc(R/name)[1]==[]
  assert len(pkg)==m[prefix+'firmware_bytes'] and sha(pkg)==m[prefix+'firmware_sha256']
  app=(R/'native-build'/apppath).read_bytes()
  assert len(app)==m[prefix+'app_bytes'] and sha(app)==m[prefix+'app_sha256']
  opts=json.loads((R/'native-build'/optpath).read_text())
- assert opts['app_sha256']==sha(app) and opts['version']=='RUPTURE V2.0.62'
+ assert opts['app_sha256']==sha(app) and opts['version']=='RUPTURE V2.0.65'
  assert opts['cpu1_full_fx_live_lab_enabled']==experimental
  assert opts['storage_writes'] and opts['ota_writes'] and not opts['hardware_verified']
- assert not fw.validate_app_binary(app) and b'V2.0.62' in app
+ assert not fw.validate_app_binary(app) and b'V2.0.65' in app
  entries={e['name']:e['data'] for e in fw.parse_ufw(pkg)['entries']}
  assert entries['ota.bin']==t['ota.bin']
  assert entries['flash.bin'][:0x4000]==t['flash.bin'][:0x4000]
@@ -53,4 +53,4 @@ for installer in ('index.html','WebInstaller.html'):
   assert meta['version']==m['version'] and meta['sha256']==sha(packages[0])
 checks=json.loads((R/'tests/v260_preserved_sources.json').read_text())
 for path,wanted in checks.items():assert sha((R/path).read_bytes())==wanted,path
-print('PASS V2.0.62: 2 verified FWSCs, exact native apps, trusted OTA/header, exact offline embeds/hashes/docs,',len(checks),'unchanged DSP/storage/HAL sources; physical/power-off claims remain unverified')
+print('PASS V2.0.65: 2 verified FWSCs, exact native apps, trusted OTA/header, exact offline embeds/hashes/docs,',len(checks),'unchanged DSP/storage/HAL sources; physical/power-off claims remain unverified')

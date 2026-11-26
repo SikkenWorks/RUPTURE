@@ -704,8 +704,8 @@ static void ru_seq_screen(const RuState *v){
 /* Packed frames from the supplied Intro1 and Intro2 PNGs. */
 #include "rupture_intro_frames.h"
 #define RU_INTRO_LOGO_COUNT 8u
-#define RU_INTRO_LOGO_MS 100u
-#define RU_INTRO_MONO_MS 34u
+#define RU_INTRO_LOGO_MS 150u
+#define RU_INTRO_MONO_MS 50u
 #define RU_INTRO_FRAMES (RU_INTRO_LOGO_COUNT + sizeof(ru_intro_mono_offsets) / sizeof(ru_intro_mono_offsets[0]))
 #define RU_INTRO_LOGO_DURATION_MS (RU_INTRO_LOGO_COUNT * RU_INTRO_LOGO_MS)
 #define RU_INTRO_DURATION_MS (RU_INTRO_LOGO_DURATION_MS + (RU_INTRO_FRAMES - RU_INTRO_LOGO_COUNT) * RU_INTRO_MONO_MS)
@@ -1285,7 +1285,7 @@ static void ru_render_raw(const RuState *v){ru_intro_logo_pending=0u;ru_clear();
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V2.0.62","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V2.0.65","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

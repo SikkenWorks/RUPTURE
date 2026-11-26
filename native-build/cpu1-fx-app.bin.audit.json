@@ -1,7 +1,7 @@
 {
   "target": "M-VAVE FM-1 / JieLi AC791N-WL82 / pi32v2",
   "app_bytes": 559644,
-  "app_sha256": "94caf9dc86958f5bdc00a8c5bca2da7e12d2de355315306a9c760d4673575255",
+  "app_sha256": "4479bb5fc84d09c7134d638e7a188a0c00e5a17a2d97a342da1bcd5587b42fc2",
   "app_slot_bytes": 581564,
   "headroom_bytes": 21920,
   "expected_start": "0x2000120",

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Clean full-source V2.0.62 export; exactly two current root firmwares."""
+"""Clean full-source V2.0.65 export; exactly two current root firmwares."""
 from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
 import hashlib,json,re
 R=Path(__file__).resolve().parents[1]
 M=json.loads((R/'RELEASE-MANIFEST.json').read_text())
-assert M['version']=='2.0.62'
+assert M['version']=='2.0.65'
 firmware={M['firmware_file'],M['experimental_firmware_file']}
 for prefix in ('','experimental_'):
  p=R/M[prefix+'firmware_file']
@@ -34,9 +34,9 @@ for required in (
 ):assert required in names,required
 assert {n for n in names if '/' not in n and n.endswith('.fwsc')}==firmware
 assert all(not n.startswith('vendor/etch-v1.88-source/build/') for n in names)
-out=R.parents[1]/'deliverables/RUPTURE-FM1-V2.0.62-CLEAN-FULL-PROJECT.zip'
+out=R.parents[1]/'deliverables/RUPTURE-FM1-V2.0.65-CLEAN-FULL-PROJECT.zip'
 out.parent.mkdir(exist_ok=True,parents=True)
-prefix='RUPTURE-FM1-V2.0.62/'
+prefix='RUPTURE-FM1-V2.0.65/'
 with ZipFile(out,'w',ZIP_DEFLATED,compresslevel=6) as z:
  for p in files:z.write(p,prefix+p.relative_to(R).as_posix())
 with ZipFile(out) as z:
