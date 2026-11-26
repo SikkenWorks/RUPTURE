@@ -701,116 +701,50 @@ static void ru_seq_screen(const RuState *v){
    (v->seq_recording&&!v->seq_playing?"REC ARMED / PLAY TO START":
     (v->seq_recording?"REC: PRESETS BPM / ALG CLICK":"SEQ+K4 SLIDE / SAVE SEQUENCES")));
 }
-/* Legacy V2.0.1 Signal Breach assets remain available and unchanged. */
-#include "rupture_v2_signal_breach_sprites.h"
-#include "rupture_intro_timeline.h"
-#include "rupture_sikkenworks_boot_logo.h"
-#define RU_SPLASH_STEPS RU_INTRO_FRAMES
+/* Packed frames from the supplied Intro1 and Intro2 PNGs. */
+#include "rupture_intro_frames.h"
+#define RU_INTRO_LOGO_COUNT 8u
+#define RU_INTRO_LOGO_MS 100u
+#define RU_INTRO_MONO_MS 34u
+#define RU_INTRO_FRAMES (RU_INTRO_LOGO_COUNT + sizeof(ru_intro_mono_offsets) / sizeof(ru_intro_mono_offsets[0]))
+#define RU_INTRO_LOGO_DURATION_MS (RU_INTRO_LOGO_COUNT * RU_INTRO_LOGO_MS)
+#define RU_INTRO_DURATION_MS (RU_INTRO_LOGO_DURATION_MS + (RU_INTRO_FRAMES - RU_INTRO_LOGO_COUNT) * RU_INTRO_MONO_MS)
 
-/* Case-sensitive intro lettering. Regular UI font remains untouched. */
-static const uint8_t ru_intro_lower[26][7]={
- {0,0,14,1,15,17,15},   /* a */
- {16,16,30,17,17,17,30},/* b */
- {0,0,15,16,16,16,15},  /* c */
- {1,1,15,17,17,17,15},  /* d */
- {0,0,14,17,31,16,15},  /* e */
- {6,9,8,28,8,8,8},      /* f */
- {0,15,17,17,15,1,14},  /* g */
- {16,16,30,17,17,17,17},/* h */
- {4,0,12,4,4,4,14},     /* i */
- {2,0,6,2,2,18,12},     /* j */
- {16,16,18,20,24,20,18},/* k */
- {12,4,4,4,4,4,14},     /* l */
- {0,0,26,21,21,21,21}, /* m */
- {0,0,30,17,17,17,17}, /* n */
- {0,0,14,17,17,17,14}, /* o */
- {0,30,17,17,30,16,16},/* p */
- {0,15,17,17,15,1,1},  /* q */
- {0,0,22,24,16,16,16}, /* r */
- {0,0,15,16,14,1,30},  /* s */
- {8,8,28,8,8,9,6},     /* t */
- {0,0,17,17,17,19,13}, /* u */
- {0,0,17,17,17,10,4},  /* v */
- {0,0,17,17,21,21,10}, /* w */
- {0,0,17,10,4,10,17},  /* x */
- {0,17,17,17,15,1,14}, /* y */
- {0,0,31,2,4,8,31}     /* z */
-};
-static const uint8_t ru_intro_bayer[4][4]={
- {0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}
-};
-#define RU_INTRO_GLYPH_STEP 11
-#define RU_INTRO_GLYPH_SCALE 2
-static void ru_intro_set(int x,int y,uint8_t opacity){
- if(opacity==0u||(unsigned)x>=RU_W||(unsigned)y>=RU_H)return;
- if(opacity==16u||ru_intro_bayer[y&3][x&3]<opacity)ru_set(x,y);
+static uint8_t ru_intro_frame_at(uint32_t elapsed){
+ if(elapsed<RU_INTRO_LOGO_DURATION_MS)return (uint8_t)(elapsed/RU_INTRO_LOGO_MS);
+ uint32_t frame=RU_INTRO_LOGO_COUNT+(elapsed-RU_INTRO_LOGO_DURATION_MS)/RU_INTRO_MONO_MS;
+ return (uint8_t)(frame<RU_INTRO_FRAMES?frame:RU_INTRO_FRAMES-1u);
 }
-static const uint8_t *ru_intro_glyph(char c){
- if(c>='a'&&c<='z')return ru_intro_lower[(uint8_t)(c-'a')];
- for(unsigned i=0;ru_font_chars[i];i++)if(ru_font_chars[i]==c)return ru_font[i];
- return ru_font[36]; /* unknown -> blank */
-}
-static void ru_intro_text(const char *str,int x,int y,uint8_t opacity){
- for(;*str;str++,x+=RU_INTRO_GLYPH_STEP){
-  const uint8_t *glyph=ru_intro_glyph(*str);
-  for(int row=0;row<7;row++)for(int col=0;col<5;col++)
-   if(glyph[row]&(uint8_t)(16u>>col))
-    for(int yy=0;yy<RU_INTRO_GLYPH_SCALE;yy++)
-     for(int xx=0;xx<RU_INTRO_GLYPH_SCALE;xx++)
-      ru_intro_set(x+col*RU_INTRO_GLYPH_SCALE+xx,
-                   y+row*RU_INTRO_GLYPH_SCALE+yy,opacity);
- }
-}
-static int ru_intro_width(const char *str){int n=0;while(str[n])n++;return n*RU_INTRO_GLYPH_STEP;}
-static void ru_intro_center(const char *str,int y,uint8_t opacity){
- ru_intro_text(str,(RU_W-ru_intro_width(str))/2,y,opacity);
-}
-/* Prefix, word and suffix occupy fixed slots. Shake is clipped to the word
- * slot; the rest of the paragraph cannot move by even one pixel. */
-static void ru_intro_last_line(const RuIntroFrame *frame){
- static const char prefix[]="the ";
- static const char suffix[]=" began.";
- static const char normal[]="Rupture";
- static const char changed[]="RUPTURE";
- const int x=(RU_W-ru_intro_width(prefix)-ru_intro_width(normal)-ru_intro_width(suffix))/2;
- const int word_x=x+ru_intro_width(prefix);
- const int suffix_x=word_x+ru_intro_width(normal);
- const int y=184;
- ru_intro_center("And then",160,frame->opacity);
- ru_intro_text(prefix,x,y,frame->opacity);
- ru_intro_text(suffix,suffix_x,y,frame->opacity);
- if(frame->word_visible){
-  const char *word=frame->uppercase?changed:normal;
-  const int px=word_x+frame->word_dx,py=y+frame->word_dy;
-  for(int i=0;word[i];i++){
-   const uint8_t *glyph=ru_intro_glyph(word[i]);
-   for(int row=0;row<7;row++)for(int col=0;col<5;col++){
-    if(!(glyph[row]&(uint8_t)(16u>>col)))continue;
-    for(int yy=0;yy<RU_INTRO_GLYPH_SCALE;yy++)for(int xx=0;xx<RU_INTRO_GLYPH_SCALE;xx++){
-     const int xpos=px+i*RU_INTRO_GLYPH_STEP+col*RU_INTRO_GLYPH_SCALE+xx;
-     if(xpos>=word_x&&xpos<suffix_x)
-      ru_intro_set(xpos,py+row*RU_INTRO_GLYPH_SCALE+yy,frame->opacity);
-    }
-   }
+
+/* Each generated block decodes to its fixed size. Backward copies can overlap. */
+static void ru_intro_unpack(uint32_t offset,uint8_t *output,uint32_t size){
+ const uint8_t *input=ru_intro_data+offset;
+ uint8_t *end=output+size;
+ while(output<end){
+  uint32_t token=*input++;
+  if(token<128u){
+   for(uint32_t count=token+1u;count;count--)*output++=*input++;
+  }else{
+   uint32_t distance=(uint32_t)input[0]*256u+input[1];
+   input+=2;
+   const uint8_t *match=output-distance;
+   for(uint32_t count=(token&127u)+3u;count;count--)*output++=*match++;
   }
  }
 }
-/* The FM1's ST7789 is RGB565. Reserve the monochrome UI framebuffer for
- * text; the boot photograph has a dedicated grayscale LCD stripe renderer. */
-static uint8_t ru_intro_gray_pending;
+
+static uint8_t ru_intro_logo_pending;
 static void ru_brand(const RuState *v){
- uint8_t index=v->boot_step?(uint8_t)(v->boot_step-1u):0u;
- RuIntroFrame frame=ru_intro_frame_desc(index);
- if(frame.scene==RU_INTRO_SCENE_LOGO){
-  /* +1 distinguishes an all-black logo fade from a text/UI frame. */
-  ru_intro_gray_pending=(uint8_t)(frame.opacity+1u);
-  return;
+ uint8_t frame=v->boot_step?(uint8_t)(v->boot_step-1u):0u;
+ if(frame<RU_INTRO_LOGO_COUNT){ru_intro_logo_pending=frame+1u;return;}
+ uint32_t mono_frame=frame-RU_INTRO_LOGO_COUNT;
+ if(mono_frame>=RU_INTRO_FRAMES-RU_INTRO_LOGO_COUNT)mono_frame=RU_INTRO_FRAMES-RU_INTRO_LOGO_COUNT-1u;
+ uint8_t row_ids[480];
+ ru_intro_unpack(ru_intro_mono_offsets[mono_frame],row_ids,sizeof(row_ids));
+ for(uint32_t y=0;y<240u;y++){
+  uint32_t row=(uint32_t)row_ids[y*2u]+256u*row_ids[y*2u+1u];
+  for(uint32_t x=0;x<30u;x++)ru_bits[y*30u+x]=ru_intro_rows[row*30u+x];
  }
- ru_intro_center("And lo, the heavens",50,frame.opacity);
- ru_intro_center("fell silent, and the",74,frame.opacity);
- ru_intro_center("earth trembled",98,frame.opacity);
- ru_intro_center("beneath mankind.",122,frame.opacity);
- ru_intro_last_line(&frame);
 }
 /* V1.30: pixel meadow fracturing into a canyon. Visual work is exclusively
  * in the UI loop. No DSP, additional framebuffer, floats, heap or random IO.
@@ -1102,7 +1036,7 @@ choices:
  ru_center("TURN SELECT   SEL OK",120,204,1);
  ru_rect(7,226,226,1);ru_center("RUPTURE FIRST RUN",120,232,1);
 }
-static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
+static void ru_render_raw(const RuState *v){ru_intro_logo_pending=0u;ru_clear();if(v->page==RU_PAGE_WELCOME){ru_welcome_draw(v);return;}if(v->saver_active){ru_crack_saver(v->saver_frame);return;}uint8_t page=v->page;if(page==RU_PAGE_LOADING){ru_brand(v);return;}const char *t=(page==RU_PAGE_SAFE&&v->audio_fault)?"AUDIO FAULT":(page<RU_PAGE_COUNT?ru_page_names[page]:"RUPTURE");ru_header(t,v);
  if(page==RU_PAGE_BUG_REPORT){ru_bug_qr();return;}
  if(page==RU_PAGE_MENU){
  static const char *const options[]={"FILTER","ADSR","LFO","FX","SEQUENCER","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","NOTE MEMORY","GLIDE","PROJECTS","MIDI"};
@@ -1351,7 +1285,7 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V2.0.61","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V2.0.62","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){

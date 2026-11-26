@@ -265,7 +265,7 @@ static uint8_t ru_crt_active=0u; /* set per rendered page; QR has no optics */
    bus writes and do not write outside its verified transfer bounds. */
 static uint32_t ru_band_crc[15];
 static uint8_t ru_band_valid;
-static uint8_t ru_gray_logo_last;
+static uint8_t ru_intro_logo_last;
 /* CRT inverse sampling can use pixels in neighboring rows (up to 8px).
  * Include that guard region in changed-band hashes to avoid stale LCD stripes. */
 static uint32_t ru_band_hash(uint32_t band){
@@ -278,33 +278,27 @@ static uint32_t ru_band_hash(uint32_t band){
  return h;
 }
 static void ru_commit(void){
- /* Render the user's real grayscale PNG directly to the RGB565 ST7789.
-  * The 1-bit UI buffer cannot represent the original image: putting a Bayer
-  * matrix there previously wrecked the pixel art. Use the existing DMA
-  * stripe instead, with no heap, extra framebuffer or per-pixel SPI calls.
-  * Do not re-send identical held frames. Text returns to the normal UI. */
- if(ru_intro_gray_pending){
-  if(ru_gray_logo_last!=ru_intro_gray_pending){
-   uint32_t alpha=(uint32_t)ru_intro_gray_pending-1u;
+ /* Draw an RGB565 Intro1 stripe using the existing LCD DMA staging area. */
+ if(ru_intro_logo_pending){
+  if(ru_intro_logo_last!=ru_intro_logo_pending){
+   uint32_t frame=ru_intro_logo_pending-1u;
+   const uint16_t *palette=ru_intro_palettes+frame*256u;
    uint16_t *output=(uint16_t*)((uint8_t*)etch_scope_canvas+7200u);
-   /* 5 x 48-row transfers fit the proven LCD DMA staging stripe. */
+   uint8_t *indices=(uint8_t*)output;
    for(uint32_t band=0;band<5u;band++){
-    for(uint32_t j=0;j<240u*48u;j++){
-     uint32_t pos=band*(240u*48u)+j;
-     uint32_t gray=((uint32_t)ru_sikkenworks_logo_gray[pos]*alpha+8u)>>4;
-     uint16_t rgb=(uint16_t)(((gray>>3)<<11u)|((gray>>2)<<5u)|(gray>>3));
-     output[j]=(uint16_t)((rgb>>8)|(rgb<<8));
-    }
+    ru_intro_unpack(ru_intro_logo_offsets[frame*5u+band],indices,240u*48u);
+    /* Expand backwards so writing RGB565 never overwrites unread indices. */
+    for(uint32_t count=240u*48u;count;count--)output[count-1u]=palette[indices[count-1u]];
     lcd_blit(0,band*48u,240u,48u,output);
     lcd_sync();
    }
-   ru_gray_logo_last=ru_intro_gray_pending;
+   ru_intro_logo_last=ru_intro_logo_pending;
   }
   ru_band_valid=0u;
   etch_display_invalidate(&etch_panel_cache);
   return;
  }
- ru_gray_logo_last=0u;
+ ru_intro_logo_last=0u;
  /* Preserve the existing 15 x 16px changed-band staging and LCD protocol.
   * Transform pixels directly into existing DMA stripe memory, no new buffer. */
  uint16_t *output=(uint16_t*)((uint8_t*)etch_scope_canvas+7200u);
@@ -327,7 +321,7 @@ static void ru_commit(void){
  ru_band_valid=1u;
  etch_display_invalidate(&etch_panel_cache);
 }
-/* Start the exact original PNG/text timeline before loading projects. Display
+/* Start Intro1 and Intro2 before loading projects. Display
  * is serviced at safe foreground milestones; the synth/codec warm up while
  * these frames are on screen, never inside a real-time audio interrupt. */
 extern volatile uint32_t etch_ms;
@@ -336,12 +330,11 @@ static uint8_t ru_boot_intro_started,ru_boot_intro_last_frame;
 static void ru_boot_intro_pump(void){
  if(!ru_boot_intro_started)return;
  uint32_t elapsed=(uint32_t)(etch_ms-ru_boot_intro_since_ms);
- uint32_t frame=elapsed/RU_INTRO_FRAME_MS;
- if(frame>=RU_SPLASH_STEPS)frame=RU_SPLASH_STEPS-1u;
+ uint8_t frame=ru_intro_frame_at(elapsed);
  if(ru_boot_intro_last_frame==(uint8_t)frame)return;
  ru_boot_intro_last_frame=(uint8_t)frame;
  RuState v={0};v.page=RU_PAGE_LOADING;
- /* The uploaded nearest-neighbor PNG stays unchanged; no CRT/dithering. */
+ /* Use the supplied animation frames without CRT processing. */
  v.boot_step=(uint8_t)(frame+1u);v.crt_enabled=0u;ru_crt_active=0u;
  ru_render(&v);ru_commit();
 }
@@ -6200,10 +6193,7 @@ void fm1_cstart(void){
    /* First boot on this firmware version: run the non-destructive setup wizard. */
    ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
    ru_welcome.crt=ru_crt_enabled;
-  }else{
-   /* The original 1.1 s WELCOME BACK will be rendered AFTER the complete
-    * logo and while the already prepared audio output remains silent. */
-   first_frame=1u;
+
   }
  }
  native_mono_mode=1u;native_project_cfg.mono_mode=1u;
@@ -6244,8 +6234,8 @@ void fm1_cstart(void){
  native_seq_led_refresh();
 #ifdef RUPTURE_BUILD
  if(!safe && !native_keyboard_mode){
-  /* The original 41-key LED startup wave runs while the remaining logo,
-   * quote and title animate. Keep the codec's clock/analog/LED-quiet gates
+  /* The original 41-key LED startup wave runs while the two intro
+   * sequences are displayed. Keep the codec's clock/analog/LED-quiet gates
    * and the extra 500 ms screen-quiet interval at their proven durations. */
   uint32_t ru_boot_led_last_ms=etch_ms;
   while((uint32_t)(etch_ms-ru_boot_intro_since_ms)<RU_INTRO_DURATION_MS ||
@@ -6284,24 +6274,6 @@ void fm1_cstart(void){
   }
   ru_boot_intro_pump();ru_boot_intro_started=0u;
   ru_splash_done=1u;ru_band_valid=0u;first_frame=1u;
-  if(ru_welcome_done){
-   /* Restore the original returning user's WELCOME BACK screen. Present
-    * it after the complete SikkenWorks intro, while audio is prepared but
-    * STILL digitally muted. PLAY must always be immediately playable. */
-   RuState welcome_preview={0};welcome_preview.page=RU_PAGE_WELCOME;
-   welcome_preview.welcome_phase=RU_WELCOME_RETURN;
-   welcome_preview.crt_enabled=ru_crt_enabled;
-   ru_crt_active=ru_crt_enabled;ru_render(&welcome_preview);ru_commit();
-   uint32_t welcome_since_ms=etch_ms;
-   while((uint32_t)(etch_ms-welcome_since_ms)<1100u){
-#if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
-    /* Never stall 48k USB capture during the returning-user greeting. */
-    if(boot_audio&&!native_updating)uac_foreground_service();
-#endif
-    fm1_wdt_feed();fm1_delay_ms(2u);
-   }
-   ru_band_valid=0u;first_frame=1u;
-  }
   /* First RUPTURE PLAY frame and sample unmute happen together, with all
    * presets and FX state already compiled, and the DMA ring prefilled. */
   screen();

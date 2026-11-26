@@ -1,10 +1,10 @@
 {
-  "app_sha256": "d44a17016834148ff511dad5b3478ead62500c44cf1be7a00fc47f104027e2e2",
+  "app_sha256": "927580acf99be0737ee10652862179e1562c124b3631c09bc1e93a626d036381",
   "storage_writes": true,
   "ota_writes": true,
   "readonly_hardware_test": false,
   "flash_read_only": false,
-  "version": "RUPTURE V2.0.61",
+  "version": "RUPTURE V2.0.62",
   "hardware_verified": false,
   "cpu1_ram_integrity_lab_enabled": false,
   "cpu1_shadow_fir_probe_enabled": false,
