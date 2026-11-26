@@ -1,9 +1,9 @@
 {
   "target": "M-VAVE FM-1 / JieLi AC791N-WL82 / pi32v2",
-  "app_bytes": 559644,
-  "app_sha256": "4479bb5fc84d09c7134d638e7a188a0c00e5a17a2d97a342da1bcd5587b42fc2",
+  "app_bytes": 560604,
+  "app_sha256": "a3bc29fca5d0ca19e7f04f5030c510ccc4db59ba1f59978d53f337926b9c173c",
   "app_slot_bytes": 581564,
-  "headroom_bytes": 21920,
+  "headroom_bytes": 20960,
   "expected_start": "0x2000120",
   "entry_stub_ok": true,
   "safe_ram": [
@@ -16,13 +16,13 @@
       "name": ".ram_text",
       "size": 3960,
       "vma": 29360128,
-      "lma": 34110020,
-      "file_offset": 556288,
+      "lma": 34110980,
+      "file_offset": 557568,
       "nobits": false
     },
     {
       "name": ".text",
-      "size": 555300,
+      "size": 556260,
       "vma": 33554720,
       "lma": 33554720,
       "file_offset": 800,
@@ -48,8 +48,8 @@
       "name": ".data",
       "size": 384,
       "vma": 29392896,
-      "lma": 34113980,
-      "file_offset": 560896,
+      "lma": 34114940,
+      "file_offset": 562176,
       "nobits": false
     },
     {
@@ -57,7 +57,7 @@
       "size": 95452,
       "vma": 29393280,
       "lma": 29393280,
-      "file_offset": 561280,
+      "file_offset": 562560,
       "nobits": true
     },
     {

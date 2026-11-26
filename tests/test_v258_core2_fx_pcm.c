@@ -49,7 +49,7 @@ void ru_cpu1_fx_publish(uint32_t ready){
 }
 uint32_t ru_cpu1_fx_collect(void){return last_end;}
 
-static void setup(const uint8_t types[4],uint32_t count){
+static void setup(const uint8_t *types,uint32_t count){
  memset(&cfg,0,sizeof(cfg));
  etch_fx_defaults(&cfg.fx_settings);
  cfg.mono_mode=1u;cfg.gain=18000u;
@@ -74,6 +74,13 @@ static uint32_t stress_random(void){
 }
 static uint32_t stress_events(uint32_t block){
  uint32_t rand=stress_random();
+ cfg.main_wave=(uint8_t)((block/53u)&1u);
+ cfg.filter_type=(uint8_t)((block/17u)%5u);
+ cfg.cutoff=(uint16_t)(800u+(rand%30000u));
+ cfg.resonance=(uint16_t)((rand>>16u)&32767u);
+ cfg.fx_chain.enabled=block%37u==0u?0xabu:0xffu;
+ cfg.fx_chain.parameter[2][0]=(uint16_t)((block/23u)%3u);
+ cfg.fx_chain.parameter[1][3]=(uint16_t)(1u+(rand%32767u));
  if((block%11u)==0u)etch_native_midi(&audio,0x90u,(uint8_t)(36u+rand%36u),100u);
  if((block%13u)==0u)etch_native_midi(&audio,0x80u,(uint8_t)(36u+rand%36u),0u);
  if((block%57u)==0u)etch_native_midi(&audio,0xb0u,123u,0u);
@@ -82,13 +89,18 @@ static uint32_t stress_events(uint32_t block){
          (block%7u==2u?(1u<<((rand>>8u)%18u)):0u));
 }
 static void compare_stress(uint32_t fail_lane,uint32_t fail_mode){
- const uint8_t heavy[4]={RU_FX_MOSFET,RU_FX_DISTORTION,RU_FX_REVERB,RU_FX_SAND};
- setup(heavy,4u);use_cpu1=0u;event_seed=0x14a2b37fu;
+ const uint8_t heavy[8]={RU_FX_MOSFET,RU_FX_DISTORTION,RU_FX_REVERB,RU_FX_SAND,
+   RU_FX_DELAY,RU_FX_CHORUS,RU_FX_COMP,RU_FX_WAH};
+ setup(heavy,8u);cfg.fx_chain.independent=1u;
+ cfg.sub_type[1]=1u;cfg.sub_blend[1]=49u;cfg.sub_detune[1]=43u;
+ use_cpu1=0u;event_seed=0x14a2b37fu;
  for(uint32_t i=0u;i<STRESS_BLOCKS;i++){
   uint32_t keys=stress_events(i);
   etch_native_render_stereo(&audio,&cfg,keys,stress_reference[i],128u);
  }
- setup(heavy,4u);use_cpu1=1u;event_seed=0x14a2b37fu;
+ setup(heavy,8u);cfg.fx_chain.independent=1u;
+ cfg.sub_type[1]=1u;cfg.sub_blend[1]=49u;cfg.sub_detune[1]=43u;
+ use_cpu1=1u;event_seed=0x14a2b37fu;
  inject_lane=fail_lane;inject_mode=0u;inject_hit=0u;
  for(uint32_t i=0u;i<STRESS_BLOCKS;i++){
   uint32_t keys=stress_events(i);
@@ -153,6 +165,6 @@ int main(void){
  compare_stress(64u,2u);
  assert(stream_messages>1000u&&stream_publications==stream_messages);
  puts("PASS V2.0.58: 100 ordered FX pairs + 6 heavy 4-FX chains, 81408 stereo frames CPU0/core2 exact");
- puts("PASS V2.0.58: 384000 stereo frames, 4 injected CPU1 watermark stalls/partials sample-exact");
+ puts("PASS V2.1.0: 384000 stereo frames with eight FX slots and two subs, 4 injected CPU1 stalls/partials sample-exact");
  return 0;
 }

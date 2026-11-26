@@ -1,3 +1,9 @@
+## V2.1.0
+
+- Fixed independent TILT, OCTAVE FUZZ and SANDPAPER inserts at zero mix reusing the previous same-type slot’s wet delta.
+- Use exact bounded integer arithmetic in ordered compressor, chorus, delay and slot fades. Reuse the MOSFET result when both input channels are equal.
+- FM1 DMA timing and analog capture remain to be measured on hardware.
+
 ## V2.0.65
 
 - Play the SikkenWorks branding from the foreground startup loop after USB, storage, and project setup. Give each of the eight RGB565 frames a full 150 ms after transfer. Decode indexed pixels into separate scratch space before expanding them into the LCD DMA buffer.

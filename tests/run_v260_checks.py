@@ -11,6 +11,16 @@ fx=['native_fx.c','rupture_eq2.c']
 sound=fx+['native_cxs_q15.c','wave_editor.c','native_performance.c','native_wave_fx.c']
 store=['wave_store.c','native_project_codec.c','native_pattern_bank.c','native_performance.c']+fx
 cases=[
+ ('tests/test_v210_zero_wet_slots.c',fx,[]),
+ ('tests/test_v138_all_filters.c',[],[]),
+ ('tests/test_v210_sub_eq_reverb_stress.c',fx+['native_cxs_q15.c'],[]),
+ ('tests/test_v211_growl_eq_reverb_stress.c',fx+['native_cxs_q15.c'],[]),
+ ('tests/test_v213_expression_eq_reverb_stress.c',fx+['native_cxs_q15.c'],[]),
+ ('tests/test_v217_growl_sub_distortion_save.c',store,[]),
+ ('tests/test_v219_preset_load_rt.c',[],[]),
+ ('tests/test_v238_note_dma_meter.c',[],[]),
+ ('tests/test_v239_note_scope_guard.c',[],[]),
+ ('tests/test_v226_fx_combinations.c',fx+['native_cxs_q15.c'],[]),
  ('tests/test_v258_note_release_runtime.c',['audio_core.c']+sound,[]),
  ('tests/test_v258_note_release_runtime.c',['audio_core_core2.c']+sound,['-DETCH_CPU1_FX_LIVE_LAB=1']),
  ('tests/test_v258_core2_fx_pcm.c',['audio_core_core2.c']+sound,['-DETCH_CPU1_FX_LIVE_LAB=1']),

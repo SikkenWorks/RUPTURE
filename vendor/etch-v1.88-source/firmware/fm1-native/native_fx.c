@@ -23,15 +23,14 @@
 #ifndef RU_FX_SAND_CACHE
 #define RU_FX_SAND_CACHE 1
 #endif
-/* Exact signed truncation for bounded Q15 products. In Sandpaper every
- * numerator has |n| <= 32768*32767; replacing /32767 with one >>15 and a
- * single remainder correction avoids a general integer division. The
- * correction matters at every Q15 boundary: no PCM rounding may change. */
-static inline int32_t ru_sand_div32767_exact(int32_t n){
+/* Exact signed truncation for bounded Q15 products. The largest possible
+ * magnitude is 65535*32767 (difference of two PCM samples times a mix).
+ * Estimate with a shift, then correct the quotient at the two boundaries. */
+static inline int32_t ru_fx_div32767_exact(int32_t n){
  uint32_t mag=(uint32_t)(n<0?-n:n);
  uint32_t q=mag>>15u;
  uint32_t rest=mag-q*32767u;
- q+=(uint32_t)(rest>=32767u);
+ q+=(uint32_t)(rest>=32767u)+(uint32_t)(rest>=65534u);
  return n<0?-(int32_t)q:(int32_t)q;
 }
 #endif
@@ -521,7 +520,7 @@ static RU_FX_FAST_TEXT int16_t rupture_sandpaper_process(struct etch_native_fx *
  int32_t factor=32767-reduction;
  if(factor<12000)factor=12000;
 #if RU_FX_SAND_CACHE
- wet=ru_sand_div32767_exact(wet*factor);
+ wet=ru_fx_div32767_exact(wet*factor);
 #else
  wet=(wet*factor)/32767;
 #endif
@@ -1550,8 +1549,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
      * 1=dry, 32767=fully wet. No per-sample change outside expression. */
     if(separated?p[0]:mosfet){
      uint16_t gain_q8=(uint16_t)(256u+(((uint32_t)qclamp(separated?p[0]:mosfet)*3u)>>7));
-     l=ru_mosfet_shaper(l,gain_q8);
-     r=ru_mosfet_shaper(r,gain_q8);
+     l=ru_mosfet_shaper(dry_l,gain_q8);
+     r=dry_l==dry_r?l:ru_mosfet_shaper(dry_r,gain_q8);
     }
     if(separated && p[3]!=0u && p[3]!=32767u){
      uint16_t wet=p[3]==1u?0u:p[3];
@@ -1583,7 +1582,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       }
      }
      *gain=etch_fx_slew(*gain,*target_gain);
-     l=(l*(*gain))/32767;r=(r*(*gain))/32767;
+     l=ru_fx_div32767_exact(l*(*gain));r=ru_fx_div32767_exact(r*(*gain));
     }else{
      if(!(shared_fx_done&16u)){
       shared_fx_done|=16u;
@@ -1597,7 +1596,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       }
       s->comp_gain=etch_fx_slew(s->comp_gain,s->comp_target);
      }
-     l=(l*s->comp_gain)/32767;r=(r*s->comp_gain)/32767;
+     l=ru_fx_div32767_exact(l*s->comp_gain);r=ru_fx_div32767_exact(r*s->comp_gain);
     }
     break;
    }
@@ -1609,6 +1608,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
      int32_t target=(uint32_t)p[2]*32767u/100u;
      int32_t *mix=&s->ru_slot_tilt[slot].mix;
      *mix=etch_fx_slew(*mix,target);
+     tilt_delta=0;
      if(!*mix)s->ru_slot_tilt[slot].lp=0;
      else{
       int32_t alpha=250+(uint32_t)p[1]*p[1]*2u;
@@ -1632,6 +1632,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       * Same bounded transfer curve and reciprocal table as the legacy FX. */
      int32_t *mix=&s->ru_slot_fuzz[slot].mix;
      *mix=etch_fx_slew(*mix,(uint32_t)p[3]*32767u/100u);
+     fuzz_delta=0;
      if(!*mix){
       s->ru_slot_fuzz[slot].dc=s->ru_slot_fuzz[slot].tone=0;
       s->ru_slot_fuzz[slot].input_lp=0;
@@ -1697,6 +1698,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
 #else
      *mix=etch_fx_slew(*mix,(uint32_t)p[3]*32767u/100u);
 #endif
+     sand_delta=0;
      if(!*mix){
       s->ru_slot_sand[slot].pole1=s->ru_slot_sand[slot].pole2=s->ru_slot_sand[slot].body=0;
       s->ru_slot_sand[slot].soft_slew=s->ru_slot_sand[slot].warm_slew=s->ru_slot_sand[slot].smooth_slew=0;
@@ -1720,7 +1722,7 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       int32_t factor=32767-reduction;
       if(factor<12000)factor=12000;
 #if RU_FX_SAND_CACHE
-      wet=ru_sand_div32767_exact(wet*factor);
+      wet=ru_fx_div32767_exact(wet*factor);
 #else
       wet=(wet*factor)/32767;
 #endif
@@ -1755,8 +1757,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       shared_fx_done|=1u;
       s->chorus[s->chorus_pos]=in;s->chorus_pos=(s->chorus_pos+1u)&(ETCH_CHORUS_SIZE-1u);
      }
-     l=clip16(l+((chorus_wl-in)*(*mix))/32767);
-     r=clip16(r+((chorus_wr-in)*(*mix))/32767);
+     l=clip16(l+ru_fx_div32767_exact((chorus_wl-in)*(*mix)));
+     r=clip16(r+ru_fx_div32767_exact((chorus_wr-in)*(*mix)));
     }else{
      uint16_t wet=qclamp(chorus);
      if(!(shared_fx_done&1u)){
@@ -1771,8 +1773,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       chorus_wr=etch_fx_chorus_read(s,281u*256u+shift_r);
       s->chorus[s->chorus_pos]=in;s->chorus_pos=(s->chorus_pos+1u)&(ETCH_CHORUS_SIZE-1u);
      }
-     l=clip16(l+((chorus_wl-in)*s->chorus_mix_smooth)/32767);
-     r=clip16(r+((chorus_wr-in)*s->chorus_mix_smooth)/32767);
+     l=clip16(l+ru_fx_div32767_exact((chorus_wl-in)*s->chorus_mix_smooth));
+     r=clip16(r+ru_fx_div32767_exact((chorus_wr-in)*s->chorus_mix_smooth));
     }
     break;
    }
@@ -1795,8 +1797,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
       * genuinely affects the sound without more PCM buffers. */
      combined_delay_feedback+=(delay_wl*(int32_t)qclamp(p[1]))>>15;
      combined_delay_count++;
-     l=clip16(l+(delay_wl*(*mix))/32767);
-     r=clip16(r+(delay_wr*(*mix))/32767);
+     l=clip16(l+ru_fx_div32767_exact(delay_wl*(*mix)));
+     r=clip16(r+ru_fx_div32767_exact(delay_wr*(*mix)));
      break;
     }
     if(!(shared_fx_done&2u)){
@@ -1808,8 +1810,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
      s->delay[s->delay_pos]=clip16(in+(fb*27)/32);
      s->delay_pos=(s->delay_pos+1u)&(ETCH_DELAY_SIZE-1u);
     }
-    l=clip16(l+(delay_wl*s->delay_mix_smooth)/32767);
-    r=clip16(r+(delay_wr*s->delay_mix_smooth)/32767);break;
+    l=clip16(l+ru_fx_div32767_exact(delay_wl*s->delay_mix_smooth));
+    r=clip16(r+ru_fx_div32767_exact(delay_wr*s->delay_mix_smooth));break;
    }
    case RU_FX_REVERB:{
     if(separated){
@@ -1878,8 +1880,8 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
    /* Signed 16-bit wet and dry: abs(wet-dry) <= 65535. With bounded
     * fade <= 32767, their product <= 2147385345 fits signed 32 bits.
     * Integer truncation is unchanged; two 64-bit divisions disappear. */
-   l=clip16(dry_l+((l-dry_l)*fade)/32767);
-   r=clip16(dry_r+((r-dry_r)*fade)/32767);
+   l=clip16(dry_l+ru_fx_div32767_exact((l-dry_l)*fade));
+   r=clip16(dry_r+ru_fx_div32767_exact((r-dry_r)*fade));
 #endif
   }
  }
