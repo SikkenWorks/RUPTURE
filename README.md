@@ -64,14 +64,14 @@ For the experimental CORE2 build, add `--dual-core-lab --dual-core-fx-live-lab`.
 | **JieLi Technology** | AC79-series SDK, toolchain and boot/configuration components. See the applicable SDK and toolchain notices. [AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) |
 | **SikkenWorks B1 and BEETLE** | B1 V4.3 HF2 is a reference for installer reconnect handling in the inherited ETCH source. BEETLE is a reference for the battery indicator UI. |
 
-The bundled upstream notices record the following provenance for Felucca and its components.
+The following entries document Felucca's upstream work and references. This table describes their role in Felucca. See the firmware sources and build configuration for the components used in RUPTURE.
 
 | Credit | Upstream contribution |
 | --- | --- |
 | **charlesvestal / X0X** | Browser emulator design reference. GPL-3.0. [X0X](https://github.com/charlesvestal/fm1-x0x) |
 | **Hügelton Instruments / CrispyZebra** | PHASE oscillator waveforms. GPL-3.0. [CrispyZebra](https://github.com/hugelton/CrispyZebra) |
 | **Hügelton Instruments** | Felucca drum voices and kit, Hügelton Sample Pack and controls artwork. GPL-3.0-only. |
-| **Electrosmith, Corp and Emilie Gillet / DaisySP** | Physical-model DSP. MIT. [DaisySP](https://github.com/electro-smith/DaisySP) |
+| **Electrosmith, Corp and Emilie Gillet / DaisySP** | Felucca's PHYS engine uses a fixed-point port of DaisySP models. RUPTURE V2.0.61 carries the upstream MIT notice only. [DaisySP](https://github.com/electro-smith/DaisySP) |
 | **Emilie Gillet / Rings** | Sympathetic string DSP. MIT. [Rings](https://github.com/pichenettes/eurorack) |
 | **Google Inc. and Pascal Gauthier / msfa** | FM synthesis core from Dexed. Apache-2.0 for msfa. [Dexed](https://github.com/asb2m10/dexed) |
 | **Hügelton Instruments / Fukiai** | Icon font. MIT. [Fukiai](https://github.com/hugelton/Fukiai) |
