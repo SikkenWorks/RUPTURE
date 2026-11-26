@@ -56,28 +56,16 @@ For the experimental CORE2 build, add `--dual-core-lab --dual-core-fx-live-lab`.
 
 ## Credits and license
 
-| Credit | Contribution |
+| Credit | Contribution to RUPTURE |
 | --- | --- |
-| **Joppe Sikken / SikkenWorks** | RUPTURE concept, sound design, CXS, interface, integration and development in Utrecht, the Netherlands. ETCH supplies the FM1 source base adapted for RUPTURE. [SikkenWorks](https://github.com/SikkenWorks) · [ETCH](https://github.com/SikkenWorks/ETCH) |
-| **Leo Kuroshita (@kurogedelic) / Hügelton Instruments** | Felucca provides the FM1 foundation used through ETCH, including startup, hardware drivers, interrupts, LCD, MIDI and OTA/recovery infrastructure. GPL-3.0-only. [Felucca](https://github.com/hugelton/Felucca) |
+| **Joppe Sikken / SikkenWorks** | RUPTURE concept, sound design, CXS, interface and development in Utrecht, the Netherlands. RUPTURE adapts the ETCH FM1 source base. [SikkenWorks](https://github.com/SikkenWorks) · [ETCH](https://github.com/SikkenWorks/ETCH) |
+| **Leo Kuroshita (@kurogedelic) / Hügelton Instruments** | Felucca provides underlying FM1 startup, hardware drivers, interrupts, LCD, USB MIDI/audio and OTA infrastructure carried through ETCH. GPL-3.0-only. [Felucca](https://github.com/hugelton/Felucca) |
+| **Juan Ignacio Antonucci / JIANT FM1, Melodee and charlesvestal / X0X** | The experimental CORE2 build adapts JIANT's second-core startup and exception handling. The source headers trace that work back to Melodee and X0X. GPL-3.0. [X0X](https://github.com/charlesvestal/fm1-x0x) |
+| **SikkenWorks B1 and BEETLE** | B1 V4.3 HF2 contributes updater reconnect handling in the WebInstaller. BEETLE informed the battery indicator design. |
+| **The Firmware Hub** | The OTA identity reply follows its convention for reporting the flash chip's JEDEC ID. |
 | **M-VAVE** | Original FM1 hardware and stock firmware. RUPTURE is independent firmware for the FM1. |
-| **JieLi Technology** | AC79-series SDK, toolchain and boot/configuration components. See the applicable SDK and toolchain notices. [AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) |
-| **SikkenWorks B1 and BEETLE** | B1 V4.3 HF2 is a reference for installer reconnect handling in the inherited ETCH source. BEETLE is a reference for the battery indicator UI. |
+| **JieLi Technology** | AC79-series SDK and pi32v2 toolchain. RUPTURE's release packaging preserves boot and configuration components from its trusted firmware base. [AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) |
 
-The following entries document Felucca's upstream work and references. This table describes their role in Felucca. See the firmware sources and build configuration for the components used in RUPTURE.
+See [LICENSE](LICENSE) for project licensing and the [bundled license texts](vendor/etch-v1.88-source/firmware/fm1-native/LICENSES/) for third-party notices. The [Felucca licensing inventory](licenses/FELUCCA-LICENSING.txt) records the broader upstream history.
 
-| Credit | Upstream contribution |
-| --- | --- |
-| **charlesvestal / X0X** | Browser emulator design reference. GPL-3.0. [X0X](https://github.com/charlesvestal/fm1-x0x) |
-| **Hügelton Instruments / CrispyZebra** | PHASE oscillator waveforms. GPL-3.0. [CrispyZebra](https://github.com/hugelton/CrispyZebra) |
-| **Hügelton Instruments** | Felucca drum voices and kit, Hügelton Sample Pack and controls artwork. GPL-3.0-only. |
-| **Electrosmith, Corp and Emilie Gillet / DaisySP** | Felucca's PHYS engine uses a fixed-point port of DaisySP models. RUPTURE V2.0.61 carries the upstream MIT notice only. [DaisySP](https://github.com/electro-smith/DaisySP) |
-| **Emilie Gillet / Rings** | Sympathetic string DSP. MIT. [Rings](https://github.com/pichenettes/eurorack) |
-| **Google Inc. and Pascal Gauthier / msfa** | FM synthesis core from Dexed. Apache-2.0 for msfa. [Dexed](https://github.com/asb2m10/dexed) |
-| **Hügelton Instruments / Fukiai** | Icon font. MIT. [Fukiai](https://github.com/hugelton/Fukiai) |
-| **The Inter Project Authors / Inter Tight** | UI typeface. SIL OFL 1.1. [Inter Tight](https://github.com/rsms/inter-tight) |
-| **The DotGothic16 Project Authors** | Browser emulator typeface. SIL OFL 1.1. [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) |
-| **Versilian Studios / VSCO-2 Community Edition and VCSL** | Instrument sample provenance. CC0 1.0. |
-| **Tony Gies / klattsch, Dennis Klatt and Hillenbrand et al.** | Voice synthesis design and formant data references. [klattsch](https://github.com/tgies/klattsch) |
-
-See [LICENSE](LICENSE), [Felucca’s licensing inventory](licenses/FELUCCA-LICENSING.txt) and the [bundled license texts](vendor/etch-v1.88-source/firmware/fm1-native/LICENSES/) for the full terms and copyright notices.
+<!-- RUPTURE release documentation rule: For every iteration, including when resuming in a new chat, carry forward the current concise product README. Keep version history in CHANGELOG.md. Verify that the Credits section retains all documented contributors, upstream projects and license notices before delivering the next README. -->
