@@ -1,5 +1,5 @@
-/* RUPTURE V2.0.43: quicker fades, deterministic fixed-layout boot intro.
- * The scene is rendered on CPU0 before starting the audio engine. */
+/* RUPTURE V2.0.58: quicker fades, deterministic fixed-layout boot intro.
+ * The scene is rendered on CPU0 while project/audio warmup can run. */
 #ifndef RUPTURE_INTRO_TIMELINE_H
 #define RUPTURE_INTRO_TIMELINE_H
 #include <stdint.h>

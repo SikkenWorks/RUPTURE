@@ -26,6 +26,8 @@ volatile struct RuCountIn ru_countin={0};
 #ifdef RUPTURE_BUILD
 #include "rupture_mono_policy.h"
 #include "rupture_note_release_guard.h"
+/* ISR-owned cumulative recovery counter; no allocation or PCM change. */
+volatile uint32_t ru_note_panel_repairs;
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
@@ -375,6 +377,9 @@ static void mono_release(struct etch_native_audio *s,uint16_t id,uint8_t sustain
  }
 }
 static void mono_drop_channel(struct etch_native_audio *s,uint8_t ch,uint8_t all){
+ /* MIDI CC120/121/123 can arrive BEFORE render_internal has reconciled
+  * corrupted panel state. Never walk beyond the six-note mono buffer. */
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;mono_resume(s);return;}
  uint8_t out=0;
  for(uint8_t i=0;i<s->mono_count;i++){
   struct etch_mono_held m=s->mono_stack[i];
@@ -384,6 +389,9 @@ static void mono_drop_channel(struct etch_native_audio *s,uint8_t ch,uint8_t all
  if(out!=s->mono_count){s->mono_count=out;mono_resume(s);}
 }
 static void mono_perf_clear(struct etch_native_audio *s){
+ /* Performance stop is another asynchronous caller of the shared stack.
+  * Invalid counts must release voice[0], not index unowned memory. */
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;mono_resume(s);return;}
  uint8_t out=0;
  for(uint8_t i=0;i<s->mono_count;i++)if(s->mono_stack[i].id<4096u)
   s->mono_stack[out++]=s->mono_stack[i];
@@ -927,7 +935,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   * A missed edge cannot make a key sound after its actual contact is up.
   * MIDI and sequencer gates, including sustain, remain independently owned.
   * This runs ONCE per 128-frame block and does not change CXS/FX PCM math. */
- if(ru_mono_panel_reconcile(s,keys))mono_resume(s);
+ if(ru_mono_panel_reconcile(s,keys)){
+  if(ru_note_panel_repairs<UINT32_MAX)++ru_note_panel_repairs;
+  mono_resume(s);
+ }
 #endif
  uint32_t changed=keys^s->keys;
  /* Releases use each voice's original pitch; changing octave cannot strand a key. */

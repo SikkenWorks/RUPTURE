@@ -1545,12 +1545,18 @@ static RU_FX_FAST_TEXT void rupture_fx_process_ordered_implementation(struct etc
    }
    case RU_FX_MOSFET:{
     /* Post-mix MOSFET shaping preserves real chain ordering and stereo.
-     * Previous code used two variable divisions per PCM frame. The ROM
-     * transfer avoids software division on the pi32v2 audio interrupt. */
+     * p[3]==0 is the LEGACY wet-only interpretation, so old projects
+     * are sample-identical. Expressive MIX snapshots use 1..32767:
+     * 1=dry, 32767=fully wet. No per-sample change outside expression. */
     if(separated?p[0]:mosfet){
      uint16_t gain_q8=(uint16_t)(256u+(((uint32_t)qclamp(separated?p[0]:mosfet)*3u)>>7));
      l=ru_mosfet_shaper(l,gain_q8);
      r=ru_mosfet_shaper(r,gain_q8);
+    }
+    if(separated && p[3]!=0u && p[3]!=32767u){
+     uint16_t wet=p[3]==1u?0u:p[3];
+     l=rupture_q15_mix(dry_l,l,wet);
+     r=rupture_q15_mix(dry_r,r,wet);
     }
     break;
    }

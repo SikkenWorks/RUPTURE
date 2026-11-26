@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #pragma once
+#include "rupture_touch_profile.h"
 #include <stdint.h>
 #include "native_patch.h"
 #include <stddef.h>
@@ -115,6 +116,13 @@ int etch_store_user_settings_welcome_load(const struct etch_store_io*,uint8_t*,u
  * existing CRC-protected PRESETS preference journal without a format bump. */
 int etch_store_usb_rate_load(const struct etch_store_io*,uint8_t*);
 int etch_store_usb_rate_save(const struct etch_store_io*,uint8_t);
+/* Device-global key pressure target/sensitivity; defaults to OFF for every
+ * old bank. Shares the independent 8-byte preference log with USB rate and
+ * PRESETS mapping, surviving A/B project saves and journal compaction. */
+int etch_store_touch_load(const struct etch_store_io*,uint8_t*);
+int etch_store_touch_save(const struct etch_store_io*,uint8_t);
+int etch_store_touch_profile_load(const struct etch_store_io*,uint8_t,struct ru_touch_profile*);
+int etch_store_touch_profile_save(const struct etch_store_io*,uint8_t,const struct ru_touch_profile*);
 int etch_store_user_settings_welcome_save(const struct etch_store_io*,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t);
 int etch_store_preset_assign_load(const struct etch_store_io*,uint8_t*);
 int etch_store_preset_assign_save(const struct etch_store_io*,uint8_t);

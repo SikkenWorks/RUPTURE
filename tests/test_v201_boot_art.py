@@ -26,7 +26,7 @@ for frame in range(1, 24):
     with Image.open(rendered / f'frame-{frame:02}.png') as result:
         assert result.size == (240, 240)
         renders.append(result.convert('RGB').tobytes())
-with Image.open(root/'assets/boot-sikkenworks-photo-v243-display-240.png') as logo:
+with Image.open(root/'assets/boot-sikkenworks-photo-v258-display-240.png') as logo:
     expected=bytearray()
     for gray in logo.tobytes():
         expected += bytes(((gray>>3)*255//31,(gray>>2)*255//63,(gray>>3)*255//31))
@@ -36,4 +36,4 @@ assert not any(renders[7]), 'Logo must finish fading to black'
 assert any(renders[10]), 'Text must be visible'
 assert not any(renders[22]), 'Final text must fade completely to black'
 assert len(list(rendered.glob('frame-*.png'))) == 23, 'Stale loading frames still present'
-print('PASS V2.0.43: legacy Signal Breach ROM preserved; 23 native intro samples, uploaded PNG pixels exact')
+print('PASS V2.0.58: legacy Signal Breach ROM preserved; 23 native intro samples, uploaded PNG pixels exact')

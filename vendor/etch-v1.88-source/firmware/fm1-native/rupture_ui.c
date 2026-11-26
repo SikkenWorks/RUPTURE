@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "rupture_fx_chain.h"
+#include "rupture_touch_profile.h"
 #include "rupture_help_cards.h"
 #include "rupture_welcome.h"
 #include "rupture_bug_qr.h"
@@ -84,7 +85,12 @@
 static const char *const ru_page_names[RU_PAGE_COUNT]={"PLAY","FILTER","ENVELOPE","LFO","FX","REVERB","DELAY","CHORUS","OVERDRIVE","SEQUENCER","SEQ SLOTS","ARPEGGIATOR","SCALE GUIDE","KEYLOCK","PROJECTS","GLO","SETTINGS","HELP","UPDATE","FOREIGN DATA","FORMAT CONFIRM","SAFE MODE","NOTE MEMORY","MIDI","LOADING","MENU","CHANNEL EQ","SOUND SHAPE","NAME EDITOR","SUB OSC 1","SUB OSC 2","COMPRESSOR","BEND","DISABLED","TILT EQ","OCTAVE FUZZ","SANDPAPER","AUDIO DIAGNOSTICS","STORAGE","PROJECTS","PROJECT ACTIONS","SEQUENCES","SEQ ACTIONS","WIPE ALL","OTHER","ABOUT","REPORT A BUG","SCREENSAVER","AUTO LOAD","WELCOME","SYSTEM INFO","GLIDE","FX LIBRARY","DISTORTION","WAH WAH"};
 typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_battery,usb_power;uint8_t boot_step;uint8_t dam_frame;uint8_t panel_frame;uint8_t panel_shake;uint8_t panel_hold_frame;uint8_t panel_hold_active;uint8_t glide_frame,glide_shake,sub_fear_frame,sub_fear_shake;uint8_t bend_frame,bend_target,bend_live,bend_shaped,bend_curve,bend_releasing,bend_shake_phase;int16_t battery;uint16_t k[4];uint16_t master;uint8_t seq_playing,seq_recording,seq_countin,seq_countin_beat,seq_countin_pulse;uint16_t seq_current_step,seq_playhead,seq_length,seq_grid_mask,seq_hold_mask;uint8_t seq_sustain;uint8_t seq_note_count,seq_first_note,seq_bpm,metronome_volume;uint8_t seq_status;uint8_t seq_present;uint8_t active_project,active_seq_slot;uint8_t project_status;uint8_t note_count;uint8_t format_yes;uint8_t help_page,help_scroll;uint8_t filter;uint8_t volume;uint8_t fx_on;uint8_t fx_selected;uint8_t eq_on,eq_bypassed;uint8_t eq_mode,eq_tab,eq_freq[4],eq_q[2],eq_gain_index[4],eq_curve[54];uint8_t sub_blend;uint8_t macro[4];uint8_t animate;uint8_t knob_visual[4];int8_t octave;uint16_t project_mask,seq_mask;char project_names[12][13],seq_names[8][13];char edit_name[13];uint8_t edit_cursor,edit_is_sequence;int8_t store_error;
  uint8_t audio_fault,settings_open,auto_save,auto_choice,boot_choice,saver_active,saver_frame,main_wave,saver_enabled,saver_delay_index,saver_options_selected;
- uint8_t crt_enabled,usb_audio_rate48;
+ uint8_t crt_enabled,usb_audio_rate48,touch_target,touch_sensitivity,touch_live,touch_fault;
+ uint8_t touch_engine,touch_field,touch_mode,touch_min,touch_max,touch_rate;
+ uint8_t touch_enabled_mask,touch_fx_full,touch_view_active;
+ uint16_t touch_raw; /* latest valid analog sample; readonly, no note ownership */
+ uint8_t touch_midi_source,touch_midi_raw; /* readonly from actual MIDI mono winner */
+ uint8_t fx_mod_active,fx_mod_mode,fx_mod_min,fx_mod_max,fx_mod_live;
  uint8_t knob_focus_visible,knob_focus,project_dirty;
  uint8_t system_storage_ok,system_storage_empty,system_usb,system_projects_used,system_battery_valid,system_audio_fault;
  uint8_t welcome_phase,welcome_choice,welcome_crt,welcome_status,welcome_hold_pct,welcome_store_ready;
@@ -105,6 +111,10 @@ typedef struct {uint8_t page,selected,project,seq_slot,root,mode,keylock,show_ba
  uint32_t diag_note_on,diag_note_off,diag_note_on_late,diag_note_off_late;
  uint16_t diag_note_on_wall,diag_note_off_wall;
  uint16_t diag_note_on_render,diag_note_off_render;
+ /* V2.0.58: read-only fault attribution for sporadic CORE2 hangs. */
+ uint32_t diag_key_repairs,diag_midi_panics,diag_midi_on,diag_midi_off;
+ uint32_t diag_fx_jobs,diag_fx_fallbacks,diag_fx_timeouts,diag_core_reason;
+ uint8_t diag_core_live;
  uint32_t diag_preset_core,diag_preset_fx;
  uint32_t diag_expected_core,diag_expected_fx;
  uint8_t fx_types[8],fx_enabled,fx_picker,fx_error,fx_legacy,seq_slide;
@@ -1295,18 +1305,21 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
  }
  if(page==RU_PAGE_UPDATE){
   ru_center("FIRMWARE UPDATE",120,87,1);
-  const char *phase=v->selected==3u?"STAGING OTA LOADER":v->selected==4u?"READY FOR HANDOFF":
-   v->selected==5u?"RESTARTING LOADER":v->selected==9u?"OTA PREP FAILED":"VERIFYING PACKAGE";
+  const char *phase=v->selected==1u?"READING / VERIFYING":
+   v->selected==3u?"WRITING OTA LOADER":v->selected==4u?"READY FOR HANDOFF":
+   v->selected==5u?"FLASH VIA WEBINSTALLER":v->selected==9u?"OTA PREP FAILED":"PREPARING UPDATE";
   ru_center(phase,120,105,1);
   ru_frame(17,120,207,22);
   ru_dither(20,123,(v->k[0]*2u>200u?200u:v->k[0]*2u),15,1);
-  char number[12];ru_uint(v->k[0],number);ru_center(number,120,159,1);
+  if(v->selected==1u)ru_center("VERIFIED FIRMWARE BYTES",120,159,1);
+  else if(v->selected==3u)ru_center("WRITTEN / CHECKED BYTES",120,159,1);
+  else ru_center("HANDOFF TO OTA LOADER",120,159,1);
   if(v->selected==9u){
    char code[16]="ERROR ";ru_uint(v->ota_error,code+6);
    ru_center(code,120,183,1);
    ru_footer("OTA ABORTED / NO WRITE");
   }else{
-   ru_center("FLASH PROGRESS IN WEBINSTALLER",120,180,1);
+   ru_center("LIVE WRITE IN WEBINSTALLER",120,180,1);
    ru_footer("DO NOT DISCONNECT");
   }
   return;
@@ -1338,7 +1351,7 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
   ru_line(12,65,228,65);
   const char *const names[]={"FIRMWARE","IDENTITY","USB LINK","BATT BAND",
    "STORAGE","PROJECT SLOTS","DSP MAX","DMA LATE"};
-  const char *const vals[]={"V2.0.43","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
+  const char *const vals[]={"V2.0.60","FM-1_968",v->system_usb?"CONNECTED":"DISCONNECTED",
    "",v->system_storage_ok?"READY":v->system_storage_empty?"EMPTY":"CHECK STORAGE",
    "","",""};
   for(int i=0;i<8;i++){
@@ -1360,6 +1373,21 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
   ru_footer("SEL DETAILS / HOME BACK");return;
  }
  if(page==RU_PAGE_DIAG){
+  if(v->diag_view==4u){
+   const char *const names[]={"KEY REPAIR","MIDI PANIC","MIDI ON",
+    "MIDI OFF","FX JOBS","FX FALLBACK","FX TIMEOUT",
+    v->diag_core_live==2u?"CORE2 DISABLED":
+    v->diag_core_live?"CORE2 ACTIVE":"CORE2 RETIRED"};
+   const uint32_t vals[]={v->diag_key_repairs,v->diag_midi_panics,
+    v->diag_midi_on,v->diag_midi_off,v->diag_fx_jobs,
+    v->diag_fx_fallbacks,v->diag_fx_timeouts,v->diag_core_reason};
+   ru_center("READ ONLY / NOTE + CORE2",120,53,1);
+   for(int i=0;i<8;i++){
+    int y=77+i*17;char value[12];ru_uint(vals[i],value);
+    ru_text(names[i],10,y,1);ru_text(value,151,y,1);
+   }
+   ru_footer("SEL MAIN / HOME BACK");return;
+  }
   if(v->diag_view==3u){
    const char *names[]={"NOTE ON", "NOTE OFF", "ON LATES", "OFF LATES",
     "ON WALL MAX", "OFF WALL MAX", "ON DSP MAX", "OFF DSP MAX"};
@@ -1373,7 +1401,7 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
     ru_text(names[i],10,y,1);ru_text(value,151,y,1);
     if(i>=4)ru_text("%",211,y,1);
    }
-   ru_footer("SEL MAIN / HOME BACK");return;
+   ru_footer("SEL GUARD / HOME BACK");return;
   }
   if(v->diag_view==2u){
    const char *status=v->diag_audit_status==1u?"MATCH":
@@ -1598,9 +1626,10 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
  }
  if(page==RU_PAGE_SETTINGS){
   if(v->settings_open==0u){
-   static const char *const names[]={"MASTER VOLUME","PRESETS KNOB","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK","USB-C AUDIO"};
-   int top=v->selected>=7u?1:0;
+   static const char *const names[]={"MASTER VOLUME","PRESETS KNOB","AUTO SAVE","AUTO LOAD PROJECT","STORAGE","OTHER","CRT / VCR LOOK","USB-C AUDIO","KEY PRESSURE"};
+   int top=v->selected>=7u?(int)v->selected-6:0;
    for(int i=top;i<top+7;i++){
+    if(i>=9)break;
     int y=52+(i-top)*24;ru_frame(12,y,216,23);
     if(v->selected==(uint8_t)i){ru_dither(15,y+3,210,3,1);ru_rect(17,y+8,3,12);}
     ru_text(names[i],27,y+8,1);
@@ -1616,9 +1645,73 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
     if(i==3){if(v->boot_choice==0)ru_center("NEW",199,y+8,1);else{char n[5];ru_uint(v->boot_choice,n);ru_center(n,199,y+8,1);}}
     if(i==6)ru_center(v->crt_enabled?"ON":"OFF",195,y+8,1);
     if(i==7)ru_center(v->usb_audio_rate48?"48K":"44.1K",194,y+8,1);
+    if(i==8)ru_center(v->touch_enabled_mask==3u?"BOTH":
+     v->touch_enabled_mask==1u?"CXS":v->touch_enabled_mask==2u?"GROWL":"OFF",195,y+8,1);
     if(v->selected==(uint8_t)i)ru_text(">",217,y+8,1);
    }
-   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL ASSIGN PRESETS":v->selected==2u?"SEL TOGGLE AUTO SAVE":v->selected==6u?"SEL TOGGLE CRT / VCR":v->selected==7u?"SEL USB-C AUDIO":"SELECT / SEL OPEN");return;
+   ru_footer(v->selected==0u?"K1 VOLUME / SEL OPEN":v->selected==1u?"SEL ASSIGN PRESETS":v->selected==2u?"SEL TOGGLE AUTO SAVE":v->selected==6u?"SEL TOGGLE CRT / VCR":v->selected==7u?"SEL USB-C AUDIO":v->selected==8u?"SEL KEY PRESSURE":"SELECT / SEL OPEN");return;
+  }
+  if(v->settings_open==6u){
+   static const char *const dest[]={"OFF","FILTER","GROWL","MOSFET MIX","DISTORTION MIX","REVERB MIX","SUB OSC 1","WAH MIX"};
+   static const char *const feels[]={"LOW","MEDIUM","HIGH","ULTRA"};
+   static const char *const modes[]={"PRESS","DRIFT","RANDOM","VELOCITY"};
+   static const char *const curves[]={"SOFT","LINEAR","HARD","EXTRA HARD"};
+   static const char *const speeds[]={"SLOW","MID","FAST","TURBO"};
+   static const char *const fields[]={"ENGINE","TARGET","MODE","RANGE MIN","RANGE MAX","FEEL","DRIFT SPEED"};
+   /* Header already owns y32..45 (page name/OCT/status).
+    * The ENGINE row explicitly selects the independent CXS/GROWL profile. */
+   for(int k=0;k<7;k++){
+    int y=50+k*22;
+    ru_frame(12,y,216,21);
+    if(k==v->touch_field){ru_rect(17,y+5,3,11);ru_text(">",213,y+6,1);}
+    ru_text(k==6?(v->touch_mode==RU_TOUCH_MODE_PRESS?
+      (v->touch_midi_source?"MIDI SOURCE":"SENSOR RAW"):
+      v->touch_mode==RU_TOUCH_MODE_VELOCITY?"MIDI VELOCITY":"DRIFT SPEED"):
+      fields[k],28,y+7,1);
+    const char *name=0;
+    char num[12];
+    if(k==0)name=v->touch_engine?"GROWL":"CXS";
+    if(k==1)name=dest[v->touch_target&7u];
+    if(k==2)name=modes[v->touch_mode%4u];
+    if(k==5)name=v->touch_mode==RU_TOUCH_MODE_PRESS?
+      feels[v->touch_sensitivity&3u]:
+      v->touch_mode==RU_TOUCH_MODE_VELOCITY?
+      curves[v->touch_sensitivity&3u]:"PRESS ONLY";
+    if(k==6){
+     if(v->touch_mode==RU_TOUCH_MODE_PRESS){
+      if(!v->touch_view_active)name="INACTIVE";
+      else if(v->touch_midi_source){
+       const char *label=v->touch_midi_source==3u?"POLY ":
+        v->touch_midi_source==2u?"CH ":"VEL ";
+       uint8_t pos=0u;
+       while(label[pos]){num[pos]=label[pos];pos++;}
+       ru_uint(v->touch_midi_raw,num+pos);name=num;
+      }
+      else if(v->touch_fault)name="ADC ERR";
+      else if(v->touch_raw){ru_uint(v->touch_raw,num);name=num;}
+      else name="NO KEY";
+     }else if(v->touch_mode==RU_TOUCH_MODE_VELOCITY){
+      if(!v->touch_view_active)name="INACTIVE";
+      else if(!v->touch_midi_source)name="NO MIDI";
+      else {ru_uint(v->touch_midi_raw,num);name=num;}
+     }else name=speeds[v->touch_rate&3u];
+    }
+    if(k==3||k==4){ru_uint(k==3?v->touch_min:v->touch_max,num);
+     int n=ru_strlen(num);num[n]='%';num[n+1]=0;name=num;}
+    if(name)ru_text(name,144,y+7,1);
+   }
+   char n[12];ru_uint(v->touch_live,n);
+   ru_text(v->touch_fx_full?"FX FULL: NO FREE SLOT":
+     !v->touch_view_active?"ENGINE INACTIVE":"LIVE MIX",18,211,1);
+   if(!v->touch_fx_full&&v->touch_view_active){
+    uint8_t sensor_fault=(uint8_t)(v->touch_fault&&
+      v->touch_mode==RU_TOUCH_MODE_PRESS&&!v->touch_midi_source);
+    ru_text(sensor_fault?"ADC ERR":n,89,211,1);
+    if(!sensor_fault)ru_text("%",113,211,1);
+   }
+   ru_footer(v->touch_mode==RU_TOUCH_MODE_PRESS?
+     "HOLD KEY / K1 EDIT / SEL BACK":v->touch_mode==RU_TOUCH_MODE_VELOCITY?
+     "MIDI NOTES / K1 EDIT / SEL BACK":"SELECT FIELD / K1 EDIT / SEL BACK");return;
   }
   if(v->settings_open==5u){
    ru_center("USB-C AUDIO RATE",120,48,1);
@@ -1676,6 +1769,18 @@ static void ru_render_raw(const RuState *v){ru_intro_gray_pending=0u;ru_clear();
  }
  if(page==RU_PAGE_FILTER){ru_center("24DB LADDER + BANDPASS",120,57,1);ru_draw_knobs(v);ru_footer("K1 FILTER TYPE");return;}
  if(page==RU_PAGE_MIDI){ru_center("USB + TRS MIDI IN",120,57,1);ru_draw_knobs(v);ru_footer("USB/TRS MIDI INPUT");return;}
+ if(v->fx_mod_active && (page==RU_PAGE_REVERB||page==RU_PAGE_DRIVE||
+     page==RU_PAGE_DISTORTION||page==RU_PAGE_WAH)){
+  static const char *const mode[] = {"PRESS","DRIFT","RANDOM","VELOCITY"};
+  const char *title=page==RU_PAGE_REVERB?"LIVE REVERB":
+    page==RU_PAGE_DRIVE?"LIVE MOSFET":
+    page==RU_PAGE_DISTORTION?"LIVE DISTORTION":"LIVE WAH";
+  char n[12];ru_uint(v->fx_mod_live,n);
+  ru_text(title,21,53,1);ru_text(mode[v->fx_mod_mode%4u],145,53,1);
+  ru_text("MIX",21,68,1);ru_text(n,52,68,1);ru_text("%",70,68,1);
+  ru_uint(v->fx_mod_min,n);ru_text("BASE",129,68,1);
+  ru_text(n,166,68,1);ru_text("%",183,68,1);
+ }
  ru_draw_knobs(v);ru_footer("HOME BACK / HOLD MAIN");
 }
 

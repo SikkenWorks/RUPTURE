@@ -1,0 +1,52 @@
+V2.0.60 software validation, 2026-11-26
+Physical FM1 and power-off measurements: NOT PERFORMED.
+
+STABLE NATIVE BUILD
+PASS 19 audited upstream HAL/boot hashes verified; USB/OTA excluded from parity claims
+wrote /workspace/scratch/c8fccf9fabba/work/RUPTURE-FM1-V2.0.60/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05/app.bin: 522748 B, headroom 58816 B
+ OK _start=0x02000120
+ETCH FM-1 app audit: /workspace/scratch/c8fccf9fabba/work/RUPTURE-FM1-V2.0.60/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05/app.bin
+ OK  _start=0x02000120
+ app: 522748 B / 581564 B, headroom 58816 B
+ entry stub: OK
+Compiled native audio candidate. Compile-time read-only: False ; persistent writes enabled: True ; updater writes: True ; hardware verification is still required.
+
+CORE2 NATIVE BUILD
+PASS 19 audited upstream HAL/boot hashes verified; USB/OTA excluded from parity claims
+wrote /workspace/scratch/c8fccf9fabba/work/RUPTURE-FM1-V2.0.60/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05-c1fx/app.bin: 529852 B, headroom 51712 B
+ OK _start=0x02000120
+ETCH FM-1 app audit: /workspace/scratch/c8fccf9fabba/work/RUPTURE-FM1-V2.0.60/vendor/etch-v1.88-source/build/fm1-native-storage-updater-uac48-p05-c1fx/app.bin
+ OK  _start=0x02000120
+ app: 529852 B / 581564 B, headroom 51712 B
+ entry stub: OK
+Compiled native audio candidate. Compile-time read-only: False ; persistent writes enabled: True ; updater writes: True ; hardware verification is still required.
+
+HOST REGRESSIONS
+PASS storage audio: 65536 amplitude fades; 10000 warm transactions; both DMA halves; nested pauses; journal read coalescing; read errors; timeout/wrap/fail-closed; cold boot
+PASS production source integration: PCM ordering, DMA timing, every raw store callback, OTA gating and manual fault rearm
+PASS V2.0.58 actual native renderer: panel+MIDI panic, sustain, missed edges and corrupt-count CC recovery
+PASS V2.0.58 actual native renderer: panel+MIDI panic, sustain, missed edges and corrupt-count CC recovery
+PASS V2.0.58: 100 ordered FX pairs + 6 heavy 4-FX chains, 81408 stereo frames CPU0/core2 exact
+PASS V2.0.58: 384000 stereo frames, 4 injected CPU1 watermark stalls/partials sample-exact
+PASS V2.0.58: two 64-frame watermarks, strict 128-frame CPU1 bounds
+PASS V2.0.58: 1,000,000 forged CPU1 replies fail closed, deterministic partial fallback
+PASS V2.0.58: 1,000,000 CORE2 DMA-pressure trip decisions, no idle false positives
+PASS V2.0.59 physical pressure gradual, effects control MIX not DRIVE
+PASS V2.0.59 MOSFET PCM: DRY=12000 MID=12036 WET=12072 legacy=12072
+PASS V1.27 device-global volume and autosave choice; old/off, on/off, project swaps, torn write, 28-entry compaction
+PASS V2.0.58 two CRC profiles survive torn NOR writes, compaction, presets, USB rate and project switch
+PASS V1.27 device-global volume and autosave choice; old/off, on/off, project swaps, torn write, 28-entry compaction
+PASS V2.0.58 pressure target/sensitivity persistence and torn-write recovery
+PASS PJT33 twelve-slot flash tests, four-slot v12 migration, CRC, torn-write fallback, deletion, CXS restoration
+PASS V1.28 journal preference, project duplicate/rename/delete CRC, legacy-user wipe boundaries and confirmation
+PASS V1.27 device-global volume and autosave choice; old/off, on/off, project swaps, torn write, 28-entry compaction
+PASS V2.0.31 USB preference 44.1/48 stored; presets and projects intact
+PASS V2.0.31 UAC1 Type-I 44.1/48 singleton range, descriptor length intact
+PASS V2.0.30 packed USB 48k FIR PCM exact: input=65536 output=71332 stage_peak=256 hash=8494ab8aab67c054
+PASS V2.0.34 CPU1 live 64-frame FIR: 142664 outputs exactly match legacy, hash=b591aa71aeef6535
+PASS USB-qualified PC6 analog settle, LCD gating, PCM fade, restart and timeout no-unmute
+PASS preset scroll fade and continuity\nPASS all 18 PCM, MIDI, CORE2, storage, USB and startup regression programs
+
+FWSC/INSTALLER/SOURCE CONTRACT
+PASS V2.0.60: 2 verified FWSCs, exact native apps, trusted OTA/header, exact offline embeds/hashes/docs, 29 unchanged DSP/storage/HAL sources; physical/power-off claims remain unverified
+

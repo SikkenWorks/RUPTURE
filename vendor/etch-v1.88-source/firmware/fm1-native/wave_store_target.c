@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Included in bringup.c. Flash operations are explicit, audio-stopped only.
+ * Included in bringup.c. Flash operations use a zero-DMA handoff before masking interrupts.
  */
 #include "wave_store.h"
 #include "native_flash_probe.h"
@@ -33,20 +33,24 @@ static int native_store_status=ETCH_STORE_EMPTY;
 static uint32_t native_save_required;
 static uint8_t native_capacity_checked;
 static int native_store_read(uint32_t off,void *dst,uint32_t n){
+ if(native_storage_audio_prepare())return -1;
  if(!FL_IN(off,n,ETCH_STORE_BASE,ETCH_STORE_END) && !FL_IN(off,n,ETCH_STORE_EXT_BASE,ETCH_STORE_EXT_END) && !(ETCH_STORE_SPARE_ENABLED&&FL_IN(off,n,ETCH_STORE_SPARE_BASE,ETCH_STORE_SPARE_END)) && !(ETCH_STORE_OWNED_ENABLED&&FL_IN(off,n,ETCH_STORE_OWNED_BASE,ETCH_STORE_OWNED_END)))return -1;
  uint8_t *p=dst;
  while(n){uint32_t k=n>256?256:n;fm1_irq_off();int rc=FL_FAR(fl_read_ram)(off,p,k);fm1_irq_enable_all();if(rc)return rc;off+=k;p+=k;n-=k;fm1_wdt_feed();}
  return 0;
 }
 static int native_store_erase(uint32_t off){
+ if(native_storage_audio_prepare())return -1;
  if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed())return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
 static int native_store_program(uint32_t off,const void *src,uint32_t n){
+ if(native_storage_audio_prepare())return -1;
  if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed())return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_prog_ram)(off,(const uint8_t*)src,n,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
 static int native_store_wipe_read(uint32_t off,void *dst,uint32_t n){
+ if(native_storage_audio_prepare())return -1;
  if(!FL_IN(off,n,ETCH_STORE_BASE,0xE0000u))return -1;
  uint8_t *p=(uint8_t*)dst;
  while(n){uint32_t k=n>256u?256u:n;fm1_irq_off();
@@ -55,6 +59,7 @@ static int native_store_wipe_read(uint32_t off,void *dst,uint32_t n){
  return 0;
 }
 static int native_store_wipe_erase(uint32_t off){
+ if(native_storage_audio_prepare())return -1;
  if(!ETCH_NATIVE_STORAGE||!etch_recovery_may_write_store(native_recovery_reason)||!native_flash_write_allowed()||
     (off&4095u)||!FL_IN(off,4096u,ETCH_STORE_BASE,0xE0000u))return -1;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);

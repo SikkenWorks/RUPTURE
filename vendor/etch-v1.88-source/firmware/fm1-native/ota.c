@@ -44,6 +44,14 @@ static void ota_show(uint32_t step, int32_t code);
 static void ota_progress_update(uint32_t done, uint32_t total);
 static void ota_commit(const uint8_t *parm);
 
+/* A phase of genuine bytes read/written mapped into the LCD's 0..100 range.
+ * All callers pass completed, checked bytes; no timer-based fake progress. */
+static void ota_progress_part(uint32_t base,uint32_t span,uint32_t done,uint32_t total){
+    if(!total)return;
+    if(done>total)done=total;
+    ota_progress_update(base+(done*span/total),100u);
+}
+
 static uint32_t ota_rd16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
 static uint32_t ota_rd24(const uint8_t *p) { return ota_rd16(p) | (uint32_t)p[2] << 16; }
 static uint32_t ota_rd32(const uint8_t *p) { return ota_rd24(p) | (uint32_t)p[3] << 24; }
@@ -447,7 +455,12 @@ static int etch_stock_boot_head_matches(uint32_t flash_off,uint8_t *host,uint8_t
 static int etch_ota_stock(uint32_t off,uint8_t *b){
  static const uint8_t want[32]={0xc1,0x06,0x8a,0x40,0x3c,0x04,0xa6,0x37,0x8a,0x62,0x6a,0xfb,0x66,0xcc,0x21,0x7f,0x72,0xd1,0x3f,0x10,0xaa,0x20,0x0e,0x98,0x3b,0x7a,0x98,0x17,0xcc,0x1d,0xac,0x03};
  struct etch_sha256 h;uint8_t digest[32];etch_sha256_init(&h);
- for(uint32_t i=0;i<0x93000u;i+=512){if(ota_read(off+i,b,512))return 0;etch_sha256_add(&h,b,512);ota_idle();}
+ for(uint32_t i=0;i<0x93000u;i+=512){
+  if(ota_read(off+i,b,512))return 0;
+  etch_sha256_add(&h,b,512);
+  ota_progress_part(45u,50u,i+512u,0x93000u);
+  ota_idle();
+ }
  etch_sha256_end(&h,digest);return ota_memeq(digest,want,32);
 }
 /* V1.50 CROSS-FIRMWARE FIX.
@@ -532,7 +545,9 @@ static int etch_host_app_compatible(uint32_t off,uint8_t *scratch){
      uint32_t begin=i>app_off?i:app_off;
      uint32_t end=i+n<app_off+app_size?i+n:app_off+app_size;
      if(end>begin)bin_crc=ota_crc16(scratch+(begin-i),end-begin,bin_crc);
-     i+=n;ota_idle();
+     i+=n;
+     ota_progress_part(45u,50u,i-32u,area_size-32u);
+     ota_idle();
  }
  return bin_crc==app_crc && area_crc==ota_rd16(app+2);
 }
@@ -560,6 +575,7 @@ static int etch_host_flash_integrity(uint32_t off,uint32_t len,uint32_t expected
         uint32_t n=len-i>512u?512u:len-i;
         if(ota_read(off+i,buf,n))return 0;
         crc=ota_crc16(buf,n,crc);
+        ota_progress_part(0u,45u,i+n,len);
         ota_idle();
     }
     return crc==expected;
@@ -709,6 +725,9 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
          * discover the actual identity after the reboot. */
         pinned_digest=etch_ota_digest;
     }
+    /* CHECK is complete only after every source integrity gate passed. */
+    ota_progress_update(100u,100u);
+    ota_idle();
     stage_len = is_stock ? len : ETCH_OTA_BODY_LEN;
     ota_show(2,0);
     /* The package's boot header is irrelevant to the verified app-only
@@ -741,7 +760,7 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
                 return -10;
             /* A real progress fraction of the trusted loader staging write.
              * This is NOT the separate OTA loader's subsequent app flash. */
-            ota_progress_update(i+n,stage_len);
+            ota_progress_part(0u,85u,i+n,stage_len);
         }
         if (crc != c)
             return -11;
@@ -750,6 +769,8 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
             if (ota_fread(OTA_AREA + 32u + i, b, n))
                 return -11;
             crc = ota_crc16(b, n, crc);
+            ota_progress_part(85u,14u,i+n,stage_len);
+            ota_idle();
         }
         if (crc != c)
             return -11;
@@ -757,6 +778,8 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
     if(!etch_ota_hash_pinned(OTA_AREA+32,b,0,stage_len,pinned_digest))return -16;
     if (ota_stage_head(stage_len))
         return -12;
+    ota_progress_update(100u,100u);
+    ota_idle();
     /* 6. the host confirms: nothing is committed without it */
     ota_show(4, 0);
     for (i = 0; i < 4u; i++)

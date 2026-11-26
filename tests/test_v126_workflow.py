@@ -21,9 +21,10 @@ for filename in ('WebInstaller.html','index.html','tools/site_template.html'):
  assert 'the firmware is not physically validated on the fm1' not in text
  assert 'physical rupture hardware operation is not yet validated' not in text
 web=(root/'WebInstaller.html').read_text()
-assert 'const transmitted=new Uint8Array(pkg.image.length);' in web
+assert 'const transmitted=byteCoverage(pkg.image.length);' in web
 assert 'report(count,r.addr+r.n,r.addr,r.n);' in web
-assert 'transmitted[i]=1;uniqueBytes++' in web
-assert 'ota_progress_update(i+n,stage_len);' in (n/'ota.c').read_text()
+assert 'const coverage=transmitted(start,length);' in web
+assert 'if(!seen[i]){seen[i]=1;bytes++;}' in web
+assert 'ota_progress_part(0u,85u,i+n,stage_len);' in (n/'ota.c').read_text()
 assert 'state.k[0]=ota_matrix_percent' in (n/'ota_target.c').read_text()
 print('PASS V1.26: slot selection, separate confirm actions, name-entry safety, battery and accurate browser progress')

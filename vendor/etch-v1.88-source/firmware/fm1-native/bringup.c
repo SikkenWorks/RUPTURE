@@ -41,6 +41,27 @@ extern volatile int8_t ru_growl_auto_drift;
 #include "hal/fm1_timer.h"
 #include "hal/fm1_audio.h"
 #include "hal/fm1_adc.h"
+#ifdef RUPTURE_BUILD
+#include "rupture_touch_adc.h"
+#include "rupture_key_touch.h"
+/* Read by ALNK only once per PCM block, never by the CXS hot loop. */
+static volatile uint8_t ru_touch_live_pressure;
+static uint8_t ru_touch_conf=RU_TOUCH_CONFIG_DEFAULT;
+static struct ru_touch_state ru_touch_state={.active_key=255u};
+static struct ru_touch_profile ru_touch_profiles[2]={
+ RU_TOUCH_PROFILE_DEFAULT,RU_TOUCH_PROFILE_DEFAULT};
+static struct ru_touch_drift_state ru_touch_drift;
+static volatile uint8_t ru_touch_live_motion;
+/* Published by the audio-block owner, never by an auxiliary MIDI parser.
+ * It is read only for foreground drift and LCD expression monitoring. */
+static volatile uint8_t ru_touch_midi_held,ru_touch_midi_source;
+static volatile uint8_t ru_touch_midi_raw,ru_touch_audio_level;
+static uint8_t ru_touch_edit_engine,ru_touch_edit_field,ru_touch_fx_full;
+static uint8_t ru_touch_profile_dirty;
+/* KEY PRESSURE is RAM-only while AUTO SAVE is OFF. A successful explicit
+ * project SAVE separately authorizes the pending global profile journal. */
+static uint8_t ru_touch_manual_commit;
+#endif
 #include "hal/fm1_lcd_hw.h"
 #include "libc.c"
 #include "native_ui_wave.h"
@@ -306,15 +327,29 @@ static void ru_commit(void){
  ru_band_valid=1u;
  etch_display_invalidate(&etch_panel_cache);
 }
-static void ru_boot_splash(void){
+/* Start the exact original PNG/text timeline before loading projects. Display
+ * is serviced at safe foreground milestones; the synth/codec warm up while
+ * these frames are on screen, never inside a real-time audio interrupt. */
+extern volatile uint32_t etch_ms;
+static uint32_t ru_boot_intro_since_ms;
+static uint8_t ru_boot_intro_started,ru_boot_intro_last_frame;
+static void ru_boot_intro_pump(void){
+ if(!ru_boot_intro_started)return;
+ uint32_t elapsed=(uint32_t)(etch_ms-ru_boot_intro_since_ms);
+ uint32_t frame=elapsed/RU_INTRO_FRAME_MS;
+ if(frame>=RU_SPLASH_STEPS)frame=RU_SPLASH_STEPS-1u;
+ if(ru_boot_intro_last_frame==(uint8_t)frame)return;
+ ru_boot_intro_last_frame=(uint8_t)frame;
  RuState v={0};v.page=RU_PAGE_LOADING;
- for(uint32_t f=0;f<RU_SPLASH_STEPS;f++){
-  /* Boot artwork must stay hard-edged: bypass optional CRT optics only here. */
-  v.boot_step=(uint8_t)(f+1u);v.crt_enabled=0u;ru_crt_active=0u;ru_render(&v);ru_commit();
-  /* All fades, word tremor and holds complete before audio starts. */
-  uint32_t remain=RU_INTRO_FRAME_MS;
-  while(remain){uint32_t slice=remain>25u?25u:remain;fm1_wdt_feed();fm1_delay_ms(slice);remain-=slice;}
- }
+ /* The uploaded nearest-neighbor PNG stays unchanged; no CRT/dithering. */
+ v.boot_step=(uint8_t)(frame+1u);v.crt_enabled=0u;ru_crt_active=0u;
+ ru_render(&v);ru_commit();
+}
+static void ru_boot_intro_begin(void){
+ ru_boot_intro_since_ms=etch_ms;
+ ru_boot_intro_last_frame=255u;
+ ru_boot_intro_started=1u;
+ ru_boot_intro_pump();
 }
 #endif
 /* Draw a connected waveform into the RAM scope surface. Adjacent X columns
@@ -379,8 +414,14 @@ struct boot_guard etch_boot __attribute__((section(".noinit")));
 void fm1_timer5_irq(void){
  uint32_t start=fm1_ticks();
  fm1_timer5_ack();
+#ifdef RUPTURE_BUILD
+ ru_touch_adc_before_scan();
+#endif
  fm1_input_tick();
  uint8_t nested=native_in_audio;
+#ifdef RUPTURE_BUILD
+ ru_touch_adc_after_scan(nested);
+#endif
  uint8_t job=etch_irq_bridge_tick(&native_irq_bridge,start,nested,&etch_ms);
  fm1_ms=etch_ms;
 #if ETCH_NATIVE_UAC
@@ -797,7 +838,7 @@ static RuEncoderFeel ru_knob_feel[4]={{0}};
 static uint8_t ru_knob_focused=0u,ru_knob_focus_page=RU_PAGE_PLAY;
 static uint32_t ru_knob_focus_until=0u;
 static uint8_t ru_project_slot=1,ru_reverb_type=1,ru_help_chapter=0,ru_help_scroll=0,ru_selected;
-static uint8_t ru_diag_view; /* three read-only diagnostic pages, never stored */
+static uint8_t ru_diag_view; /* five read-only diagnostic pages, never stored */
 #ifdef RUPTURE_BUILD
 /* Session-only reference captured after a verified SAVE. No new flash
  * records, no changes to CXS PCM, and nothing in ALNK0. After power cycle
@@ -1042,6 +1083,43 @@ static void ru_fx_sync_chain(void){
  /* The normal control publish in the UI tick refreshes parameter values.
   * It repeats this now-stable chain without changing its topology. */
  ru_mark_dirty();first_frame=1u;
+}
+static void ru_touch_active_refresh(void){
+ const struct ru_touch_profile *p=&ru_touch_profiles[ru_main_wave?1u:0u];
+ ru_touch_live_pressure=0u;ru_touch_live_motion=0u;
+ ru_touch_audio_level=0u;
+ ru_touch_state=(struct ru_touch_state){.active_key=255u};
+ ru_touch_drift.initialized=0u;
+ /* No analog key sampling is needed for the autonomous drift modes. */
+ ru_touch_adc_enable(p->target!=RU_TOUCH_OFF&&p->mode==RU_TOUCH_MODE_PRESS);
+}
+static void ru_touch_reverb_sync(void){
+ const struct ru_touch_profile *p=&ru_touch_profiles[ru_main_wave?1u:0u];
+ ru_touch_fx_full=0u;
+ if(p->target!=RU_TOUCH_REVERB)return;
+ struct rupture_fx_chain *chain=&native_project_cfg.v190.chain;
+ uint8_t slot=ru_touch_reverb_slot(chain);
+ if(slot==255u){
+  uint8_t vacant=0u;
+  for(uint8_t i=0u;i<RU_FX_SLOTS;i++)
+   if(chain->type[i]==RU_FX_EMPTY){vacant=1u;break;}
+  if(!vacant){ru_touch_fx_full=1u;first_frame=1u;return;}
+ }
+ /* This migration occurs ONLY when the user has enabled reverb automation.
+  * The ordinary FX editor uses the same conversion from legacy controls. */
+ ru_fx_enable_independent_parameters();
+ slot=ru_touch_reverb_slot(chain);
+ uint8_t needs=(uint8_t)(slot==255u||
+   !(chain->enabled&(1u<<slot))||
+   chain->parameter[slot][3]!=ru_touch_percent_q15(p->min_pct)||
+   native_project_cfg.v190.legacy_chain);
+ if(!ru_touch_ensure_reverb(chain,p->min_pct)){
+  ru_touch_fx_full=1u;first_frame=1u;return;
+ }
+ if(native_reverb!=ru_touch_percent_q15(p->min_pct)){
+  native_reverb=ru_touch_percent_q15(p->min_pct);needs=1u;
+ }
+ if(needs)ru_fx_sync_chain();
 }
 static void ru_fx_apply_extra(void){
  rupture_tilt_controls(ru_tilt[0],ru_tilt[1],ru_tilt[2],ru_tilt[3],ru_tilt_enabled);
@@ -2095,6 +2173,8 @@ static void native_patch_load(uint8_t pattern_prepared){
  native_chorus=p->chorus;native_delay=p->delay;native_reverb=p->reverb;
 #ifdef RUPTURE_BUILD
  ru_fx_migrate_legacy();
+ ru_touch_active_refresh();
+ ru_touch_reverb_sync();
 #endif
  if(!pattern_prepared){native_seq_run=0;native_seq_recording=0;}native_library.reserved=native_patch_slot+1;
  native_morph_a=native_library.selection[0];native_morph_b=native_library.selection[1];
@@ -3358,6 +3438,23 @@ static void rupture_native_screen(void){
  case RU_PAGE_AUTOLOAD:v.selected=ru_autoload_browse;v.boot_choice=ru_autoload_project;v.project_mask=native_project_present;for(uint8_t ii=0;ii<12;ii++)for(uint8_t jj=0;jj<12;jj++)v.project_names[ii][jj]=native_project_names[ii][jj];break;
  case RU_PAGE_SETTINGS:v.k[0]=rupture_master_pct;v.selected=ru_settings_selected;
   v.settings_open=ru_settings_open;v.auto_save=ru_autosave_enabled;v.boot_choice=ru_autoload_project;
+  {const struct ru_touch_profile *p=&ru_touch_profiles[ru_touch_edit_engine];
+   v.touch_engine=ru_touch_edit_engine;v.touch_field=ru_touch_edit_field;
+   v.touch_target=p->target;v.touch_sensitivity=p->sensitivity;
+   v.touch_mode=p->mode;v.touch_min=p->min_pct;v.touch_max=p->max_pct;
+   v.touch_rate=p->rate;
+   v.touch_view_active=(uint8_t)(ru_touch_edit_engine==(ru_main_wave?1u:0u));
+   v.touch_enabled_mask=(uint8_t)((!!ru_touch_profiles[0].target)|
+     ((!!ru_touch_profiles[1].target)<<1u));
+   v.touch_fx_full=ru_touch_fx_full;
+   v.touch_live=(uint8_t)(v.touch_view_active&&p->target?
+     ru_touch_level_percent(p,ru_touch_audio_level):0u);
+   v.touch_raw=(uint16_t)(v.touch_view_active&&ru_touch_state.valid?
+     ru_touch_state.raw:0u);
+   v.touch_midi_source=v.touch_view_active?ru_touch_midi_source:0u;
+   v.touch_midi_raw=v.touch_view_active?ru_touch_midi_raw:0u;
+  }
+  v.touch_fault=fm1_touch_hw_fault;
 #if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
   v.usb_audio_rate48=ru_uac_rate48;
 #endif
@@ -3476,6 +3573,21 @@ static void rupture_native_screen(void){
    v.diag_note_off_wall=(uint16_t)(etch_diag_cpu_permille(native_note_dma.off_wall_peak,budget)/10u);
    v.diag_note_on_render=(uint16_t)(etch_diag_cpu_permille(native_note_dma.on_render_peak,budget)/10u);
    v.diag_note_off_render=(uint16_t)(etch_diag_cpu_permille(native_note_dma.off_render_peak,budget)/10u);
+   extern volatile uint32_t ru_note_panel_repairs;
+   v.diag_key_repairs=ru_note_panel_repairs;
+   v.diag_midi_panics=native_midi_panic_seen;
+   v.diag_midi_on=native_midi_on_seen;
+   v.diag_midi_off=native_midi_off_seen;
+#if ETCH_CPU1_FX_LIVE_LAB
+   v.diag_fx_jobs=ru_c1_fx_commits;
+   v.diag_fx_fallbacks=ru_c1_fx_fallbacks;
+   v.diag_fx_timeouts=ru_c1_fx_timeout;
+   v.diag_core_reason=ru_c1_retired;
+   v.diag_core_live=ru_c1_online;
+#else
+   v.diag_fx_jobs=v.diag_fx_fallbacks=v.diag_fx_timeouts=0u;
+   v.diag_core_reason=0u;v.diag_core_live=2u;
+#endif
 #endif
   }break;
  case RU_PAGE_NOTE_MEMORY:v.k[0]=ru_note_priority;v.k[1]=ru_note_legato;v.k[2]=ru_note_glide_ms;v.k[3]=ru_note_bend;break;
@@ -3497,6 +3609,17 @@ static void rupture_native_screen(void){
    v.k[1]=(uint16_t)(native_cutoff*100u/8192u);
    v.k[2]=(uint16_t)(native_resonance*100u/32767u);
    v.k[3]=native_filter_type;
+  }
+  {const struct ru_touch_profile *p=&ru_touch_profiles[ru_main_wave?1u:0u];
+   const uint8_t match=(uint8_t)((type==RU_FX_REVERB&&p->target==RU_TOUCH_REVERB)||
+     (type==RU_FX_MOSFET&&p->target==RU_TOUCH_MOSFET)||
+     (type==RU_FX_DISTORTION&&p->target==RU_TOUCH_DISTORTION)||
+     (type==RU_FX_WAH&&p->target==RU_TOUCH_WAH));
+   if(match){
+    v.fx_mod_active=1u;v.fx_mod_mode=p->mode;
+    v.fx_mod_min=p->min_pct;v.fx_mod_max=p->max_pct;
+    v.fx_mod_live=ru_touch_level_percent(p,ru_touch_audio_level);
+   }
   }
  }
  if(ru_welcome.phase==RU_WELCOME_TOUR && ru_welcome.lesson<RU_TUTORIAL_COUNT){
@@ -3967,8 +4090,10 @@ static void screen_render(void){
 #if ETCH_NATIVE_UAC_48K
    label(uac.r48?"RATE 48K FOREGROUND":"RATE 44.1K DIRECT",10,184,0xffff);
 #if ETCH_CPU1_FX_LIVE_LAB
-   label("FX MAX US",10,203,0x7bef);
-   number(ru_c1_fx_max_wait_ticks/24u,113,203);
+   label("FX US AVG",10,203,0x7bef);
+   number(ru_c1_fx_avg_wait_ticks/24u,106,203);
+   label("MAX",151,203,0x7bef);
+   number(ru_c1_fx_max_wait_ticks/24u,191,203);
    label("FX TIMEOUT",10,222,ru_c1_fx_timeout?0xfda0:0x7bef);
    number(ru_c1_fx_timeout,130,222);
 #elif ETCH_CPU1_UAC_LIVE_LAB
@@ -4044,7 +4169,7 @@ static void screen_render(void){
          ru_c1_online?0x07e0:0xfda0);
    number(ru_c1_online?ru_c1_good:ru_c1_retired,169,199);
 #if ETCH_CPU1_FX_LIVE_LAB
-   /* Count completed 64-frame CPU1 FX jobs, not full audio blocks. */
+   /* One completed 128-frame CPU1 FX stream per audio block. */
    label("FX JOBS",10,218,0x7bef);number(ru_c1_fx_commits,97,218);
    label("FB",164,218,ru_c1_fx_fallbacks?0xfda0:0x7bef);
    number(ru_c1_fx_fallbacks,195,218);
@@ -4470,6 +4595,12 @@ static uint8_t ru_store_project(uint8_t automatic){
  if(native_store_status==ETCH_STORE_OK){
   ru_last_store_ms=etch_ms?etch_ms:1u;
   ru_autosave_dirty=0u;ru_project_dirty=0u;ru_autosave_armed=1u;
+  if(!automatic && ru_touch_profile_dirty){
+   /* Manual SAVE, and not merely opening Settings, commits both profiles.
+    * Defer the flash journal until the usual audio-idle safe window. */
+   ru_touch_manual_commit=1u;ru_global_gain_dirty=1u;
+   ru_global_gain_changed_ms=etch_ms?etch_ms:1u;
+  }
   ru_project_slot=project;ru_project_feedback=2u;
   ru_save_feedback=automatic?3u:1u;
   ru_save_feedback_until=etch_ms+1600u;
@@ -4712,6 +4843,22 @@ static void ru_adjust(uint8_t control,int32_t amount){
    *value=(uint16_t)ui_bound((int32_t)*value+amount,0,1);
   else if(type==RU_FX_TILT||type==RU_FX_FUZZ||type==RU_FX_SAND)
    *value=(uint16_t)ui_bound((int32_t)*value+amount,0,100);
+  else if(type==RU_FX_REVERB&&control==3u&&
+          ru_touch_profiles[ru_main_wave?1u:0u].target==RU_TOUCH_REVERB&&
+          ru_fx_selected==ru_touch_reverb_slot(chain)){
+   /* Two-way binding: K4 MIX edits the same MIN stored by KEY PRESSURE.
+    * Actual held pressure changes only the block-local audio snapshot. */
+   struct ru_touch_profile *p=&ru_touch_profiles[ru_main_wave?1u:0u];
+   uint8_t min=(uint8_t)ui_bound((int32_t)p->min_pct+amount,0,100);
+   if(min!=p->min_pct){
+    fm1_irq_off();p->min_pct=min;if(p->max_pct<min)p->max_pct=min;fm1_irq_enable_all();
+    ru_touch_profile_dirty|=(uint8_t)(1u<<(ru_main_wave?1u:0u));
+    ru_mark_dirty();
+    if(ru_autosave_enabled){ru_global_gain_dirty=1u;
+      ru_global_gain_changed_ms=etch_ms?etch_ms:1u;}
+   }
+   *value=ru_touch_percent_q15(min);native_reverb=*value;
+  }
   else *value=etch_encoder_pct(*value,amount);
   if(previous!=*value){ru_fx_sync_chain();ru_mark_dirty();}
   ru_knob_focused=control;ru_knob_focus_page=ru_page;
@@ -5142,6 +5289,7 @@ static void ru_manager_commit_name(void){
 }
 static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t select,int32_t alg,int32_t dm,int32_t dd,int32_t up,int32_t down,uint32_t new_note_keys){
  uint32_t pressed=*pressed_ptr;
+ const uint8_t ru_touch_wave_before=ru_main_wave;
  /* Capture entry page: SAVE which opens NAME must not also commit the new
   * editor during the same button event. Releasing and pressing SAVE again
   * is required to write any newly named slot. */
@@ -5315,13 +5463,13 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
   if(pressed&(1u<<3)){ru_diag_view=0u;ru_nav_to(RU_PAGE_DIAG);}
  }
  else if(ru_page==RU_PAGE_DIAG){
-  /* SEL switches four purely diagnostic displays. No stored settings and
+  /* SEL switches five purely diagnostic displays. No stored settings and
    * no further ISR work; all values are existing peak/snapshot counters. */
-  if(pressed&(1u<<3)){ru_diag_view=(uint8_t)((ru_diag_view+1u)%4u);first_frame=1u;}
+  if(pressed&(1u<<3)){ru_diag_view=(uint8_t)((ru_diag_view+1u)%5u);first_frame=1u;}
  }
  else if(ru_page==RU_PAGE_SETTINGS){
   if(ru_settings_open==0u){
-   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,7);first_frame=1u;}
+   if(select){ru_settings_selected=(uint8_t)ui_bound((int32_t)ru_settings_selected+select,0,8);first_frame=1u;}
    if(pressed&(1u<<3)){
     if(ru_settings_selected==0u){
      /* MASTER VOLUME retains its detail page; K1 also works while its
@@ -5330,6 +5478,10 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
     }else if(ru_settings_selected==1u){
      ru_preset_edit_mode=ru_main_wave;
      ru_settings_open=4u; /* Select CXS or GROWL first. */
+    }else if(ru_settings_selected==8u){
+     ru_touch_edit_engine=ru_main_wave;
+     ru_touch_edit_field=0u;
+     ru_settings_open=6u; /* independent voice, target, mode, range, feel */
     }else if(ru_settings_selected==7u){
      ru_settings_open=5u; /* USB-C audio rate, device-global */
     }else if(ru_settings_selected==6u){
@@ -5354,6 +5506,38 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
     }
     first_frame=1u;
    }
+  }else if(ru_settings_open==6u){
+   if(select){ru_touch_edit_field=(uint8_t)ui_bound(
+      (int32_t)ru_touch_edit_field+select,0,6);first_frame=1u;}
+   if(dm){
+    uint8_t engine=ru_touch_edit_engine;
+    struct ru_touch_profile changed=ru_touch_profiles[engine];
+    switch(ru_touch_edit_field){
+     case 0u:ru_touch_edit_engine=(uint8_t)ui_bound((int32_t)engine+dm,0,1);break;
+     case 1u:changed.target=(uint8_t)ui_bound((int32_t)changed.target+dm,0,7);break;
+     case 2u:changed.mode=(uint8_t)ui_bound((int32_t)changed.mode+dm,0,3);break;
+     case 3u:changed.min_pct=(uint8_t)ui_bound((int32_t)changed.min_pct+dm,0,100);
+      if(changed.max_pct<changed.min_pct)changed.max_pct=changed.min_pct;break;
+     case 4u:changed.max_pct=(uint8_t)ui_bound((int32_t)changed.max_pct+dm,0,100);
+      if(changed.min_pct>changed.max_pct)changed.min_pct=changed.max_pct;break;
+     case 5u:if(changed.mode==RU_TOUCH_MODE_PRESS||changed.mode==RU_TOUCH_MODE_VELOCITY)
+       changed.sensitivity=(uint8_t)ui_bound((int32_t)changed.sensitivity+dm,0,3);break;
+     case 6u:if(changed.mode==RU_TOUCH_MODE_DRIFT||changed.mode==RU_TOUCH_MODE_RANDOM)
+       changed.rate=(uint8_t)ui_bound((int32_t)changed.rate+dm,0,3);break;
+    }
+    if(ru_touch_edit_field!=0u&&
+       !ru_touch_profile_equal(&changed,&ru_touch_profiles[engine])){
+     /* A six-byte atomic configuration handoff, never during ALNK0 PCM. */
+     fm1_irq_off();ru_touch_profiles[engine]=changed;fm1_irq_enable_all();
+     ru_touch_profile_dirty|=(uint8_t)(1u<<engine);
+     ru_mark_dirty();
+     if(ru_autosave_enabled){ru_global_gain_dirty=1u;
+      ru_global_gain_changed_ms=etch_ms?etch_ms:1u;}
+     if(engine==ru_main_wave){ru_touch_active_refresh();ru_touch_reverb_sync();}
+    }
+    first_frame=1u;
+   }
+   if(pressed&(1u<<3)){ru_settings_open=0u;first_frame=1u;}
   }else if(ru_settings_open==5u){
 #if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
    if(select){
@@ -5548,6 +5732,7 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
       ru_autosave_enabled=0u;ru_screensaver_enabled=1u;ru_saver_delay_index=1u;ru_autoload_project=0u;rupture_master_pct=100u;
       native_new_project();native_project_present=0u;
       ru_autosave_dirty=0u;ru_project_dirty=0u;ru_knob_undo.valid=0u;ru_autosave_armed=0u;ru_global_gain_dirty=0u;
+      ru_touch_profile_dirty=0u;ru_touch_manual_commit=0u;
       native_seq_run=0u;native_seq_recording=0u;
       ru_manager_status=1u;ru_nav_to(RU_PAGE_STORAGE);
      }else ru_manager_status=3u;
@@ -5758,6 +5943,9 @@ static void ru_handle_input(uint32_t buttons,uint32_t *pressed_ptr,int32_t selec
    }/* Other pages retain their own ALGORITHM mappings. */
   }
  }
+ if(ru_main_wave!=ru_touch_wave_before){
+  ru_touch_active_refresh();ru_touch_reverb_sync();
+ }
  if(ru_page==RU_PAGE_SAVER_OPTIONS && dm)ru_adjust(0,dm);
  /* SEL always opens an occupied slot after a second SEL, or enters NAME
   * on an empty slot. SAVE follows the equivalent independent save path above.
@@ -5852,9 +6040,9 @@ void fm1_cstart(void){
   * always take priority over controller boot. Keep this mode transient. */
  native_keyboard_mode=etch_keyboard_boot_requested(safe,fm1_in.buttons);
 #ifdef RUPTURE_BUILD
- /* First drawable frame appears directly after LCD init and recovery keys.
-    Keep the complete finished logo visible while subsequent init executes. */
- if(!safe && !native_keyboard_mode){ru_boot_splash();ru_splash_done=1u;ru_band_valid=0u;}
+ /* Begin the logo immediately, then prepare engines/presets during the intro.
+  * PLAY must not become visible until the codec and DMA are safely primed. */
+ if(!safe && !native_keyboard_mode){ru_boot_intro_begin();ru_band_valid=0u;}
 #endif
  #ifdef RUPTURE_BUILD
  native_workflow_pending=0u; /* Never run ETCH's original startup workflow chooser. */
@@ -5878,6 +6066,9 @@ void fm1_cstart(void){
 #endif
  }
  usb_start();
+#ifdef RUPTURE_BUILD
+ ru_boot_intro_pump();
+#endif
  etch_editor_init(&native_editor);
  etch_fx_defaults(&native_fx_settings);
  etch_factory_seed(&native_library);
@@ -5917,6 +6108,9 @@ void fm1_cstart(void){
  etch_native_groups_configure(&native_preset_dsp.groups);
  etch_native_groups_patch_bank(native_library.patches);
  if(!safe){native_library_boot();
+#ifdef RUPTURE_BUILD
+  ru_boot_intro_pump();
+#endif
   if(native_store_status==ETCH_STORE_FOREIGN)native_flash_probe=etch_flash_probe_read(native_store_io.read);
   /* Prompt is opt-in and only for an occupied ETCH-target region.
    * Do not offer format in Safe Mode, on read I/O failures, or for healthy
@@ -5948,9 +6142,16 @@ void fm1_cstart(void){
  if(safe)etch_boot_stable(&etch_boot,1);
  /* Safe Mode never reads a patch or project from damaged/foreign storage. */
  if(!safe)native_project_restore();
+#ifdef RUPTURE_BUILD
+ ru_boot_intro_pump();
+#endif
  native_morph_a=native_library.selection[0];native_morph_b=native_library.selection[1];
  native_browser_slot=native_library.selection[0];native_browser_target=0;native_morph_focus=0;
  fm1_adc_init();(void)fm1_adc_read(FM1_ADC_MASTER);
+#ifdef RUPTURE_BUILD
+ /* No ADC ownership during the SikkenWorks boot/logo animation. */
+ ru_touch_adc_enable(0u);
+#endif
  native_controls.gain=16384;native_controls.morph=8192;native_controls.depth=8192;native_mod_ratio=0;
 #ifdef RUPTURE_BUILD
  native_controls.octave=RUPTURE_BASS_OCTAVE; /* RUPTURE OCT 0: original F1..G3 register. */
@@ -5968,6 +6169,17 @@ void fm1_cstart(void){
    if(ru_preset_assign_valid(mapped))ru_preset_assign=mapped;
    if(ru_preset_assign_valid(growl))ru_preset_growl_assign=growl;
   }
+  {uint8_t stored=RU_TOUCH_CONFIG_DEFAULT;
+   if(etch_store_touch_load(&native_store_io,&stored)==ETCH_STORE_OK && stored<=31u)
+    ru_touch_conf=stored;
+   for(uint8_t engine=0u;engine<2u;engine++){
+    struct ru_touch_profile p=RU_TOUCH_PROFILE_DEFAULT;
+    if(etch_store_touch_profile_load(&native_store_io,engine,&p)==ETCH_STORE_OK &&
+       ru_touch_profile_valid(&p))ru_touch_profiles[engine]=p;
+   }
+   /* One physical sensor for both independently saved voice profiles. */
+   ru_touch_active_refresh();
+   if(!safe)ru_touch_reverb_sync();}
 #if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
   {uint8_t preferred=0u;
    if(etch_store_usb_rate_load(&native_store_io,&preferred)==ETCH_STORE_OK)
@@ -5980,14 +6192,8 @@ void fm1_cstart(void){
    ru_welcome=(RuWelcome){0};ru_welcome.phase=RU_WELCOME_INTRO;
    ru_welcome.crt=ru_crt_enabled;
   }else{
-   /* Prior firmware stored welcome_done=1, so upgrading silently skipped
-    * the Welcome page. Show a short, read-only boot welcome every restart,
-    * without re-asking to format/backup or modifying persistent settings. */
-   RuState welcome_preview={0};welcome_preview.page=RU_PAGE_WELCOME;
-   welcome_preview.welcome_phase=RU_WELCOME_RETURN;
-   welcome_preview.crt_enabled=ru_crt_enabled;
-   ru_crt_active=ru_crt_enabled;ru_render(&welcome_preview);ru_commit();
-   for(uint32_t ms=0u;ms<1100u;ms+=25u){fm1_wdt_feed();fm1_delay_ms(25u);}
+   /* The original 1.1 s WELCOME BACK will be rendered AFTER the complete
+    * logo and while the already prepared audio output remains silent. */
    first_frame=1u;
   }
  }
@@ -6015,6 +6221,9 @@ void fm1_cstart(void){
  if(!safe&&native_store_status==ETCH_STORE_OK&&native_library.reserved>=1&&native_library.reserved<=ETCH_PATCH_SLOTS){native_patch_slot=native_library.reserved-1;native_project_restore();native_patch_load(0);if(native_project_cfg.source_version==3)native_project_restore();native_restore_project_bpm();}
  native_editor.dirty=1;native_compile_edit();
  native_parameter_publish();
+#ifdef RUPTURE_BUILD
+ ru_boot_intro_pump();
+#endif
  int32_t pot=fm1_adc_read(FM1_ADC_MASTER);
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
  /* POPFIX: start zero-filled DMA and settle codec bias before turning on
@@ -6026,6 +6235,78 @@ void fm1_cstart(void){
   for(uint32_t ms=0u;ms<ETCH_OUTPUT_CODEC_PRE_LED_MS;ms+=10u){fm1_wdt_feed();fm1_delay_ms(10u);}
  }
  native_seq_led_refresh();
+#ifdef RUPTURE_BUILD
+ if(!safe && !native_keyboard_mode){
+  /* The original 41-key LED startup wave runs while the remaining logo,
+   * quote and title animate. Keep the codec's clock/analog/LED-quiet gates
+   * and the extra 500 ms screen-quiet interval at their proven durations. */
+  uint32_t ru_boot_led_last_ms=etch_ms;
+  while((uint32_t)(etch_ms-ru_boot_intro_since_ms)<RU_INTRO_DURATION_MS ||
+        (boot_audio && !native_screen_gate.ready && !native_screen_gate.timed_out)){
+#if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
+   /* USB-C capture uses the exact foreground FIR service it normally has;
+    * don't let its staging ring back up while the intro is visible. */
+   if(boot_audio&&!native_updating)uac_foreground_service();
+#if ETCH_CPU1_LAB
+   /* Finish CPU1 SRAM/FIR qualification before PLAY if time permits.
+    * A failed qualification retires CORE2; CPU0 remains the FX fallback. */
+   if(boot_audio)ru_cpu1_diag_service(etch_ms,
+     (uint8_t)(!uac.alt&&!native_seq_run&&
+       !native_blend_audio_busy()&&!native_missed_streak),
+     (uint8_t)(uac.alt&&uac.r48));
+#endif
+#endif
+   if((uint32_t)(etch_ms-ru_boot_led_last_ms)>=RU_LED_BOOT_WAVE_STEP_MS){
+    /* The foreground loop has not started yet. Advance the ORIGINAL
+     * full-panel wave here, not from the timer or audio ISR. */
+    ru_boot_led_last_ms=etch_ms;native_seq_led_refresh();
+   }
+   if(boot_audio){
+    native_output_poll();
+    if(!native_screen_gate.ready)
+     (void)etch_output_screen_advance(&native_screen_gate,fm1_ticks(),
+       (uint8_t)(!native_suspended&&!native_tripped),native_output_analog_ready);
+   }
+   ru_boot_intro_pump();
+   fm1_wdt_feed();fm1_delay_ms(2u);
+  }
+  ru_boot_intro_pump();ru_boot_intro_started=0u;
+  ru_splash_done=1u;ru_band_valid=0u;first_frame=1u;
+  if(ru_welcome_done){
+   /* Restore the original returning user's WELCOME BACK screen. Present
+    * it after the complete SikkenWorks intro, while audio is prepared but
+    * STILL digitally muted. PLAY must always be immediately playable. */
+   RuState welcome_preview={0};welcome_preview.page=RU_PAGE_WELCOME;
+   welcome_preview.welcome_phase=RU_WELCOME_RETURN;
+   welcome_preview.crt_enabled=ru_crt_enabled;
+   ru_crt_active=ru_crt_enabled;ru_render(&welcome_preview);ru_commit();
+   uint32_t welcome_since_ms=etch_ms;
+   while((uint32_t)(etch_ms-welcome_since_ms)<1100u){
+#if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
+    /* Never stall 48k USB capture during the returning-user greeting. */
+    if(boot_audio&&!native_updating)uac_foreground_service();
+#endif
+    fm1_wdt_feed();fm1_delay_ms(2u);
+   }
+   ru_band_valid=0u;first_frame=1u;
+  }
+  /* First RUPTURE PLAY frame and sample unmute happen together, with all
+   * presets and FX state already compiled, and the DMA ring prefilled. */
+  screen();
+  /* DSP MAX is an ALNK wall-time high-water mark, NOT pure oscillator
+   * arithmetic: it also counts CORE2 waits and shared-bus contention.
+   * V2.0.51 started ALNK during the animated LCD intro and polluted DSP
+   * MAX with one-time boot-only LCD/CPU1-qualification peaks. Begin the
+   * live performance meter once PLAY is on screen. Preserve ALL real
+   * DMA LATE / GUARD / CORE2 timeout counters, including boot faults. */
+  fm1_irq_off();
+  native_max_ticks=0u;native_max_wall_ticks=0u;native_max_nested_ticks=0u;
+  native_render_wall_peak=0u;native_publish_wall_peak=0u;
+  native_controls_wall_peak=0u;
+  native_min_dma_slack=ETCH_NATIVE_FRAMES*544u;
+  fm1_irq_enable_all();
+ }
+#endif
  uint32_t last=0,held=0,previous_buttons=fm1_in.buttons,last_seq_notes=fm1_in.notes,last_ui_paint_ms=0,last_wave_compile_ms=0;
 #ifdef RUPTURE_BUILD
  struct ru_note_paint_budget ru_note_paint={0};
@@ -6063,6 +6344,7 @@ void fm1_cstart(void){
 #endif
 #endif
   if(!native_updating && !safe && !native_keyboard_mode){
+   native_storage_read_poll((uint8_t)(!muted&&!native_tripped));
    native_output_poll();
    /* The UI transition is an independent stage, not the same event as
     * PC6 enable or the first nonzero sample. Quiet LCD/SPI bus while
@@ -6139,7 +6421,27 @@ void fm1_cstart(void){
    * gain smoothing still happens in the DSP once per sample. */
   if(!safe&&!native_updating&&(uint32_t)(etch_ms-last_gain_sample_ms)>=20u){
    last_gain_sample_ms=etch_ms;
-   int32_t master_adc=fm1_adc_read(FM1_ADC_MASTER);
+   int32_t master_adc=
+#ifdef RUPTURE_BUILD
+    fm1_touch_hw_on?
+       (fm1_touch_master_valid?(int32_t)fm1_touch_master:-1):
+       
+#endif
+       fm1_adc_read(FM1_ADC_MASTER);
+#ifdef RUPTURE_BUILD
+   const struct ru_touch_profile *touch_profile=
+      &ru_touch_profiles[ru_main_wave?1u:0u];
+   if(touch_profile->target&&touch_profile->mode==RU_TOUCH_MODE_PRESS &&
+      fm1_touch_hw_on){
+    uint16_t samples[20],generations[20];
+    ru_touch_adc_snapshot(samples,generations);
+    ru_touch_live_pressure=ru_touch_update(&ru_touch_state,fm1_in.notes,
+       samples,generations,etch_ms,
+       ru_touch_config(touch_profile->target,touch_profile->sensitivity));
+   }else ru_touch_live_pressure=0u;
+   ru_touch_live_motion=ru_touch_motion(&ru_touch_drift,touch_profile,
+      etch_ms,fm1_in.notes|(ru_touch_midi_held?1u:0u),ru_touch_live_pressure);
+#endif
    if(master_adc>=0){
     uint16_t next_gain=(uint16_t)((uint32_t)master_adc*32767u/1023u);
 #ifdef RUPTURE_BUILD
@@ -6151,7 +6453,12 @@ void fm1_cstart(void){
 #ifdef RUPTURE_BUILD
   if((uint32_t)(etch_ms-ru_battery_sample_ms)>=1500u){
    ru_battery_sample_ms=etch_ms;
-   int32_t raw=fm1_adc_read(FM1_ADC_BATT);
+   int32_t raw=
+#ifdef RUPTURE_BUILD
+     fm1_touch_hw_on?
+       (fm1_touch_battery_valid?(int32_t)fm1_touch_battery:-1):
+#endif
+       fm1_adc_read(FM1_ADC_BATT);
    /* Felucca batt_level() calibrated FM1 PB1 10-bit ADC thresholds.
     * 531/561/591 represent coarse VOLTAGE bands, NOT a fuel gauge %.
     * Lightly filtered for stable icon bars; reject failed/open ADC. */
@@ -6173,7 +6480,7 @@ void fm1_cstart(void){
   if(!muted&&native_tripped && (fm1_in.buttons&((1u<<8)|(1u<<12)))==((1u<<8)|(1u<<12))){
    if(!native_audio_rearm_held)native_audio_rearm_held=etch_ms;
    if((uint32_t)(etch_ms-native_audio_rearm_held)>=1000u){
-    fm1_irq_off();native_stop();native_tripped=0;native_start();fm1_irq_enable_all();
+    fm1_irq_off();native_stop();native_tripped=0;native_storage_audio_failed=0u;native_start();fm1_irq_enable_all();
     native_audio_rearm_held=0;first_frame=1;
    }
   }else native_audio_rearm_held=0;
@@ -6182,7 +6489,7 @@ void fm1_cstart(void){
    * deadline under display/USB load. Restart at most three times after a
    * 1-second cool-off, on the MAIN thread, never in the audio ISR. A true
    * persistent fault stays stopped for diagnosis and manual HOME+PLAY. */
-  if(!muted && native_tripped && !native_updating){
+  if(!muted && native_tripped && !native_updating && !native_storage_audio_failed){
    if(!native_auto_fault_at)native_auto_fault_at=etch_ms?etch_ms:1u;
    if(native_auto_restarts<3u && (uint32_t)(etch_ms-native_auto_fault_at)>=1000u){
     fm1_irq_off();native_start();fm1_irq_enable_all();
@@ -6648,6 +6955,17 @@ void fm1_cstart(void){
       else ru_global_gain_dirty=1u; /* retry conservatively after quiet time */
      }
 #endif
+     {int tr=etch_store_touch_save(&native_store_io,ru_touch_conf);
+      if(tr!=ETCH_STORE_OK)ru_global_gain_dirty=1u;}
+     for(uint8_t engine=0u;engine<2u;engine++)
+      if((ru_autosave_enabled||ru_touch_manual_commit)&&
+         (ru_touch_profile_dirty&(1u<<engine))){
+       int er=etch_store_touch_profile_save(&native_store_io,engine,
+        &ru_touch_profiles[engine]);
+       if(er==ETCH_STORE_OK)ru_touch_profile_dirty&=(uint8_t)~(1u<<engine);
+       else ru_global_gain_dirty=1u;
+      }
+     if(!ru_touch_profile_dirty)ru_touch_manual_commit=0u;
      if(!was_muted&&!was_tripped){fm1_irq_off();native_start();fm1_irq_enable_all();}
    }
    /* Save the selected PRESETS mapping independently from project data.

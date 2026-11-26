@@ -10,8 +10,8 @@ sha=lambda name:hashlib.sha256((src/name).read_bytes()).hexdigest()
 for name,expected in {
  'native_cxs_q15.c':'86f4a39ad9bdbd6eabb79a34d9453e0fb0e150936667806e94eb2f00b57ca18f',
  'native_fx.c':'d7a7b55f99011d92a98f8ce8f20a6d2ec3374fc8f67fdcac48c70a05d248412a',
- 'audio_target.c':'b5af317243517c50e9b44b95c517f3d920282e53bbbeb4440bc652e19d57599c',
- 'audio_core.c':'6499bf5d022ac8e61457d52a7400f109794c5d5ae790d6ec3899972bcd1062c9',
+ 'audio_target.c':'3043710cebb5de5096b22eb2a178585ab6b75d69648b7e085da7a37cb81405ea',
+ 'audio_core.c':'0e5588d24d41f69be5e3065acf4218795a4b55916f448a1b595d984fde7eb235',
 }.items():
  assert sha(name)==expected,(name,sha(name),expected)
 build=(src/'build.py').read_text()

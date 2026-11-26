@@ -46,6 +46,10 @@ if(v.page==RU_PAGE_SETTINGS && argc>=4){
  else if(!strcmp(argv[3],"settings-targets")){v.settings_open=3u;v.preset_category=4u;v.preset_cursor=36u;}
  else if(!strcmp(argv[3],"settings-saved")){v.settings_open=0u;v.preset_save_stage=3u;v.preset_save_progress=100u;}
 }
+/* Preview-only: render the EXACT returning-user welcome frame from the
+ * production UI, without changing the firmware's on-device boot sequence. */
+if(v.page==RU_PAGE_WELCOME && argc>=4 && !strcmp(argv[3],"welcome-back"))
+ v.welcome_phase=RU_WELCOME_RETURN;
 if(argc>=4 && (v.page==RU_PAGE_PLAY || v.page==RU_PAGE_SHAPE) && (!strcmp(argv[3],"saw")||!strcmp(argv[3],"growl")))v.main_wave=1u;
 if(argc>=4 && (v.page==RU_PAGE_SUB1 || v.page==RU_PAGE_SUB2)){
  if(!strcmp(argv[3],"square"))v.k[0]=3u;

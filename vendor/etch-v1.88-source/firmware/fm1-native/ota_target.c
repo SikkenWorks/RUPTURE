@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * ETCH target adapter for the GPL Felucca MIDI update protocol.
- * Included after ota.c; all access is main-loop-only, with DMA stopped.
+ * Included after ota.c; all access is main-loop-only, after both DMA halves hold zero.
  */
 #include "native_ota_matrix.h"
 static uint8_t native_updating;
 static uint8_t ota_matrix_band_index,ota_matrix_step,ota_matrix_percent;
+static uint8_t ota_matrix_painted_percent;
 static uint32_t ota_matrix_frame,ota_matrix_last;
 static int32_t ota_matrix_error;
 static void ota_matrix_paint_band(uint8_t band){
@@ -32,6 +33,22 @@ static uint32_t ota_now_ms(void){
  if(ota_clock_rem>=24000u){ota_clock_rem-=24000u;++ota_clock_ms;}return ota_clock_ms;
 }
 static int ota_aborted(void){return usb.uboot_req||(fm1_in.buttons&3u)==3u;}
+
+/* Draw only NEW pixels in the live bar. ru_render/ru_commit would overwrite
+ * etch_scope_canvas, which CHECK also lends to the LZ4 verifier. lcd_fill has
+ * its own 240-pixel DMA buffer, so this remains safe even during decompression.
+ * The trusted second-stage OTA writer owns the LCD after ota_commit(). */
+static void ota_progress_paint_delta(void){
+#ifdef RUPTURE_BUILD
+ if(ota_matrix_step!=1u && ota_matrix_step!=3u)return;
+ if(ota_matrix_percent<=ota_matrix_painted_percent)return;
+ uint32_t old_width=(uint32_t)ota_matrix_painted_percent*2u;
+ uint32_t next_width=(uint32_t)ota_matrix_percent*2u;
+ lcd_fill(20u+old_width,123u,next_width-old_width,15u,0xffffu);
+ lcd_sync();
+ ota_matrix_painted_percent=ota_matrix_percent;
+#endif
+}
 static void ota_idle(void){
  fm1_wdt_feed();
  if(native_updating){
@@ -42,8 +59,9 @@ static void ota_idle(void){
   /* During CHECK, the decompressor borrows the scope DMA canvas; it must
    * not be repainted until its CRC/entry validation is complete. */
 #ifdef RUPTURE_BUILD
-  if(ota_matrix_step!=1u && (uint32_t)(now-ota_matrix_last)>=650u){
-    ota_matrix_last=now;ota_matrix_paint_band(0u);
+  if((uint32_t)(now-ota_matrix_last)>=100u){
+    ota_matrix_last=now;
+    ota_progress_paint_delta();
   }
 #else
   if(ota_matrix_step!=1u && (uint32_t)(now-ota_matrix_last)>=120u){
@@ -55,10 +73,12 @@ static void ota_idle(void){
  }
 }
 static int ota_erase(uint32_t off){
+ if(native_storage_audio_failed||!native_suspended)return -8;
  if(!ETCH_NATIVE_OTA||!native_updating||!native_flash_write_allowed()||!FL_IN(off,0x1000u,OTA_AREA,OTA_AREA+OTA_AREA_LEN)||(off&0xfffu))return -8;
  uint32_t took;fm1_irq_off();int rc=FL_FAR(fl_erase4k_ram)(off,&took);fm1_irq_enable_all();fm1_wdt_feed();return rc;
 }
 static int ota_prog(uint32_t off,const void *src,uint32_t n){
+ if(native_storage_audio_failed||!native_suspended)return -8;
  if(!ETCH_NATIVE_OTA||!native_updating||!native_flash_write_allowed()||!FL_IN(off,n,OTA_AREA,OTA_AREA+OTA_AREA_LEN))return -8;
  const uint8_t *p=src;uint8_t page[256];
  while(n){uint32_t k=256u-(off&255u);if(k>n)k=n;uint32_t took;
@@ -68,6 +88,7 @@ static int ota_prog(uint32_t off,const void *src,uint32_t n){
  }return 0;
 }
 static int ota_fread(uint32_t off,void *dst,uint32_t n){
+ if(native_storage_audio_failed||!native_suspended)return -8;
  /* Only raw boot comparison and reserved staging reads, never arbitrary addresses. */
  if(!ETCH_NATIVE_OTA||!native_updating||!(FL_IN(off,n,0,0x4000u)||FL_IN(off,n,OTA_AREA,OTA_AREA+OTA_AREA_LEN)))return -8;
  uint8_t *p=dst;
@@ -87,6 +108,7 @@ static void ota_show(uint32_t step,int32_t code){
  /* Initial full-screen fill. Subsequent changes are rate-limited stripes. */
 #ifdef RUPTURE_BUILD
  ota_matrix_paint_band(0u);
+ ota_matrix_painted_percent=ota_matrix_percent;
 #else
  for(uint8_t b=0u;b<6u;b++)ota_matrix_paint_band(b);
 #endif

@@ -23,5 +23,5 @@ assert 'native_midi_drain(native_output_enabled?1u:0u)' in audio
 assert 'RU_SCOPE_FX_QUIET_HALVES=24u' in guard
 assert 'previous_slack<=half_budget/5u' in guard
 assert 'ordinary_scope_allow&&!quiet&&!low_slack' in guard
-assert 'V2.0.43' in (src/'build.py').read_text()
+assert 'V2.0.58' in (src/'build.py').read_text()
 print('PASS V2.0.39: only optional scope deferred; audio, USB and MIDI untouched')

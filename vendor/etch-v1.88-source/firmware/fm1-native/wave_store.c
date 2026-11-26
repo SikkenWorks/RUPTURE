@@ -192,6 +192,9 @@ static int select_project_read_region(const struct etch_store_io *io);
 #define RU_BOOT_MAGIC 0x5800u /* boot project 0=NEW, 1..12 stored project; CRC protected */ /* idx 0..7, low bits ON + AUTO SAVE */
 #define RU_PRESET_ASSIGN_MAGIC 0x6401u /* independent 8-byte global encoder mapping journal */
 #define RU_PRESET_ASSIGN_PAIR_MAGIC 0x6402u /* same 8 bytes: CXS + GROWL mappings */
+#define RU_TOUCH_PREF_MAGIC 0x7000u /* 0x7000..0x701f: pressure target & sensitivity */
+#define RU_EXPR_PREF_MAGIC 0x7400u /* 0x7400..0x77ff: per-engine expression */
+#define RU_TOUCH_DEFAULT 8u /* OFF at medium, legacy preference records */
 #define RU_PRESET_ASSIGN_DEFAULT 1u /* BPM, unchanged on upgrades */
 #define RU_PRESET_ASSIGN_GROWL_DEFAULT 94u /* EXPRESSION, append-only index */
 #define RU_PRESET_ASSIGN_MAX 96u /* conservative bound; UI validates actual ID */
@@ -227,33 +230,81 @@ static uint8_t ru_vol_valid(const struct ru_vol_record *r){
 /* Global USB-C audio rate uses the previously unused high bit of the
  * GROWL mapping byte. All assignment indices remain 0..95; old records
  * have bit 7 clear (44.1 kHz), and the 8-byte CRC journal ABI is intact. */
-static struct ru_vol_record ru_preset_assign_pair_make(uint8_t cxs,uint8_t growl,uint8_t rate48){
- struct ru_vol_record r={RU_PRESET_ASSIGN_PAIR_MAGIC,cxs,
+static uint8_t ru_touch_pref_magic(uint16_t m){return m>=RU_TOUCH_PREF_MAGIC&&m<RU_TOUCH_PREF_MAGIC+32u;}
+static struct ru_vol_record ru_preset_assign_pair_make_touch(uint8_t cxs,uint8_t growl,uint8_t rate48,uint8_t touch){
+ struct ru_vol_record r={(uint16_t)(touch==RU_TOUCH_DEFAULT?RU_PRESET_ASSIGN_PAIR_MAGIC:(RU_TOUCH_PREF_MAGIC+touch)),cxs,
      (uint8_t)(growl|(rate48?128u:0u)),0u};
  r.crc=etch_store_crc(&r,4u);return r;
+}
+static struct ru_vol_record ru_preset_assign_pair_make(uint8_t cxs,uint8_t growl,uint8_t rate48){
+ return ru_preset_assign_pair_make_touch(cxs,growl,rate48,RU_TOUCH_DEFAULT);
 }
 static uint8_t ru_preset_assign_record_valid(const struct ru_vol_record *r){
  return r->volume<RU_PRESET_ASSIGN_MAX&&
   ((r->magic==RU_PRESET_ASSIGN_MAGIC&&r->opposite==(uint8_t)(r->volume^255u))||
-   (r->magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&(r->opposite&127u)<RU_PRESET_ASSIGN_MAX))&&
+   ((r->magic==RU_PRESET_ASSIGN_PAIR_MAGIC||ru_touch_pref_magic(r->magic))&&
+    (r->opposite&127u)<RU_PRESET_ASSIGN_MAX))&&
   r->crc==etch_store_crc(r,4u);
 }
 static int ru_preset_assign_pair_scan(const struct etch_store_io *io,uint32_t bank,
- uint8_t *cxs,uint8_t *growl,uint8_t *rate48,uint8_t *present){
+ uint8_t *cxs,uint8_t *growl,uint8_t *rate48,uint8_t *present,uint8_t *touch){
  if(cxs)*cxs=RU_PRESET_ASSIGN_DEFAULT;
  if(growl)*growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
  if(rate48)*rate48=0u;
  if(present)*present=0u;
+ if(touch)*touch=RU_TOUCH_DEFAULT;
  for(uint32_t i=0u;i<RU_VOL_SLOTS;i++){
   struct ru_vol_record rec;
   if(io->read(base(bank)+RU_VOL_FIRST+i*RU_VOL_REC_BYTES,&rec,sizeof(rec)))return ETCH_STORE_IO;
   if(ru_preset_assign_record_valid(&rec)){
    if(cxs)*cxs=rec.volume;
-   if(growl)*growl=rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC?
+   if(growl)*growl=(rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC||ru_touch_pref_magic(rec.magic))?
     (uint8_t)(rec.opposite&127u):RU_PRESET_ASSIGN_GROWL_DEFAULT;
-   if(rate48)*rate48=(uint8_t)(rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&
+   if(rate48)*rate48=(uint8_t)((rec.magic==RU_PRESET_ASSIGN_PAIR_MAGIC||ru_touch_pref_magic(rec.magic))&&
                             !!(rec.opposite&128u));
+   if(touch)*touch=ru_touch_pref_magic(rec.magic)?(uint8_t)(rec.magic-RU_TOUCH_PREF_MAGIC):RU_TOUCH_DEFAULT;
    if(present)*present=1u;
+  }
+ }
+ return ETCH_STORE_OK;
+}
+/* The existing CRC-checked 8-byte journal can store 32 profile bits per
+ * engine: ten in the magic (engine/target/mode/feel/rate), and two literal
+ * 0..100% endpoints. Separate CXS/GROWL records preserve one another, and
+ * old V2.0.47 installations transparently seed both from the legacy 5 bits.
+ * No new flash sectors, project versions or OTA layout are required. */
+static uint8_t ru_expr_magic(uint16_t m){return m>=RU_EXPR_PREF_MAGIC&&m<RU_EXPR_PREF_MAGIC+1024u;}
+static struct ru_vol_record ru_expr_make(uint8_t engine,const struct ru_touch_profile *p){
+ uint16_t bits=(uint16_t)((engine&1u)|((uint16_t)p->target<<1u)|
+  ((uint16_t)p->mode<<4u)|((uint16_t)p->sensitivity<<6u)|((uint16_t)p->rate<<8u));
+ struct ru_vol_record r={(uint16_t)(RU_EXPR_PREF_MAGIC+bits),p->min_pct,p->max_pct,0u};
+ r.crc=etch_store_crc(&r,4u);return r;
+}
+static uint8_t ru_expr_decode(const struct ru_vol_record *r,uint8_t *engine,
+ struct ru_touch_profile *p){
+ if(!ru_expr_magic(r->magic)||r->crc!=etch_store_crc(r,4u))return 0u;
+ uint16_t bits=(uint16_t)(r->magic-RU_EXPR_PREF_MAGIC);
+ struct ru_touch_profile q={(uint8_t)((bits>>1u)&7u),
+  (uint8_t)((bits>>4u)&3u),(uint8_t)((bits>>6u)&3u),
+  r->volume,r->opposite,(uint8_t)((bits>>8u)&3u)};
+ if(!ru_touch_profile_valid(&q))return 0u;
+ if(engine)*engine=(uint8_t)(bits&1u);
+ if(p)*p=q;
+ return 1u;
+}
+static int ru_expr_scan(const struct etch_store_io *io,uint32_t bank,
+ struct ru_touch_profile out[2],uint8_t present[2]){
+ uint8_t legacy=RU_TOUCH_DEFAULT;
+ int rc=ru_preset_assign_pair_scan(io,bank,0,0,0,0,&legacy);
+ if(rc)return rc;
+ struct ru_touch_profile initial={(uint8_t)(legacy&7u),RU_TOUCH_MODE_PRESS,
+  (uint8_t)((legacy>>3u)&3u),0u,100u,1u};
+ out[0]=initial;out[1]=initial;present[0]=present[1]=0u;
+ for(uint32_t i=0u;i<RU_VOL_SLOTS;i++){
+  struct ru_vol_record rec;uint8_t engine;struct ru_touch_profile q;
+  if(io->read(base(bank)+RU_VOL_FIRST+i*RU_VOL_REC_BYTES,&rec,sizeof(rec)))return ETCH_STORE_IO;
+  if(ru_expr_decode(&rec,&engine,&q)){
+   out[engine]=q;present[engine]=1u;
   }
  }
  return ETCH_STORE_OK;
@@ -286,8 +337,15 @@ static int ru_vol_scan(const struct etch_store_io *io,uint32_t bank,
  * the header LAST preserves the old bank across torn erase/program failures. */
 static int ru_vol_compact(const struct etch_store_io *io,uint32_t bank,
  struct header h,const struct ru_vol_record *settings,
- const struct ru_vol_record *assignment){
+ const struct ru_vol_record *assignment,const struct ru_vol_record *expr_update){
  if(!ru_vol_valid(settings)||(assignment&&!ru_preset_assign_record_valid(assignment)))return ETCH_STORE_IO;
+ struct ru_touch_profile profiles[2];uint8_t present[2];
+ int rc=ru_expr_scan(io,bank,profiles,present);if(rc)return rc;
+ if(expr_update){
+  uint8_t engine;struct ru_touch_profile q;
+  if(!ru_expr_decode(expr_update,&engine,&q))return ETCH_STORE_IO;
+  profiles[engine]=q;present[engine]=1u;
+ }
  uint32_t target=bank^1u,offset=base(target);
  for(uint32_t a=0u;a<region_bank_bytes();a+=4096u)
   if(io->erase(offset+a))return ETCH_STORE_IO;
@@ -316,6 +374,14 @@ static int ru_vol_compact(const struct etch_store_io *io,uint32_t bank,
   if(io->read(offset+RU_VOL_FIRST+RU_VOL_REC_BYTES,&verify,sizeof(verify))||
      !ru_preset_assign_record_valid(&verify)||verify.volume!=assignment->volume)return ETCH_STORE_VERIFY;
  }
+ uint32_t expr_index=assignment?2u:1u;
+ for(uint8_t engine=0u;engine<2u;engine++)if(present[engine]){
+  struct ru_vol_record rec=ru_expr_make(engine,&profiles[engine]);
+  uint32_t addr=offset+RU_VOL_FIRST+expr_index*RU_VOL_REC_BYTES;
+  if(io->program(addr,&rec,sizeof(rec))||io->read(addr,&verify,sizeof(verify)))return ETCH_STORE_IO;
+  if(!ru_expr_decode(&verify,0,0)||verify.magic!=rec.magic||verify.crc!=rec.crc)return ETCH_STORE_VERIFY;
+  expr_index++;
+ }
  h.bank=target;h.generation++;h.hcrc=etch_store_crc(&h,28u);
  if(io->program(offset,&h,sizeof(h)))return ETCH_STORE_IO;
  struct header committed;
@@ -329,11 +395,13 @@ static int ru_vol_transfer_preferences(const struct etch_store_io *io,
  uint32_t source_bank,uint32_t target_offset){
  uint8_t vol=100u,autosave=0u,saver=1u,seconds=1u,boot=0u,crt=0u,done=0u;
  uint8_t mapping=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,
-         mapping_present=0u,usb_rate48=0u;
+         mapping_present=0u,usb_rate48=0u,touch=RU_TOUCH_DEFAULT;
  int rc=ru_vol_scan(io,source_bank,&vol,&autosave,&saver,&seconds,&boot,0,&crt,&done,0);
  if(rc)return rc;
- rc=ru_preset_assign_pair_scan(io,source_bank,&mapping,&growl,&usb_rate48,&mapping_present);
+ rc=ru_preset_assign_pair_scan(io,source_bank,&mapping,&growl,&usb_rate48,&mapping_present,&touch);
  if(rc)return rc;
+ struct ru_touch_profile expr[2];uint8_t expr_present[2];
+ rc=ru_expr_scan(io,source_bank,expr,expr_present);if(rc)return rc;
  uint32_t offset=target_offset+RU_VOL_FIRST;
  if(vol!=100u||autosave||!saver||seconds!=1u||boot||crt||done){
   struct ru_vol_record rec=ru_vol_make(vol,autosave,saver,seconds,boot,crt,done),check;
@@ -342,9 +410,16 @@ static int ru_vol_transfer_preferences(const struct etch_store_io *io,
   offset+=RU_VOL_REC_BYTES;
  }
  if(mapping_present){
-  struct ru_vol_record rec=ru_preset_assign_pair_make(mapping,growl,usb_rate48),check;
+  struct ru_vol_record rec=ru_preset_assign_pair_make_touch(mapping,growl,usb_rate48,touch),check;
   if(io->program(offset,&rec,sizeof(rec))||io->read(offset,&check,sizeof(check)))return ETCH_STORE_IO;
   if(!ru_preset_assign_record_valid(&check)||check.volume!=mapping)return ETCH_STORE_VERIFY;
+  offset+=RU_VOL_REC_BYTES;
+ }
+ for(uint8_t engine=0u;engine<2u;engine++)if(expr_present[engine]){
+  struct ru_vol_record rec=ru_expr_make(engine,&expr[engine]),check;
+  if(io->program(offset,&rec,sizeof(rec))||io->read(offset,&check,sizeof(check)))return ETCH_STORE_IO;
+  if(!ru_expr_decode(&check,0,0)||check.magic!=rec.magic||check.crc!=rec.crc)return ETCH_STORE_VERIFY;
+  offset+=RU_VOL_REC_BYTES;
  }
  return ETCH_STORE_OK;
 }
@@ -394,11 +469,11 @@ int etch_store_user_settings_welcome_save(const struct etch_store_io *io,uint8_t
   /* Preserve the independent assignment record when other global options
    * force journal compaction. Old projects and the protected loader remain. */
   uint8_t mapping=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,present=0u;
-  uint8_t usb_rate48=0u;
-  rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&mapping,&growl,&usb_rate48,&present);if(rc)return rc;
+  uint8_t usb_rate48=0u,touch=RU_TOUCH_DEFAULT;
+  rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&mapping,&growl,&usb_rate48,&present,&touch);if(rc)return rc;
   struct ru_vol_record compact=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project,crt,welcome_done);
-  struct ru_vol_record assigned=ru_preset_assign_pair_make(mapping,growl,usb_rate48);
-  return ru_vol_compact(io,(uint32_t)bank,h,&compact,present?&assigned:0);
+  struct ru_vol_record assigned=ru_preset_assign_pair_make_touch(mapping,growl,usb_rate48,touch);
+  return ru_vol_compact(io,(uint32_t)bank,h,&compact,present?&assigned:0,0);
  }
  struct ru_vol_record record=ru_vol_make(volume,autosave,screensaver,seconds_index,boot_project,crt,welcome_done),check;
  if(io->program(free_offset,&record,sizeof(record)))return ETCH_STORE_IO;
@@ -418,37 +493,37 @@ int etch_store_preset_assign_pair_load(const struct etch_store_io *io,uint8_t *c
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
- return ru_preset_assign_pair_scan(io,(uint32_t)bank,cxs,growl,0,0);
+ return ru_preset_assign_pair_scan(io,(uint32_t)bank,cxs,growl,0,0,0);
 }
 int etch_store_preset_assign_load(const struct etch_store_io *io,uint8_t *assignment){
  uint8_t growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
  return etch_store_preset_assign_pair_load(io,assignment,&growl);
 }
 static int ru_store_preference_pair_save(const struct etch_store_io *io,
- uint8_t cxs,uint8_t growl,uint8_t rate48){
+ uint8_t cxs,uint8_t growl,uint8_t rate48,uint8_t touch){
  if(!io||!io->read||!io->program||cxs>=RU_PRESET_ASSIGN_MAX||
-    growl>=RU_PRESET_ASSIGN_MAX||rate48>1u)return ETCH_STORE_IO;
+    growl>=RU_PRESET_ASSIGN_MAX||rate48>1u||touch>31u)return ETCH_STORE_IO;
  int selected=select_project_read_region(io);if(selected<0)return selected;
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
  uint8_t current_cxs=RU_PRESET_ASSIGN_DEFAULT,current_growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,
-         current_rate48=0u;
+         current_rate48=0u,current_touch=RU_TOUCH_DEFAULT;
  int rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&current_cxs,&current_growl,
-     &current_rate48,0);if(rc)return rc;
- if(current_cxs==cxs&&current_growl==growl&&current_rate48==rate48)return ETCH_STORE_OK;
+     &current_rate48,0,&current_touch);if(rc)return rc;
+ if(current_cxs==cxs&&current_growl==growl&&current_rate48==rate48&&current_touch==touch)return ETCH_STORE_OK;
  uint8_t vol,auto_save,saver,seconds,boot,crt,done,wizard;
  uint32_t free_offset;
  rc=ru_vol_scan(io,(uint32_t)bank,&vol,&auto_save,&saver,&seconds,&boot,
     &free_offset,&crt,&done,&wizard);if(rc)return rc;
- struct ru_vol_record rec=ru_preset_assign_pair_make(cxs,growl,rate48),check;
+ struct ru_vol_record rec=ru_preset_assign_pair_make_touch(cxs,growl,rate48,touch),check;
  if(free_offset==0xffffffffu){
   struct ru_vol_record settings=ru_vol_make(vol,auto_save,saver,seconds,boot,crt,done);
-  return ru_vol_compact(io,(uint32_t)bank,h,&settings,&rec);
+  return ru_vol_compact(io,(uint32_t)bank,h,&settings,&rec,0);
  }
  if(io->program(free_offset,&rec,sizeof(rec)))return ETCH_STORE_IO;
  if(io->read(free_offset,&check,sizeof(check)))return ETCH_STORE_IO;
- return ru_preset_assign_record_valid(&check)&&check.magic==RU_PRESET_ASSIGN_PAIR_MAGIC&&
+ return ru_preset_assign_record_valid(&check)&&check.magic==rec.magic&&
    check.volume==cxs&&check.opposite==(uint8_t)(growl|(rate48?128u:0u))?
    ETCH_STORE_OK:ETCH_STORE_VERIFY;
 }
@@ -460,18 +535,81 @@ int etch_store_usb_rate_load(const struct etch_store_io *io,uint8_t *rate48){
  struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
  if(bank<0)return bank;
  if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
- return ru_preset_assign_pair_scan(io,(uint32_t)bank,&cxs,&growl,rate48,0);
+ return ru_preset_assign_pair_scan(io,(uint32_t)bank,&cxs,&growl,rate48,0,0);
 }
 int etch_store_usb_rate_save(const struct etch_store_io *io,uint8_t rate48){
  if(rate48>1u)return ETCH_STORE_IO;
  uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
+ uint8_t touch=RU_TOUCH_DEFAULT;
  int rc=etch_store_preset_assign_pair_load(io,&cxs,&growl);
- return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48):rc;
+ if(rc==ETCH_STORE_OK)rc=etch_store_touch_load(io,&touch);
+ return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48,touch):rc;
 }
 int etch_store_preset_assign_pair_save(const struct etch_store_io *io,uint8_t cxs,uint8_t growl){
- uint8_t rate48=0u;
+ uint8_t rate48=0u,touch=RU_TOUCH_DEFAULT;
  int rc=etch_store_usb_rate_load(io,&rate48);
- return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48):rc;
+ if(rc==ETCH_STORE_OK)rc=etch_store_touch_load(io,&touch);
+ return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48,touch):rc;
+}
+int etch_store_touch_load(const struct etch_store_io *io,uint8_t *touch){
+ if(!io||!touch)return ETCH_STORE_IO;
+ *touch=RU_TOUCH_DEFAULT;
+ uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;
+ int selected=select_project_read_region(io);if(selected<0)return selected;
+ struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
+ if(bank<0)return bank;
+ if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
+ return ru_preset_assign_pair_scan(io,(uint32_t)bank,&cxs,&growl,0,0,touch);
+}
+int etch_store_touch_save(const struct etch_store_io *io,uint8_t touch){
+ if(touch>31u)return ETCH_STORE_IO;
+ uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,rate48=0u;
+ int rc=etch_store_preset_assign_pair_load(io,&cxs,&growl);
+ if(rc==ETCH_STORE_OK)rc=etch_store_usb_rate_load(io,&rate48);
+ return rc==ETCH_STORE_OK?ru_store_preference_pair_save(io,cxs,growl,rate48,touch):rc;
+}
+int etch_store_touch_profile_load(const struct etch_store_io *io,uint8_t engine,
+ struct ru_touch_profile *profile){
+ if(!io||!io->read||!profile||engine>=2u)return ETCH_STORE_IO;
+ *profile=(struct ru_touch_profile)RU_TOUCH_PROFILE_DEFAULT;
+ int selected=select_project_read_region(io);if(selected<0)return selected;
+ struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
+ if(bank<0)return bank;
+ if(h.version!=13u||store_region!=3u)return ETCH_STORE_OK;
+ struct ru_touch_profile profiles[2];uint8_t present[2];
+ int rc=ru_expr_scan(io,(uint32_t)bank,profiles,present);
+ if(rc==ETCH_STORE_OK)*profile=profiles[engine];
+ return rc;
+}
+int etch_store_touch_profile_save(const struct etch_store_io *io,uint8_t engine,
+ const struct ru_touch_profile *profile){
+ if(!io||!io->read||!io->program||engine>=2u||
+    !ru_touch_profile_valid(profile))return ETCH_STORE_IO;
+ int selected=select_project_read_region(io);if(selected<0)return selected;
+ struct header h;int bank=current(io,&h,&scratch,&scratch_pattern,&scratch_settings);
+ if(bank<0)return bank;
+ if(h.version!=13u||store_region!=3u)return ETCH_STORE_INCOMPATIBLE;
+ struct ru_touch_profile prior[2];uint8_t present[2];
+ int rc=ru_expr_scan(io,(uint32_t)bank,prior,present);if(rc)return rc;
+ if(ru_touch_profile_equal(&prior[engine],profile))return ETCH_STORE_OK;
+ uint8_t vol,auto_save,saver,seconds,boot,crt,done,wizard;
+ uint32_t free_offset;
+ rc=ru_vol_scan(io,(uint32_t)bank,&vol,&auto_save,&saver,&seconds,&boot,
+  &free_offset,&crt,&done,&wizard);if(rc)return rc;
+ struct ru_vol_record rec=ru_expr_make(engine,profile),check;
+ if(free_offset==0xffffffffu){
+  uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT,
+    rate48=0u,mapping_present=0u,touch=RU_TOUCH_DEFAULT;
+  rc=ru_preset_assign_pair_scan(io,(uint32_t)bank,&cxs,&growl,&rate48,&mapping_present,&touch);
+  if(rc)return rc;
+  struct ru_vol_record settings=ru_vol_make(vol,auto_save,saver,seconds,boot,crt,done);
+  struct ru_vol_record assigned=ru_preset_assign_pair_make_touch(cxs,growl,rate48,touch);
+  return ru_vol_compact(io,(uint32_t)bank,h,&settings,mapping_present?&assigned:0,&rec);
+ }
+ if(io->program(free_offset,&rec,sizeof(rec))||
+    io->read(free_offset,&check,sizeof(check)))return ETCH_STORE_IO;
+ return ru_expr_decode(&check,0,0)&&check.magic==rec.magic&&check.crc==rec.crc&&
+  check.volume==rec.volume&&check.opposite==rec.opposite?ETCH_STORE_OK:ETCH_STORE_VERIFY;
 }
 int etch_store_preset_assign_save(const struct etch_store_io *io,uint8_t assignment){
  uint8_t cxs=RU_PRESET_ASSIGN_DEFAULT,growl=RU_PRESET_ASSIGN_GROWL_DEFAULT;

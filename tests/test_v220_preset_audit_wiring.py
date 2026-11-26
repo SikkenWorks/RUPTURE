@@ -19,7 +19,7 @@ assert 'native_preset_render_peak' in audio and 'native_preset_wall_peak' in aud
 assert 'native_preset_late_base=native_late' in audio
 assert 'native_preset_guard_base=native_dma_blocked' in audio
 assert 'native_preset_ramp_requested' in audio
-assert 'ru_diag_view+1u)%4u' in bringup
+assert 'ru_diag_view+1u)%5u' in bringup
 assert 'READ ONLY / PRESET AUDIT' in ui and 'SAVE / LOAD' in ui
 assert 'V2.0.39' in ui
 assert '#include "rupture_preset_audit.h"' in bringup

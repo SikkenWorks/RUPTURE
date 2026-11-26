@@ -1,4 +1,311 @@
-# RUPTURE V2.0.43
+# RUPTURE V2.0.60
+
+Deze revisie corrigeert de softwarematige audio-overgangen bij opslaan en laden: eerst geleidelijk dempen, vervolgens beide DMA-buffers op nul, terwijl audioklok en analoge enable blijven staan. Ook losse cataloguslezingen gebruiken deze bescherming. Het geluid komt daarna geleidelijk terug. Opslag is nog steeds een korte, hoorbaar stille onderbreking.
+
+**De harde plop bij fysiek uitschakelen is niet bewezen opgelost.** In deze bron is geen tijdig power-off-signaal aangetoond. Als de analoge uitgang een spanningssprong maakt nadat de processor zijn voeding verliest, is daarvoor een hardwarematige mute-oplossing nodig. Zie de [analyse en hardwaretest](docs/AUDIO-OUTPUT-AUDIT-V2.0.60.md).
+
+Beide installaties en de volledige broncode zitten in dit project:
+
+- `RUPTURE-V2.0.60-STABLE.fwsc`: bestaande single-corevariant, standaardkeuze in `WebInstaller.html`.
+- `RUPTURE-V2.0.60-CORE2-EXPERIMENTAL.fwsc`: bestaande tweede-corevariant, experimenteel.
+
+Beide zijn gebouwd en softwarematig getest, maar nog niet op een fysieke FM1 geverifieerd. STABLE benoemt de enginevariant; het is geen nieuwe hardwarekwalificatie. De beveiligde bootheader, OTA-loader en opslagindeling blijven behouden.
+
+Validatie: `python3 tests/run_v260_checks.py`, gevolgd door `python3 tests/test_v260_release.py`. Resultaten en beperkingen: [TEST-V2.0.60.md](docs/TEST-V2.0.60.md).
+
+## Eerdere revisies en bestaande handleiding
+
+## V2.0.59 (reconstructed from V2.0.58 source)
+
+- Wider ADC pressure-to-expression mapping and bounded, per-scan response to prevent immediate 100% jumps.
+- MOSFET / DISTORTION / WAH / REVERB expression targets explicitly control effect MIX, not DRIVE or SENS.
+- MOSFET legacy stored p[3] == 0 means unchanged 100% wet. Modulated MIX values use p[3] == 1..32767 only in an immutable runtime controls snapshot.
+- Native CXS source and note-on/note-off handling unchanged.
+- Hardware calibration and DMA stability still require testing on a physical FM1.
+
+# RUPTURE V2.0.58
+
+**V2.0.58: minder gedeeld busverkeer terwijl CORE2 de FX-keten draait.**
+CORE0 wacht tussen twee nog onvoltooide CORE2-mailboxchecks nu 32
+uitsluitend lokale NOP-instructies, tegenover 16 in V2.0.57.
+Zo vraagt CORE0 minder vaak dezelfde status uit gedeeld geheugen op.
+Bij een gemelde fout wordt CORE2 nog steeds direct gepensioneerd,
+dezelfde 1,08 ms timeout geldt en CPU0 kan exact vanaf het veilige
+effectcheckpoint verder. Er is geen wijziging in CSX/CXS, GROWL,
+SUB, effecten, MIDI, DMA-layout of de output-samples. Een eventueel
+langzamer herkende voltooiing is een bewuste kleine timingafweging;
+lagere DMA LATES of DSP MAX moeten op een echte FM1 worden bewezen.
+
+## Behouden uit V2.0.57: post-gain fast path
+
+**V2.0.57: minder CORE0-rekenwerk tijdens de afwerking van CORE2-FX.**
+Een normale Q15-volume/gainwaarde kan de al begrensde stereosamples niet
+buiten 16-bit brengen. Daarom slaat CORE0 nu bij normale gain twee extra
+saturatiecontroles per frame over. Bij een ongeldige hoge gain blijven
+de originele twee begrenzingen actief. De exacte audiouitvoer is met
+alle 65.536 gainwaarden en miljoenen PCM-testgevallen vergeleken.
+Dit is uitsluitend actief in CORE2-EXPERIMENTAL, zonder de volledige
+FX-keten op CORE2, CSX/CXS/GROWL, SUB, het metronoomgeluid of het
+hardware-beveiligingsprotocol te veranderen. Een lagere DSP MAX of
+minder DMA LATES moet nog op de FM1 blijken.
+
+## Behouden uit V2.0.56: timingdiagnostiek
+
+**V2.0.56: inzicht in de echte CORE2-wachttijd tijdens audio.**
+In SETTINGS > SYSTEM > USB AUDIO toont de CORE2-testversie nu **FX US AVG**
+(afgevlakte wachttijd) en **MAX** (hoogste wachttijd), allebei in
+microseconden, plus de bestaande **FX TIMEOUT**-teller. Het gemiddelde
+wordt uitsluitend na een volledig succesvolle FX-opdracht bijgewerkt.
+Een fout of timeout telt niet mee en wordt afzonderlijk bijgehouden.
+Zo kun je met MOSFET, DISTORTION, REVERB en SANDPAPER plus USB-C
+onderzoeken of er structureel of slechts incidenteel vertraging is.
+Dit is meetinstrumentatie, **nog geen bewezen DMA-fix**. De volledige
+FX-keten blijft CORE2-eigendom; CSX/CXS, SUB en GROWL veranderen niet.
+
+## Behouden uit V2.0.55: CORE2-eindafronding
+
+**V2.0.55: minder werk op CORE1 nadat CORE2 de FX-keten heeft berekend.**
+Wanneer de metronoom geen klik produceert, is het geluid al tot het
+16-bits audiobereik begrensd. Twee extra grenscontroles zijn dan overbodig
+en worden overgeslagen. Bij een werkelijke klik blijft de originele
+berekening staan. Alle samples moeten dus exact gelijk blijven.
+Dit is met ruim twee miljoen hostgevallen gecontroleerd; de echte
+DSP- en DMA-winst moet nog op de FM1 worden gemeten.
+
+## Behouden uit V2.0.54: minder gedeelde busdruk
+
+**V2.0.54 vermindert onnodig gedeeld geheugenverkeer tussen de twee DSP-cores.**
+Wanneer CORE2 de volledige FX-keten uitvoert, controleerde CORE0 zijn
+mailbox in een zeer strakke lus. Tussen twee onvoltooide controles zitten
+nu 16 instructies die uitsluitend op CORE0 werken. Daardoor raakt CORE0
+de gedeelde bus minder vaak. Alle foutdetectie, de 1,08 ms-grens,
+CPU0-fallback en de originele audio blijven gelijk. Dit is uitsluitend
+in de CORE2-testvariant actief. Of DSP MAX en DMA LATES dalen, moet
+op de FM1 gemeten worden.
+
+## Behouden uit V2.0.53: echte firmwarevoortgang
+
+**V2.0.53: de firmware-update heeft nu echte voortgang tijdens het
+uitlezen/controleren op de FM1 en in de WebInstaller.** De voortgang
+gebruikt gemeten, unieke firmwarebytes. Tijdens het schrijven naar het
+tijdelijke OTA-loadergebied beweegt de balk op het FM1-scherm eveneens,
+inclusief het teruglezen. Bij de daadwerkelijke app-flash neemt een
+afzonderlijke vertrouwde OTA-loader de hardware over en wordt het FM1-scherm
+nog zwart. De WebInstaller blijft dan zichtbaar en toont de door de loader
+opgevraagde en verstuurde bytes, **niet een verzonnen interne flashstatus**.
+Deze beperking is belangrijk: zonder een opnieuw gebouwde en op fysieke
+hardware geteste loader kan de firmware geen balk op het zwarte LCD
+blijven tekenen. Zie [testplan](docs/TEST-V2.0.58.md).
+
+## Behouden uit V2.0.52
+
+**V2.0.52 repareert WELCOME BACK en de DSP MAX-regressie.** Het originele
+**WELCOME BACK**-scherm is terug: na de SikkenWorks-intro staat het 1,1 seconde
+in beeld, daarna verschijnt het speelklare RUPTURE-hoofdscherm. De volledige
+FX-keten blijft op CORE2-EXPERIMENTAL, nu als **één opdracht met twee vensters
+van 64 samples** in plaats van vier vensters van 32. Dit vermindert
+synchronisatie en gedeeld geheugenverkeer zonder CXS- of effectformules aan
+te passen. STABLE blijft CPU0-only.
+
+DSP MAX meet de verstreken ALNK-werkduur inclusief CORE2-wachttijd, geen
+zuiver aantal DSP-instructies. V2.0.51 nam ook de extra pieken mee tijdens
+de nieuwe LCD/LED/codec-opstart. V2.0.58 begint de live high-water mark
+na het WELCOME BACK- en PLAY-scherm. Eventuele **DMA LATES, GUARDS en
+CORE2-fouten blijven cumulatief zichtbaar**, ook als ze tijdens de intro
+zijn opgetreden. Als de nieuwe runtime-DSP MAX werkelijk hoger blijft,
+is aanvullend meten op de fysieke FM1 noodzakelijk.
+
+## Behouden uit V2.0.51
+
+**V2.0.51: CPU1 FX-streaming en speelklare opstart.** CORE2-EXPERIMENTAL
+laat de volledige geordende FX-keten op de tweede core draaien via **één
+128-frame opdracht** met vier 32-frame publicaties. CORE0 blijft de synth,
+CXS, MIDI en audio-DMA bedienen. Hierdoor ontstaat meer overlap tijdens het
+opbouwen van een audioblok en verdwijnt een extra mailbox-overdracht en
+wachtpunt. Een onvolledige of te late CORE2-opdracht valt veilig terug op
+de CPU0-effectketen na het stoppen van CORE2. STABLE blijft CPU0-only.
+
+De originele SikkenWorks-PNG en gecentreerde intro lopen nu tegelijk met
+het laden van presets, DSP en het opstarten van de codec. Ook USB-C-audio
+wordt in de tussentijd verwerkt en CORE2 kan zijn beveiligde geheugentests
+uitvoeren als de situatie dat toestaat. De originele 41-toetsen LED-golf
+blijft aanwezig. Het RUPTURE-scherm verschijnt na de
+bestaande veilige codec-/analoge/LED-/LCD-fasen; de audio is dan vooraf
+gecompileerd en voorbereid. Een echte FM1 moet nog bewijzen of de eerste
+toets daadwerkelijk zonder vertraging klinkt en wat de CORE2-DMA-druk is.
+
+**Behouden uit V2.0.50: externe USB-/TRS-MIDI-velocity en aftertouch, plus
+AUTO SAVE OFF-fix.** In SETTINGS > KEY PRESSURE staat MODE **VELOCITY**
+naast PRESS / DRIFT / RANDOM. VELOCITY leest de aanslagsterkte (MIDI
+Note On, 1..127) per noot. FEEL biedt SOFT, LINEAR, HARD en EXTRA HARD.
+Het ingestelde doel beweegt tussen RANGE MIN en MAX, ook wanneer dat
+**REVERB MIX** is. De normale MIDI-aanslagafhankelijke *toonsterkte* van
+RUPTURE blijft daarnaast bestaan, onafhankelijk van deze expressie.
+
+Met een MIDI-keyboard gebruikt MODE PRESS echte poly- of channel-aftertouch,
+als het keyboard dat verstuurt. Zonder aftertouch valt PRESS automatisch
+terug op de MIDI-aanslagsterkte. De statusregel geeft VEL/CH/POLY en de
+actuele ontvangen waarde; VELOCITY toont **MIDI VELOCITY**. Voor de FM1-
+toetsen blijft PRESS de fysieke, doorlopende contactdruk gebruiken.
+DRIFT en RANDOM werken nu ook terwijl alleen een externe MIDI-noot
+ingedrukt is. Geen van deze routes maakt zelf Note On/Off-events.
+
+**AUTO SAVE OFF betekent nu ook OFF voor deze expressieprofielen.**
+Wijzigingen blijven direct hoorbaar, maar worden niet automatisch in
+flash geschreven. Het sterretje geeft niet-opgeslagen werk aan; een
+expliciete **PROJECT SAVE** legt de instellingen vast zodra het veilig
+is om flash te schrijven. Met AUTO SAVE ON worden profielen zoals
+voorheen na een korte inactieve periode opgeslagen.
+
+**Nieuw: twee volledig afzonderlijke expressieprofielen, één voor CXS en één
+voor GROWL.** Ga naar **SETTINGS > KEY PRESSURE**. Beweeg met SELECT
+door ENGINE, TARGET, MODE, RANGE MIN, RANGE MAX, FEEL en de laatste statusregel;
+gebruik K1 om het geselecteerde veld aan te passen. SEL of een korte
+HOME-druk brengt je terug. Beide engines bewaren hun eigen instellingen.
+
+**V2.0.51 correctie:** Bij MODE PRESS verschijnt geen ongebruikte DRIFT SPEED
+meer, maar **SENSOR RAW**. Houd een van de onderste twintig toetsen ingedrukt
+en varieer de druk: de ADC-waarde moet veranderen. Als de sensor niet
+werkt, staat er `ADC ERR`; bij geen toets `NO KEY`. Bij DRIFT/RANDOM
+is de onderste regel weer **DRIFT SPEED** en wordt FEEL `PRESS ONLY`.
+De ADC-klokinstelling is gecorrigeerd (divider 7, delay 2) en de toetsrij
+gebruikt DRIVE 2. De zeven hoogste toetsen hebben geen analoge drukmeting.
+**FM1 PRESS is contactdruk tijdens vasthouden. Externe MIDI kan PRESS via
+aftertouch aansturen; MODE VELOCITY reageert op de aanslag.**
+
+- **MODE: PRESS** gebruikt echte contactdruk op de 20 meetbare FM1-toetsen.
+  De zeven hoogste toetsen meten geen druk, maar Note ON/OFF blijft normaal.
+- **MODE: DRIFT** beweegt het gekozen doel geleidelijk op en neer binnen
+  de ingestelde MIN/MAX (0..100%). Dit werkt op alle 27 toetsen.
+- **MODE: RANDOM** wandelt vloeiend tussen willekeurige waarden binnen
+  dezelfde MIN/MAX. Geen sprongsgewijze wijzigingen in de DSP-sampleloop.
+- **MODE: VELOCITY** gebruikt de gewone MIDI Note On-velocity (1..127).
+- **FEEL** heeft vier drukgevoeligheden of vier velocity-curves;
+  **DRIFT SPEED** vier snelheden en verschijnt alleen bij DRIFT/RANDOM.
+  Druk/automatische drift stopt bij het loslaten van de fysieke toetsen.
+
+**REVERB MIX:** RANGE MIN is daadwerkelijk de basismix van het gekozen
+reverb-slot in de bestaande FX-keten, ook zonder ingedrukte toets. Tijdens
+het spelen loopt de mix vloeiend naar maximaal RANGE MAX. Staat REVERB
+nog niet in de keten, dan wordt het in het eerste lege slot toegevoegd.
+De gewone REVERB FX-editor toont bij actieve automatisering nu apart
+**LIVE REVERB** en **BASE**. K4 MIX en RANGE MIN zijn tweerichtings
+gekoppeld: als je K4 aanpast, verandert RANGE MIN mee. Live druk
+verandert nooit het opgeslagen FX-slot of project.
+Er wordt **nooit een bestaand effect overschreven**: bij acht bezette
+slots staat **FX FULL** en blijft de keten intact. Deze expliciete
+effectketenwijziging volgt de bestaande handmatige preset-/project-save.
+
+De instellingen zijn globaal opgeslagen in twee aparte CRC-journaalrecords
+en blijven bewaard bij projectwissels, NOR-compactie en een update vanaf
+V2.0.47. Wanneer een doel OFF staat, blijven de oorspronkelijke CXS- en
+GROWL-klank en alle FX-berekeningen exact behouden. De complete FX-keten
+blijft op CORE2 bij CORE2-EXPERIMENTAL, met dezelfde failover.
+
+**Alleen softwarematig getest.** Een eerste fysieke FM1-test is nodig om
+contactdruk, reverb-mutaties en DMA-latency te beoordelen; geen nul-glitch-
+of nul-hangende-nootgarantie. Zie `docs/TEST-V2.0.51.md`. CORE2 alleen
+installeren met een vooraf bewezen herstelmethode.
+
+## Vorige expressieversie
+
+**V2.0.47:** oorspronkelijke enkele, optionele KEY PRESSURE-instelling.
+
+**Nieuw: KEY PRESSURE, instelbare expressie tijdens het spelen.** Open
+**SETTINGS > KEY PRESSURE** en kies OFF, FILTER, GROWL, MOSFET,
+DISTORTION, REVERB, SUB1 of WAH. Stel de reactie in met **K1**:
+LOW, MEDIUM, HIGH of ULTRA. Een ingedrukte toets kan zo de geselecteerde
+klankparameter vloeiend laten bewegen. Bij loslaten keert de expressie
+direct terug. Effectdoelen werken alleen wanneer dat effect aanstaat.
+
+De FM1 heeft 20 toetsen waarvan de contactweerstand met de bestaande
+hardware analoog meetbaar is. De zeven hoogste toetsen leveren geen
+drukmeting en blijven op de oorspronkelijke, niet-gemoduleerde klank.
+Dit is **drukexpressie na het indrukken, geen velocitymeting bij Note ON**.
+De functie staat standaard **OFF**, wordt in de globale instellingen
+bewaard en verandert bij OFF geen enkele CXS-/effectparameter. Ook met
+GROWL als doel wordt de bestaande CXS-engine niet aangepast.
+
+De analoge scan is niet-blokkerend en bestuurt nooit Note ON/Note OFF;
+de digitale toetsen, LED-animatie en beide audiovarianten behouden hun
+eigen signaalroutes. De fysieke drukmeting is **nog niet op jouw FM1
+geverifieerd**. Volg `docs/TEST-V2.0.47.md` en test CORE2 uitsluitend
+met aantoonbaar werkende recovery.
+
+## Eerdere beveiligingen
+
+**V2.0.46: bescherming tegen beschadigde mono-notenlijsten bij MIDI en
+sequencerbediening.**
+Een fysiek gemiste toets-release wordt al per
+audioblok gecorrigeerd, en gewone MIDI Note OFF en panic waren al begrensd.
+Maar MIDI `CC120`/`CC121`/`CC123` en het leegmaken van sequencernoten
+konden nog vóór de volgende audiobuffer de zes plekken van de notenlijst
+overschrijden als de interne teller beschadigd was. De grenscontrole
+staat nu ook op deze twee routes, zowel in STABLE als in CORE2.
+
+De regressie is **daadwerkelijk gereproduceerd vóór de fix**: een
+CC120-bericht met een onmogelijke notenteller liet de noot hangen in de
+hosttest. Met de fix laten CC120 en CC121 de corrupte status veilig los.
+Dezelfde native audiocode is in beide firmwarevarianten getest. Er komt
+geen extra controle in de per-sample DSP-loop en de normale CXS/FX-klank
+blijft exact ongewijzigd. Alle vorige CORE2-DMA-failovers blijven actief.
+
+Dit is softwarematige robuustheid, **geen garantie dat op de echte FM1
+nooit een noot hangt**. MIDI-controllers kunnen een echte Note OFF missen
+en CORE2-hardwarefouten zijn nog niet op jouw FM1 uitgesloten. De
+hardwaretest staat in `docs/TEST-V2.0.46.md`.
+
+## Eerdere DMA-failover, CORE2-beveiligingen en nootherstel
+
+**V2.0.45: automatische CORE2-uitschakeling bij een echte audio-DMA-deadlinefout.**
+Als de experimentele tweede core daadwerkelijk FX heeft afgerond in het
+huidige audioblok en dat blok een DMA LATE krijgt, wordt CORE2 meteen
+definitief voor deze sessie gestopt. De volgende blokken gebruiken de
+bestaande volledige CPU0-effectketen. Dit voorkomt dat dezelfde
+CORE2-verdeling na een deadlinefout blijft concurreren met audio-DMA.
+
+Een DMA LATE zonder actieve CORE2-FX schakelt de core **niet** uit. Na
+failover zie je bij `AUDIO DIAGNOSTICS` op het vijfde scherm
+`CORE2 RETIRED` met reden **7** (audio-belasting). De `FX JOBS`-teller
+stijgt daarna niet meer. Uitschakelen en opnieuw inschakelen is nodig
+voordat CORE2 opnieuw wordt geprobeerd. De CXS-klank, FX-sampleformules,
+MIDI-gedrag, originele SikkenWorks-PNG en LED-klavieranimatie zijn
+ongewijzigd. De nieuwe hosttests simuleren 1.000.000 druk-/failoverbeslissingen
+en de bestaande sample-exacte FX- en notentests blijven verplicht.
+
+**De echte FM1 is nog niet getest met V2.0.45.** Een enkele DMA LATE kan
+nog hoorbaar zijn en ook de CPU0-route kan op fysiek hardware te zwaar
+worden. Dit is een failover-beveiliging, geen garantie op nul DMA LATES,
+glitches of hangende noten. Test uitsluitend met werkende recovery.
+
+## Eerdere CORE2-beveiligingen en Note OFF-correcties
+
+**V2.0.44 richtte zich op sporadische vastlopers in de experimentele CORE2-versie.**
+Na 128 geslaagde core2-geheugenproeven en één FIR-controle zijn de
+achtergrondproeven uitgeschakeld zolang core 2 de volledige FX-keten
+verwerkt. Voorheen kon een periodieke testopdracht in conflict komen met
+realtime FX-opdrachten. Elke voltooide FX-opdracht wordt nu ook op de
+juiste sequentie, foutstatus en het exacte laatste sample gecontroleerd.
+Bij een ongeldige of te late reactie wordt core 2 gestopt voordat core 1
+een aantoonbaar onvoltooid stuk van de effectketen overneemt.
+
+Het vijfde scherm onder **AUDIO DIAGNOSTICS** (`SEL` viermaal vanuit de
+eerste pagina) toont **KEY REPAIR, MIDI PANIC, MIDI ON, MIDI OFF, FX JOBS,
+FX FALLBACK, FX TIMEOUT en CORE2**. Deze tellers blijven sinds de boot
+oplopen, zodat sporadische fouten later nog zichtbaar zijn. De testbank
+controleert 1.000.000 ongeldige/out-of-order core2-reacties en 384.000
+stereoframes met wisselende noten, zware effectketens en gesimuleerde
+gedeeltelijke FX-overdrachten. CXS en FX-berekeningen zijn exact
+hetzelfde gebleven.
+
+**Belangrijk:** de code compileert en de softwaretests slagen, maar dit
+is geen bewijs dat een sporadische hangende noot, glitch of DMA LATE op
+de echte FM1 nooit meer kan optreden. Installeer CORE2-EXPERIMENTAL
+alleen als je een werkend herstelpad hebt. Volg
+`docs/TEST-V2.0.46.md` voor een langdurige hardwaretest. De STABLE-variant
+blijft de veilige vergelijkingsbasis.
+
+## Bestaande Note OFF-correcties
 
 **V2.0.43 herstelt de Note OFF-veiligheid.** In de GROUPS MIDI-leermodus
 werden eerder alle MIDI Note OFFs stilzwijgend weggegooid. Een noot die
@@ -36,13 +343,13 @@ een apart, experimenteel firmwarebestand.**
   fout tijdens een effectmonster is niet gegarandeerd herstelbaar.
 
 Het logo tijdens de ingekorte **5,16-secondenintro** is nu **exact jouw geüploade foto**
-`assets/boot-sikkenworks-photo-v243.png`. De transparante buitenranden
+`assets/boot-sikkenworks-photo-v258.png`. De transparante buitenranden
 zijn verwijderd, de foto is beeldverhoudingsgetrouw met **nearest neighbor**
 naar het 240×240-display geschaald. De originele grijstinten blijven
 behouden in 57.600 pixels. Het bestaande RGB565-scherm toont deze
 **zonder 1-bit-conversie, Bayer-patroon of nieuwe dithering**; tijdens de
 fade wordt alleen de helderheid aangepast. De rest van de UI blijft 1-bit.
-[Bekijk de echte grijswaardenweergave](assets/boot-sikkenworks-photo-v243-display-240.png).
+[Bekijk de echte grijswaardenweergave](assets/boot-sikkenworks-photo-v258-display-240.png).
 De filmische tekst, de vaste positie van de overige woorden en de
 `Rupture`-naar-`RUPTURE`-flikkering blijven ongewijzigd. De fades zijn
 ingekort: logo in/uit 420 ms, tekst in/uit 480 ms. **De bestaande
@@ -50,13 +357,14 @@ ingekort: logo in/uit 420 ms, tekst in/uit 480 ms. **De bestaande
 nadat de splash en de hardware-initialisatie klaar zijn.
 
 De CPU0- en core2-route zijn op de host **sample-exact vergeleken** over
-100 geordende effectparen en zes zware ketens van vier effecten:
-81.408 stereoframes zonder verschil. Dit bewijst de DSP-logica, maar
+100 geordende effectparen, zes zware ketens van vier effecten en
+langdurige gesimuleerde noot- en core2-overdrachtsfouten. Dit bewijst
+de gecontroleerde DSP-logica, maar
 niet de snelheid of de geheugenbus op de fysieke tweede core.
 
 In CORE2 EXPERIMENTAL toont `AUDIO DIAGNOSTIC` nu **FX JOBS** (aantal
-door core 2 afgeronde opdrachten van 64 samples) en **FB** (terugval naar
-core 1). In de USB-/systeempagina staan **FX MAX US** en **FX TIMEOUT**.
+door core 2 afgeronde opdrachten van 128 samples) en **FB** (terugval naar
+core 1). In de USB-/systeempagina staan **FX US AVG**, **MAX** en **FX TIMEOUT**.
 Zo wordt de nieuwe effectverwerking niet meer abusievelijk als USB-FIR
 gemeld. Het bestaande DMA- en WALL-overzicht blijft gewoon zichtbaar.
 

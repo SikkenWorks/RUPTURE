@@ -4,8 +4,9 @@
  * multicore work (Juan Ignacio Antonucci), in turn based on Melodee/X0X.
  * In integrity/FIR-probe mode, CPU1 may not write audio engine, DMA, display,
  * flash or CXS state; the FIR probe only reads immutable coefficients.
- * In V2.0.43's explicit FX LIVE LAB build, CPU1 instead owns the complete
- * shared FX state for one bounded 64-frame job at a time. That experimental
+ * In V2.0.58's explicit FX LIVE LAB build, CPU1 instead owns the complete
+ * shared FX state for one 128-frame streaming job with two 64-frame
+ * producer watermarks. That experimental
  * route is NOT hardware-qualified for production use.
  */
 #pragma once
@@ -13,6 +14,9 @@
 #include "rupture_cpu1_protocol.h"
 #include "rupture_cpu1_fir_probe.h"
 #include "rupture_cpu1_offload_guard.h"
+#include "rupture_core2_fx_guard.h"
+#include "rupture_core2_fx_stream.h"
+#include "rupture_core2_fx_wait_ema.h"
 #if ETCH_CPU1_UAC_LIVE_LAB
 #include "rupture_cpu1_uac_block.h"
 #endif
@@ -44,14 +48,15 @@ static uint8_t ru_c1_audio_pending;
 /* CPU1 owns every FX state mutation while a sequence is outstanding.
  * The actual PCM/settings lane lives in shared .pool, NOT this mailbox. */
 typedef struct {
- volatile uint32_t seq,done,begin,end,progress,bad;
+ volatile uint32_t seq,done,begin,end,progress,bad,ready;
 } ru_cpu1_fx_box_t;
 static ru_cpu1_fx_box_t ru_c1_fx_box __attribute__((section(".c1_ram"),aligned(64)));
 static volatile uint32_t ru_c1_fx_commits,ru_c1_fx_fallbacks,ru_c1_fx_timeout;
-static volatile uint32_t ru_c1_fx_max_wait_ticks;
+static volatile uint32_t ru_c1_fx_max_wait_ticks,ru_c1_fx_avg_wait_ticks;
 static uint32_t ru_c1_fx_at,ru_c1_fx_seq;
 extern uint32_t ru_fx_cpu1_run(uint32_t first,uint32_t end,volatile uint32_t *progress);
-#define RU_C1_FX_TIMEOUT_TICKS 26000u /* 1.08 ms at 24 MHz per 64 frames */
+#define RU_C1_FX_TIMEOUT_TICKS 26000u /* 1.08 ms after final 128-frame publish */
+#define RU_C1_FX_POLL_NOP_COUNT 32u /* CORE0-local; no CPU1/shared SRAM access */
 #endif
 static struct {uint32_t magic,started,barred;} ru_c1_boot __attribute__((section(".noinit")));
 static volatile uint32_t ru_c1_retired,ru_c1_good,ru_c1_fir_good,ru_c1_faults,ru_c1_late,ru_c1_bad;
@@ -116,11 +121,31 @@ void __attribute__((section(".ram_text"),noinline,used,noreturn)) ru_cpu1_worker
    /* RAMTEXT -> XIP is >23-bit direct-branch range. Indirect far call. */
    uint32_t (*volatile fx_run)(uint32_t,uint32_t,volatile uint32_t *)=
      ru_fx_cpu1_run;
-   if(fx_seq!=fx_done+1u||begin>=end||end>128u||
-       ru_c1_fx_box.progress!=begin||
-       fx_run(begin,end,&ru_c1_fx_box.progress)!=end){
+   uint32_t progress=ru_c1_fx_box.progress;
+   RU_C1_SYNC();
+   if(fx_seq!=fx_done+1u||
+      !ru_c1_fx_stream_start(begin,end,ru_c1_fx_box.ready,progress)){
     ru_c1_fx_box.bad=RU_C1_BAD_INPUT;
     RU_C1_SYNC();for(;;)__asm__ volatile("nop");
+   }
+   while(progress<end){
+    RU_C1_SYNC();
+    uint32_t ready=ru_c1_fx_box.ready;
+    if(!ru_c1_fx_stream_watermark(progress,ready)){
+     ru_c1_fx_box.bad=RU_C1_BAD_INPUT;
+     RU_C1_SYNC();for(;;)__asm__ volatile("nop");
+    }
+    if(ready==progress){
+     /* Keep CPU1 off the shared SRAM bus between watermark polls.
+      * CPU0 must be able to finish synth/USB work uninterrupted. */
+     for(uint8_t n=0u;n<16u;n++)__asm__ volatile("nop");
+     continue;
+    }
+    if(fx_run(progress,ready,&ru_c1_fx_box.progress)!=ready){
+     ru_c1_fx_box.bad=RU_C1_BAD_INPUT;
+     RU_C1_SYNC();for(;;)__asm__ volatile("nop");
+    }
+    progress=ready;
    }
    fx_done=fx_seq;
    RU_C1_SYNC();ru_c1_fx_box.done=fx_seq;RU_C1_SYNC();
@@ -231,6 +256,12 @@ static inline void ru_cpu1_diag_service(uint32_t now_ms,uint8_t quiet,uint8_t re
   }
   return;
  }
+#if ETCH_CPU1_FX_LIVE_LAB
+ /* NEVER issue foreground integrity/FIR jobs on the active realtime FX
+  * core. Those 20ms probes could queue behind FX, exceed their 4ms deadline
+  * and retire CPU1 during playback. Qualification was already completed. */
+ if(ru_fx_probe_finished(ru_c1_good,ru_c1_fir_good))return;
+#endif
  if((uint32_t)(now_ms-ru_c1_last_submit)<20u)return;
 #if ETCH_CPU1_UAC_LIVE_LAB
  if(ru_c1_audio_pending||recording)return;
@@ -256,44 +287,72 @@ static inline void ru_cpu1_diag_service(uint32_t now_ms,uint8_t quiet,uint8_t re
 }
 
 #if ETCH_CPU1_FX_LIVE_LAB
-/* Linked from audio_core.c. Called in ALNK0, not foreground. After the
- * initial shared-memory/FIR qualification, no USB FIR work may compete with
- * the hard real-time 64-frame effect worker. */
+/* Linked from audio_core_core2.c. Called in ALNK0, not foreground. After
+ * qualification, only this streamed 128-frame FX job owns CPU1. */
 int ru_cpu1_fx_available(void){
  return ru_c1_online&&!ru_c1_wait_seq&&
         ru_c1_good>=128u&&ru_c1_fir_good>=1u&&
         ru_c1_fx_box.seq==ru_c1_fx_box.done;
 }
 void ru_cpu1_fx_send(uint32_t begin,uint32_t end){
- if(!ru_c1_online||begin>=end||end>128u)return;
+ if(!ru_c1_online||begin!=0u||end!=RU_C1_FX_STREAM_FRAMES)return;
  uint32_t seq=ru_c1_fx_box.done+1u;
  ru_c1_fx_box.begin=begin;ru_c1_fx_box.end=end;
  ru_c1_fx_box.progress=begin;ru_c1_fx_box.bad=0u;
+ ru_c1_fx_box.ready=RU_C1_FX_STREAM_CHUNK;
  RU_C1_SYNC();ru_c1_fx_at=fm1_ticks();ru_c1_fx_seq=seq;
- /* Publish the sequence LAST. Never let CPU1 read an unfinished half. */
+ /* Publish sequence LAST. The first 64 dry samples are now immutable. */
  ru_c1_fx_box.seq=seq;RU_C1_SYNC();
+}
+void ru_cpu1_fx_publish(uint32_t ready){
+ if(!ru_c1_online||ru_c1_fx_box.seq!=ru_c1_fx_seq||
+    !ru_c1_fx_stream_publish(ru_c1_fx_box.ready,ready))return;
+ /* PCM samples and the matching 64-frame settings window are complete.
+  * Never let CPU1 inspect a partially-written dry sample. */
+ RU_C1_SYNC();ru_c1_fx_box.ready=ready;RU_C1_SYNC();
+ if(ready==RU_C1_FX_STREAM_FRAMES)ru_c1_fx_at=fm1_ticks();
 }
 uint32_t ru_cpu1_fx_collect(void){
  uint32_t seq=ru_c1_fx_seq,end=ru_c1_fx_box.end;
- if(!ru_c1_online)return ru_c1_fx_box.progress;
+ if(!ru_c1_online){
+  ru_c1_fx_fallbacks++;
+  return ru_fx_safe_progress(ru_c1_fx_box.begin,end,ru_c1_fx_box.progress);
+ }
+ uint8_t corrupt=0u;
  while((uint32_t)(fm1_ticks()-ru_c1_fx_at)<RU_C1_FX_TIMEOUT_TICKS){
   RU_C1_SYNC();
-  if(ru_c1_fx_box.done==seq&&!ru_c1_fx_box.bad){
-   uint32_t waited=(uint32_t)(fm1_ticks()-ru_c1_fx_at);
-   if(waited>ru_c1_fx_max_wait_ticks)ru_c1_fx_max_wait_ticks=waited;
-   ru_c1_fx_commits++;
-   return end;
+  uint32_t done=ru_c1_fx_box.done;
+  if(done==seq){
+   /* Read progress ONLY at completion, not inside the tight shared-SRAM
+    * wait loop: avoid extra bus traffic that itself could cause DMA LATES. */
+   uint8_t reply=ru_fx_lane_reply(seq,done,ru_c1_fx_box.bad,
+                       ru_c1_fx_box.begin,end,ru_c1_fx_box.progress);
+   if(reply==RU_FX_REPLY_COMPLETE){
+    uint32_t waited=(uint32_t)(fm1_ticks()-ru_c1_fx_at);
+    if(waited>ru_c1_fx_max_wait_ticks)ru_c1_fx_max_wait_ticks=waited;
+    /* Diagnostic-only EWMA; never update the average on a failed FX job. */
+    ru_c1_fx_avg_wait_ticks=ru_fx_wait_ema_next(ru_c1_fx_avg_wait_ticks,
+                                                waited,ru_c1_fx_commits!=0u);
+    ru_c1_fx_commits++;
+    return end;
+   }
+   corrupt=1u;break;
   }
-  if(ru_c1_fx_box.bad)break;
+  if(done!=seq-1u||ru_c1_fx_box.bad){corrupt=1u;break;}
+  /* CPU0 otherwise executes csync plus shared-SRAM mailbox reads as fast
+   * as the bus allows. Thirty-two register-only NOPs between inconclusive
+   * polls reduce speculative shared-bus traffic while CPU1 works. A known
+   * failure is still retired IMMEDIATELY after its mailbox read; the same
+   * wall-clock timeout, fault detection and exact PCM fallback remain. */
+  for(uint8_t n=0u;n<RU_C1_FX_POLL_NOP_COUNT;n++)__asm__ volatile("nop");
  }
  /* A stalled CPU1 must be HALTED before CPU0 writes s->fx again. Resume
   * from the last completed frame. No outstanding intercore writes remain. */
- if(!ru_c1_fx_box.bad)ru_c1_fx_timeout++;
- ru_cpu1_retire(ru_c1_fx_box.bad?RU_C1_BAD_INPUT:RU_C1_TIMEOUT);
+ if(!corrupt)ru_c1_fx_timeout++;
+ ru_cpu1_retire(corrupt?RU_C1_BAD_OUTPUT:RU_C1_TIMEOUT);
  RU_C1_SYNC();
  ru_c1_fx_fallbacks++;
- uint32_t done=ru_c1_fx_box.progress;
- return done>=ru_c1_fx_box.begin&&done<=end?done:ru_c1_fx_box.begin;
+ return ru_fx_safe_progress(ru_c1_fx_box.begin,end,ru_c1_fx_box.progress);
 }
 #endif
 

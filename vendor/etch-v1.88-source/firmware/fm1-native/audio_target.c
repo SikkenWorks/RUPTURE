@@ -9,13 +9,21 @@
 #include "native_performance_midi.h"
 #include "native_midi_rt_budget.h"
 #include "native_preset_ramp.h"
+#include "native_storage_audio.h"
 #ifdef RUPTURE_BUILD
 #include "rupture_note_warmup_gate.h"
 #include "rupture_note_release_guard.h"
 #include "rupture_note_dma_meter.h"
 #include "rupture_note_scope_guard.h"
+#include "rupture_core2_pressure_guard.h"
+#include "rupture_midi_expression.h"
 #endif
 static struct etch_native_audio native_audio __attribute__((section(".pool")));
+#ifdef RUPTURE_BUILD
+/* Eight poly-aftertouch tags and 16 channel-pressure values; bounded state
+ * only at MIDI event/block boundaries, never inside CXS or CORE2 DSP. */
+static struct ru_midi_expression ru_midi_expr;
+#endif
 /* V1.81: published control snapshot resides in zeroed shared DSP pool.
  * This reclaims main SRAM without changing the ISR ABI or flash layout. */
 static volatile struct etch_native_controls native_controls __attribute__((section(".pool")));
@@ -61,6 +69,12 @@ static volatile uint32_t native_min_dma_slack,native_scope_deferred;
  * in the interrupt. Historical peaks reset at audio restart. */
 static volatile uint32_t native_controls_wall_peak,native_last_dma_slack;
 static volatile uint32_t native_midi_queue_peak,native_midi_deferred_batches;
+/* Diagnose intermittent MIDI release faults without printf/heap in ALNK0.
+ * Counters remain cumulative across an audio-engine restart. */
+#ifdef RUPTURE_BUILD
+static volatile uint32_t native_midi_on_seen,native_midi_off_seen;
+static volatile uint32_t native_midi_panic_seen;
+#endif
 static volatile uint32_t native_postpublish_late;
 static volatile uint8_t native_midi_batch_peak,native_midi_backlog;
 
@@ -100,6 +114,18 @@ static volatile uint8_t native_group_capture_active,native_group_midi_pending,na
  * first-frame DMA contention from occurring with nonzero synth audio.
  * It does not promise an analog pop-free physical power enable. */
 static volatile uint8_t native_output_enabled;
+/* Foreground owns requests; ALNK owns fade progress. Successful storage
+ * pauses retain clock, codec bias and the already-qualified output gate. */
+static volatile uint8_t native_audio_clock_live,native_storage_quiet_request;
+static volatile struct etch_storage_audio native_storage_audio;
+static uint8_t native_storage_read_resume,native_storage_audio_failed;
+static void native_start(void);
+static void native_pause(void);
+static void native_storage_read_poll(uint8_t allowed){
+ if(!native_storage_read_resume || !allowed || native_tripped)return;
+ native_storage_read_resume=0u;
+ fm1_irq_off();native_start();fm1_irq_enable_all();
+}
 /* USB attach/suspend can change analog ground/power bias. No claim of
  * eliminating the hardware edge; defer it until bus state is stable. */
 static struct etch_output_usb_gate native_usb_gate;
@@ -243,7 +269,13 @@ static void native_compile_edit(void){
 #if ETCH_NATIVE_USB
 static void native_midi_drain(uint8_t play){
  uint32_t end=mi_w;RING_PUBLISH();
- if(midi_in_overflow){etch_native_midi_panic(&native_audio);mi_r=end;RING_PUBLISH();midi_in_overflow=0;native_midi_backlog=0u;return;}
+ if(midi_in_overflow){
+#ifdef RUPTURE_BUILD
+  if(native_midi_panic_seen<UINT32_MAX)++native_midi_panic_seen;
+  ru_midi_expr_reset(&ru_midi_expr);
+#endif
+  etch_native_midi_panic(&native_audio);mi_r=end;RING_PUBLISH();midi_in_overflow=0;native_midi_backlog=0u;return;
+ }
  uint32_t pending=end-mi_r;
  if(pending>native_midi_queue_peak)native_midi_queue_peak=pending;
  uint32_t limit=ru_midi_batch_size(pending);
@@ -252,6 +284,13 @@ static void native_midi_drain(uint8_t play){
   uint32_t pkt=midi_in_q[mi_r%MQ];RING_PUBLISH();++mi_r;
   if(play){
    uint8_t status=(uint8_t)(pkt>>8),note=(uint8_t)(pkt>>16),velocity=(uint8_t)(pkt>>24);
+#ifdef RUPTURE_BUILD
+   if((status&0xf0u)==0x80u || ((status&0xf0u)==0x90u&&!velocity)){
+    if(native_midi_off_seen<UINT32_MAX)++native_midi_off_seen;
+   }else if((status&0xf0u)==0x90u&&velocity){
+    if(native_midi_on_seen<UINT32_MAX)++native_midi_on_seen;
+   }
+#endif
    if(ru_midi_capture_attack(native_group_capture_active,status,velocity)&&note<128u){
     if(!native_group_midi_pending){native_group_midi_note=note;native_group_midi_pending=1u;}
     continue;
@@ -261,6 +300,9 @@ static void native_midi_drain(uint8_t play){
     * already sounding when capture began, leaving a latched mono voice.
     * A capture-only key attack was never voiced, so its later OFF is safe. */
    etch_native_midi(&native_audio,status,note,velocity);
+#ifdef RUPTURE_BUILD
+   ru_midi_expr_event(&ru_midi_expr,status,note,velocity);
+#endif
   }
  }
  /* Original ring and overflow ownership remain intact: only defer heavy
@@ -271,8 +313,8 @@ static void native_midi_drain(uint8_t play){
 }
 #endif
 extern void isr_alnk0(void);
-static void native_stop(void){native_suspended=1;native_output_enabled=0u;fm1_audio_output_enable(0u);fm1_audio_stop();native_tripped=1;}
-static void native_budget_late(void){
+static void native_stop(void){native_audio_clock_live=0u;native_storage_read_resume=0u;native_storage_quiet_request=0u;native_suspended=1;native_output_enabled=0u;fm1_audio_output_enable(0u);fm1_audio_stop();native_tripped=1;}
+static void native_budget_late(uint32_t core2_jobs_before){
  native_healthy_blocks=0;
 #ifdef RUPTURE_BUILD
  /* RUPTURE is hard mono (render_internal limit==1), so reducing the nominal
@@ -280,6 +322,20 @@ static void native_budget_late(void){
   * optional LCD/scope work instead. NEVER weaken the true DMA ownership
   * check, skip an audio block, or mask a persistent underrun. */
  native_ui_pressure=32u;
+#if ETCH_CPU1_FX_LIVE_LAB
+ /* An actual CORE2 FX lane in this missed DMA block is evidence that the
+  * experimental intercore route did not meet the realtime deadline.
+  * All FX lanes have completed or retired before reaching this callback.
+  * Switch to the bit-exact CPU0 path for subsequent blocks instead of
+  * repeatedly risking an audio-engine stop on this same CORE2 workload. */
+ if(ru_core2_pressure_should_retire(ru_c1_online,
+      ru_fx_probe_finished(ru_c1_good,ru_c1_fir_good),
+      core2_jobs_before,ru_c1_fx_commits)){
+  ru_cpu1_retire(RU_C1_PRESSURE);
+ }
+#else
+ (void)core2_jobs_before;
+#endif
  if(native_missed_streak<255u)++native_missed_streak;
  if(native_missed_streak>=8u){
   etch_boot_audio_fault(&etch_boot);native_stop();
@@ -302,12 +358,47 @@ static void native_budget_ok(void){
    native_audio.voice_limit=etch_voice_budget_restore(native_audio.voice_limit);
  }
 }
-/* Main-only pause: block a leftover ALNK interrupt before transferring ownership. */
+/* Main-only: leave the last faded half before borrowing SFC/XIP.
+ * ISR returns only fully owned zero buffers. With both halves zero, DMA
+ * may loop safely for arbitrarily long IRQ-masked NOR erase/programs. */
 static void native_pause(void){
- fm1_irq_off();native_suspended=1;native_output_enabled=0u;fm1_audio_output_enable(0u);fm1_audio_stop();fm1_audio_ack_half();fm1_irq_enable_all();
+ if(native_suspended)return; /* nested commit/load/rollback must be inert */
+ if(native_audio_clock_live && !native_tripped){
+  fm1_irq_off();
+  etch_storage_audio_begin(&native_storage_audio);
+  native_storage_quiet_request=1u;
+  fm1_irq_enable_all();
+  const uint32_t began=fm1_ticks();
+  while(!etch_storage_audio_ready(&native_storage_audio)){
+   fm1_wdt_feed();
+   if(native_tripped ||
+      (uint32_t)(fm1_ticks()-began)>=ETCH_STORAGE_QUIET_TIMEOUT_TICKS){
+    /* A broken DMA interrupt must never hang SAVE or permit unsafe XIP.
+     * Emergency analogue disable is reserved for this actual fault. */
+    fm1_irq_off();native_stop();fm1_irq_enable_all();
+    native_storage_audio_failed=1u;return;
+   }
+  }
+ }
+ fm1_irq_off();
+ native_suspended=1u;native_output_enabled=0u;
+ native_storage_quiet_request=0u;fm1_audio_ack_half();
+ fm1_irq_enable_all();
 #if ETCH_NATIVE_PANEL_MIDI
  etch_perf_midi_flush(&native_perf_out,native_panel_usb_emit,0);
 #endif
+}
+/* Covers catalog/pref reads whose caller did not explicitly pause. Resume
+ * once in the normal main loop, never between tiny journal reads. Boot,
+ * MIDI-only, explicit mute, faults and OTA cannot be auto-unmuted here. */
+static int native_storage_audio_prepare(void){
+ if(native_storage_audio_failed)return -1;
+ if(native_audio_clock_live && !native_suspended && !native_tripped){
+  native_pause();
+  if(native_storage_audio_failed)return -1;
+  native_storage_read_resume=1u;
+ }
+ return 0;
 }
 void fm1_alnk0_irq(void){
  /* Mark the entire ALNK0 ownership window, not just etch_native_render.
@@ -321,10 +412,27 @@ void fm1_alnk0_irq(void){
  if(p&FM1_AUDIO_HALF){
   if(native_suspended){fm1_audio_ack_half();native_in_audio=0u;return;}
   uint32_t half=fm1_audio_free_half(),start=fm1_ticks();
+  /* Compare completed jobs only within THIS block, including MIDI, USB,
+   * render and publish. Earlier FX activity cannot trip CORE2 on an
+   * unrelated LCD/USB-only deadline miss. */
+#if ETCH_CPU1_FX_LIVE_LAB
+  const uint32_t core2_jobs_before=ru_c1_fx_commits;
+#else
+  const uint32_t core2_jobs_before=0u;
+#endif
   struct etch_native_controls c;
   c=native_controls;
+#ifdef RUPTURE_BUILD
+  /* Per-voice expression changes ONLY the immutable ALNK block snapshot.
+   * Neither CXS oscillator math nor the two CPU cores' FX code changes.
+   * OFF returns before touching controls; the realtime path owns no RNG. */
+  const struct ru_touch_profile touch_profile=ru_touch_profiles[c.main_wave?1u:0u];
+#endif
   uint32_t keys=native_edit_keys_blocked?0:fm1_in.notes;
   if(native_panic){native_panic=0;
+#ifdef RUPTURE_BUILD
+   ru_midi_expr_reset(&ru_midi_expr);
+#endif
 #if ETCH_NATIVE_USB
 mi_r=mi_w;RING_PUBLISH();
 #endif
@@ -337,6 +445,28 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
 #endif
 #if ETCH_NATIVE_USB
   native_midi_drain(native_output_enabled?1u:0u);
+#endif
+#ifdef RUPTURE_BUILD
+  /* MIDI Note On has now reached the ORIGINAL bounded mono stack. Read only
+   * the actual winner, so stacked/released pitches, scale locks and sustain
+   * keep their original ownership. Do not invent or delay a Note OFF. */
+  uint8_t expr_level=ru_touch_live_motion;
+  uint8_t expr_source=RU_MIDI_EXPR_NONE,expr_raw=0u;
+  ru_touch_midi_held=ru_midi_expr_held(&native_audio);
+  if(ru_touch_midi_held &&
+     (touch_profile.mode==RU_TOUCH_MODE_PRESS||touch_profile.mode==RU_TOUCH_MODE_VELOCITY)){
+   expr_level=ru_midi_expr_level(&ru_midi_expr,&native_audio,&touch_profile,
+      &expr_source,&expr_raw);
+  }else if(touch_profile.mode==RU_TOUCH_MODE_VELOCITY){
+   /* Internal panel/sequence voices already have fixed per-note velocity.
+    * The FM1 panel's physical force sensor remains PRESS, not MIDI velocity. */
+   const struct etch_native_voice *v=&native_audio.voice[0];
+   expr_level=(v->active&&v->held)?
+      ru_midi_velocity_level(v->velocity,touch_profile.sensitivity):0u;
+  }
+  ru_touch_midi_source=expr_source;ru_touch_midi_raw=expr_raw;
+  ru_touch_audio_level=expr_level;
+  if(touch_profile.target)ru_touch_apply_profile(&c,&touch_profile,expr_level);
 #endif
 #if ETCH_NATIVE_PANEL_MIDI
   /* STRICT must not transmit disabled keys to an attached USB MIDI synth.
@@ -356,7 +486,8 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   uint32_t render_start=fm1_ticks();
   uint32_t ctrl_elapsed=(uint32_t)(render_start-start);
   if(ctrl_elapsed>native_controls_wall_peak)native_controls_wall_peak=ctrl_elapsed;
-  if(!native_output_enabled && !native_output_analog_ready){
+  if((native_storage_quiet_request&&!native_storage_audio.remaining) ||
+     (!native_output_enabled && !native_output_analog_ready)){
    for(uint32_t i=0;i<ETCH_NATIVE_FRAMES*2;i++)native_stereo[i]=0;
   }else{
    /* Prime DSP while output is muted. Do not silently consume the first
@@ -397,7 +528,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    ++native_dma_blocked;++native_late;
    /* Drop extra voice load (8 > 6 > 4 > 3 > 2) before the watchdog
     * considers stopping DMA; never write to an expired half. */
-   native_budget_late();
+   native_budget_late(core2_jobs_before);
    native_in_audio=0u;return;
   }
   uint32_t publish_start=fm1_ticks();
@@ -429,6 +560,8 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
   if(normal_scope&&!prepare_scope&&native_scope_deferred<UINT32_MAX)
    ++native_scope_deferred;
 #endif
+  const uint8_t storage_block=(uint8_t)(native_storage_quiet_request!=0u);
+  const uint8_t storage_zero=(uint8_t)(storage_block&&!native_storage_audio.remaining);
   for(uint32_t i=0;i<ETCH_NATIVE_FRAMES;i++){
    int32_t left=native_stereo[2*i],right=native_stereo[2*i+1];
    /* Hold digital silence during codec warmup, then smoothly fade in.
@@ -443,6 +576,7 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    /* Avoid hard PCM jumps when scrolling radically different patches.
     * Never touch the analog enable, FX delay buffers or DMA routing. */
    if(native_output_enabled)etch_preset_ramp_frame(&native_preset_ramp,&left,&right);
+   if(storage_block)etch_storage_audio_frame(&native_storage_audio,&left,&right);
    uint32_t pl=(uint32_t)(left<0?-left:left),pr=(uint32_t)(right<0?-right:right);
    if(pl>block_peak)block_peak=pl;if(pr>block_peak)block_peak=pr;
    if(pl>=32767u||pr>=32767u)block_clips++;
@@ -532,12 +666,22 @@ etch_native_reset(&native_audio);native_audio.keys=keys&0x7ffffffu;}
    /* A rare late DMA boundary must not disable the instrument forever.
     * The pre-write ownership guard above already rejects expired halves.
     * Escalate only repeated deadlines, and expose LATE/GUARD counters. */
-   native_budget_late();
-  }else native_budget_ok();
+   native_budget_late(core2_jobs_before);
+  }else{
+   native_budget_ok();
+   if(storage_block)etch_storage_audio_published(&native_storage_audio,storage_zero,half);
+  }
  }
  native_in_audio=0u;
 }
 static void native_start(void){
+ if(native_storage_audio_failed)return; /* explicit HOME+PLAY rearm only */
+ const uint8_t warm=native_audio_clock_live;
+ if(warm&&!native_suspended)return; /* caller already resumed nested SAVE */
+ const uint8_t play=(uint8_t)(warm&&native_boot_audio_released);
+ const uint8_t analog=(uint8_t)(warm&&native_output_analog_ready);
+ native_storage_read_resume=0u;native_storage_quiet_request=0u;
+ native_storage_audio_failed=0u;
  native_suspended=0;native_missed_streak=0;native_healthy_blocks=0;native_tripped=0;native_ui_pressure=0;
  native_render_wall_peak=native_publish_wall_peak=native_scope_deferred=0u;
  native_controls_wall_peak=native_midi_queue_peak=native_midi_deferred_batches=0u;
@@ -549,18 +693,29 @@ static void native_start(void){
  native_preset_profile_reset();
  native_note_scope_guard.quiet_halves=0u;
 #endif
- native_output_enabled=0;native_output_analog_ready=0;native_boot_audio_released=0;native_output_fade=0;native_prepared_blocks=0;native_halves=0;
+ native_output_enabled=play;native_output_analog_ready=analog;
+ native_boot_audio_released=play;native_output_fade=0;native_prepared_blocks=0;
+ if(!warm)native_halves=0;
  native_preset_ramp_requested=0u;etch_preset_ramp_reset(&native_preset_ramp);
 #if ETCH_NATIVE_USB
  mi_r=mi_w;RING_PUBLISH();midi_in_overflow=0;
+#endif
+#ifdef RUPTURE_BUILD
+ ru_midi_expr_reset(&ru_midi_expr);
+ ru_touch_midi_held=0u;ru_touch_midi_source=0u;
+ ru_touch_midi_raw=0u;ru_touch_audio_level=0u;
 #endif
  etch_native_reset(&native_audio);
  native_scope_ready=0;native_scope_cursor=0;native_scope_has_signal=0;native_scope_held_note=0;native_scope_window_peak=0;native_scope_silent_windows=0;etch_output_usb_reset(&native_usb_gate);
  for(uint32_t i=0;i<ETCH_SCOPE_CAPTURE;i++){native_scope[0][i]=0;native_scope[1][i]=0;}
  etch_panel_midi_reset(&native_panel_out);
+ /* A warm pause has already handed off two zero halves. Never rewrite an
+  * active DMA buffer, restart I2S or toggle PC6 just to access storage. */
+ if(warm)return;
  for(uint32_t i=0;i<ETCH_NATIVE_FRAMES*4;i++)native_dma[i]=0;
  fm1_audio_output_enable(0u);
  fm1_audio_init(native_dma,ETCH_NATIVE_FRAMES*2,isr_alnk0,3);
+ native_audio_clock_live=1u;
  etch_output_gate_reset(&native_output_gate,fm1_ticks());
  /* Every DMA restart must re-arm the silent-first-frame gate. The current
   * UI stays visible on warm restart, but cannot publish audio until after

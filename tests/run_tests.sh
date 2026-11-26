@@ -1,20 +1,81 @@
 #!/usr/bin/env sh
 set -eu
 cd "$(dirname "$0")/.."
-python3 tests/test_v243_dual_fwsc.py
-python3 tests/test_v243_webinstaller_choice.py
-python3 tests/test_v243_clean_project.py
-python3 tests/test_v243_core2_fx_wiring.py
-python3 tests/test_v243_led_intro_wiring.py
-python3 tests/test_v243_png_branding.py
-python3 tests/test_v243_note_release_wiring.py
+cc="${CC:-gcc}"
+python3 tests/test_v258_dual_fwsc.py
+python3 tests/test_v258_webinstaller_choice.py
+python3 tests/test_v258_clean_project.py
+python3 tests/test_v258_ota_progress_wiring.py
+python3 tests/test_v258_core2_poll_wiring.py
+python3 tests/test_v258_poll_backoff_wiring.py
+python3 tests/test_v258_click_fastpath_wiring.py
+python3 tests/test_v258_gain_fastpath_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ tests/test_v258_gain_fastpath.c -o /tmp/rupture_v258_gain_fastpath && /tmp/rupture_v258_gain_fastpath
+python3 tests/test_v258_core2_fx_wait_ema_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_core2_fx_wait_ema.c -o /tmp/rupture_v258_fx_wait_ema && /tmp/rupture_v258_fx_wait_ema
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all tests/test_v258_click_fastpath.c -o /tmp/rupture_v258_click_fastpath && /tmp/rupture_v258_click_fastpath
+if command -v node >/dev/null 2>&1; then node tests/test_v258_ota_progress_runtime.js; fi
+python3 tests/test_v258_core2_fx_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_core2_fx_stream.c -o /tmp/rupture_v258_core2_stream && /tmp/rupture_v258_core2_stream
+python3 tests/test_v258_led_intro_wiring.py
+python3 tests/test_v258_welcome_dsp_wiring.py
+python3 tests/test_v258_png_branding.py
+python3 tests/test_v258_note_release_wiring.py
+python3 tests/test_v258_core2_stability_wiring.py
+python3 tests/test_v258_core2_pressure_wiring.py
+python3 tests/test_v258_pressure_wiring.py
+python3 tests/test_v258_pressure_ui_wiring.py
+python3 tests/test_v258_midi_expression_wiring.py
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_midi_expression.c -o /tmp/rupture_v258_midi_expression && /tmp/rupture_v258_midi_expression
+"$cc" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_profiles.c -o /tmp/rupture_v258_profiles && /tmp/rupture_v258_profiles
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_profile_persistence.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm \
+ -o /tmp/rupture_v258_profile_store && /tmp/rupture_v258_profile_store
+"$cc" -std=c11 -O2 -w -fsanitize=undefined -fno-sanitize-recover=all \
+ tests/test_v258_key_pressure.c -o /tmp/rupture_v258_pressure && /tmp/rupture_v258_pressure
+"$cc" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_P05_MULTI=1 -DETCH_STORE_OWNED_ENABLED=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_touch_persistence.c vendor/etch-v1.88-source/firmware/fm1-native/wave_store.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_project_codec.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_pattern_bank.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c -lm \
+ -o /tmp/rupture_v258_store && /tmp/rupture_v258_store
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_core2_pressure_guard.c -o /tmp/rupture_v258_core2_pressure && /tmp/rupture_v258_core2_pressure
+"${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
+ -fsanitize=undefined -fno-sanitize-recover=all \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_core2_fx_guard.c -o /tmp/rupture_v258_core2_guard && /tmp/rupture_v258_core2_guard
 "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Wno-misleading-indentation -Werror \
  -fsanitize=undefined -fno-sanitize-recover=all \
  -Ivendor/etch-v1.88-source/firmware/fm1-native \
- tests/test_v243_note_release.c -o /tmp/rupture_v243_note_release && /tmp/rupture_v243_note_release
+ tests/test_v258_note_release.c -o /tmp/rupture_v258_note_release && /tmp/rupture_v258_note_release
 "${CC:-gcc}" -std=c11 -O2 -w -DRUPTURE_BUILD \
+ -fsanitize=undefined -fno-sanitize-recover=all \
  -Ivendor/etch-v1.88-source/firmware/fm1-native \
- tests/test_v243_note_release_runtime.c \
+ tests/test_v258_note_release_runtime.c \
  vendor/etch-v1.88-source/firmware/fm1-native/audio_core.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
@@ -22,10 +83,11 @@ python3 tests/test_v243_note_release_wiring.py
  vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
- -lm -o /tmp/rupture_v243_note_runtime && /tmp/rupture_v243_note_runtime
+ -lm -o /tmp/rupture_v258_note_runtime && /tmp/rupture_v258_note_runtime
 "${CC:-gcc}" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_CPU1_FX_LIVE_LAB=1 \
+ -fsanitize=undefined -fno-sanitize-recover=all \
  -Ivendor/etch-v1.88-source/firmware/fm1-native \
- tests/test_v243_core2_fx_pcm.c \
+ tests/test_v258_note_release_runtime.c \
  vendor/etch-v1.88-source/firmware/fm1-native/audio_core_core2.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
@@ -33,10 +95,21 @@ python3 tests/test_v243_note_release_wiring.py
  vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
  vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
- -lm -o /tmp/rupture_v243_core2_fx_pcm && /tmp/rupture_v243_core2_fx_pcm
+ -lm -o /tmp/rupture_v258_note_core2_runtime && /tmp/rupture_v258_note_core2_runtime
+"${CC:-gcc}" -std=c11 -O2 -w -DRUPTURE_BUILD -DETCH_CPU1_FX_LIVE_LAB=1 \
+ -Ivendor/etch-v1.88-source/firmware/fm1-native \
+ tests/test_v258_core2_fx_pcm.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/audio_core_core2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_fx.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_cxs_q15.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/rupture_eq2.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/wave_editor.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_performance.c \
+ vendor/etch-v1.88-source/firmware/fm1-native/native_wave_fx.c \
+ -lm -o /tmp/rupture_v258_core2_fx_pcm && /tmp/rupture_v258_core2_fx_pcm
 "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Wno-unused-function -Werror \
  -Ivendor/etch-v1.88-source/firmware/fm1-native \
- tests/test_v243_intro.c -o /tmp/rupture_v243_intro && /tmp/rupture_v243_intro
+ tests/test_v258_intro.c -o /tmp/rupture_v258_intro && /tmp/rupture_v258_intro
 "${CC:-gcc}" -std=c11 -O2 -Wall -Wextra -Werror \
  -Ivendor/etch-v1.88-source/firmware/fm1-native \
  tests/test_v239_note_fx_lcd_guard.c -o /tmp/rupture_v239_note_fx && /tmp/rupture_v239_note_fx

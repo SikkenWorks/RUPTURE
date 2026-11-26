@@ -17,7 +17,7 @@ assert '(uint32_t)(fm1_ticks()-start),1u);' in audio
 assert 'measure.wall_ticks,measure.late);' in audio
 assert 'v->diag_view==3u' in ui and 'READ ONLY / NOTE EDGES' in ui
 assert all(value in ui for value in ('NOTE ON','NOTE OFF','ON LATES','OFF LATES','ON DSP MAX'))
-assert 'ru_diag_view+1u)%4u' in boot
+assert 'ru_diag_view+1u)%5u' in boot
 assert all('v.diag_note_'+s in boot for s in ('on=','off=','on_late=','off_late=','on_render=','off_render='))
 assert 'ru_note_paint_allow_fx_sustain(' in boot
 assert 'native_audio.mono_count || fm1_in.notes' in boot

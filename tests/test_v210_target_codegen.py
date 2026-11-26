@@ -37,7 +37,7 @@ if 'V2.0.27' in release_title:
     sram_fx = compiled_size('native_fx.o', 'rupture_fx_process_ordered_implementation', '.ram_text')
     assert 0 < fx <= 128, f'Unexpected public FX dispatcher size: {fx}'
     assert 7000 <= sram_fx <= 8192, f'SRAM FX render body changed size: {sram_fx}'
-elif 'V2.0.28' in release_title or 'V2.0.29' in release_title or 'V2.0.30' in release_title or 'V2.0.31' in release_title or 'V2.0.32' in release_title or 'V2.0.33' in release_title or 'V2.0.34' in release_title or 'V2.0.35' in release_title or 'V2.0.36' in release_title or 'V2.0.37' in release_title or 'V2.0.38' in release_title or 'V2.0.39' in release_title or 'V2.0.40' in release_title or 'V2.0.43' in release_title:
+elif 'V2.0.28' in release_title or 'V2.0.29' in release_title or 'V2.0.30' in release_title or 'V2.0.31' in release_title or 'V2.0.32' in release_title or 'V2.0.33' in release_title or 'V2.0.34' in release_title or 'V2.0.35' in release_title or 'V2.0.36' in release_title or 'V2.0.37' in release_title or 'V2.0.38' in release_title or 'V2.0.39' in release_title or 'V2.0.40' in release_title or 'V2.0.43' in release_title or 'V2.0.58' in release_title:
     # V2.0.28+ restores all FX processing to XIP. Audit both
     # the small public wrapper and the substantial private processing body.
     xip_fx=compiled_size('native_fx.o','rupture_fx_process_ordered_implementation')

@@ -26,6 +26,8 @@ volatile struct RuCountIn ru_countin={0};
 #ifdef RUPTURE_BUILD
 #include "rupture_mono_policy.h"
 #include "rupture_note_release_guard.h"
+/* ISR-owned cumulative recovery counter; no allocation or PCM change. */
+volatile uint32_t ru_note_panel_repairs;
 #endif
 #ifdef RUPTURE_BUILD
 #include "rupture_shape.h"
@@ -89,7 +91,8 @@ static struct rupture_filter_transition filter_transition[ETCH_NATIVE_VOICES];
 #if ETCH_CPU1_FX_LIVE_LAB
 /* Experimental 2-core audio lane. CPU0 exclusively produces dry CXS/GROWL/
  * SUB samples; CPU1 exclusively advances the ENTIRE ordered FX state. The
- * 64-frame mailbox is sent while CPU0 synthesizes the following 64 frames.
+ * One 128-frame mailbox streams four complete 32-frame windows while CPU0
+ * synthesizes subsequent frames. Only the final ready window is awaited.
  * No 128-frame output delay and no duplicate effect tanks or PCM oracles.
  * Four immutable settings snapshots preserve sample-exact 32-frame C-FX
  * modulation; per-sample chorus/delay/reverb and post gain remain explicit.
@@ -113,6 +116,7 @@ static struct {
 
 extern int ru_cpu1_fx_available(void);
 extern void ru_cpu1_fx_send(uint32_t begin,uint32_t end);
+extern void ru_cpu1_fx_publish(uint32_t ready);
 /* Returns first unfinished frame. A failed core has been fully halted before
  * the caller continues processing from this checkpoint on CPU0. */
 extern uint32_t ru_cpu1_fx_collect(void);
@@ -153,10 +157,28 @@ static void ru_fx_c2_finish(int16_t *out,uint32_t begin,uint32_t end){
    l=(int16_t)clamp15((l*(32767-alpha)+(int32_t)v->preview_dry*alpha)/32767);
    r=(int16_t)clamp15((r*(32767-alpha)+(int32_t)v->preview_dry*alpha)/32767);
   }
-  l=clamp15((l*(int32_t)v->post_gain)/32768);
-  r=clamp15((r*(int32_t)v->post_gain)/32768);
-  out[f*2]=(int16_t)clamp15(l+v->click);
-  out[f*2+1]=(int16_t)clamp15(r+v->click);
+  /* PCM from CPU1 and the preview mixer is already signed 16-bit. At
+   * Q15 gain <= 32768 the product/division cannot leave that range,
+   * so two saturation checks do no work. Retain the original exact
+   * clamp path for malformed/out-of-range gains (up to UINT16_MAX). */
+  const int32_t post=(int32_t)v->post_gain;
+  if(post<=32768){
+   l=(l*post)/32768;
+   r=(r*post)/32768;
+  }else{
+   l=clamp15((l*post)/32768);
+   r=clamp15((r*post)/32768);
+  }
+  /* Most blocks have metronome OFF (click=0). l/r are already clamped:
+   * skip two more saturations then, preserving the exact 16-bit PCM.
+   * Test click per FRAME, not per block: its enabled state is volatile. */
+  if(v->click){
+   out[f*2]=(int16_t)clamp15(l+v->click);
+   out[f*2+1]=(int16_t)clamp15(r+v->click);
+  }else{
+   out[f*2]=(int16_t)l;
+   out[f*2+1]=(int16_t)r;
+  }
  }
 }
 #endif
@@ -450,6 +472,9 @@ static void mono_release(struct etch_native_audio *s,uint16_t id,uint8_t sustain
  }
 }
 static void mono_drop_channel(struct etch_native_audio *s,uint8_t ch,uint8_t all){
+ /* MIDI CC120/121/123 can arrive BEFORE render_internal has reconciled
+  * corrupted panel state. Never walk beyond the six-note mono buffer. */
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;mono_resume(s);return;}
  uint8_t out=0;
  for(uint8_t i=0;i<s->mono_count;i++){
   struct etch_mono_held m=s->mono_stack[i];
@@ -459,6 +484,9 @@ static void mono_drop_channel(struct etch_native_audio *s,uint8_t ch,uint8_t all
  if(out!=s->mono_count){s->mono_count=out;mono_resume(s);}
 }
 static void mono_perf_clear(struct etch_native_audio *s){
+ /* Performance stop is another asynchronous caller of the shared stack.
+  * Invalid counts must release voice[0], not index unowned memory. */
+ if(s->mono_count>ETCH_MONO_STACK){s->mono_count=0u;mono_resume(s);return;}
  uint8_t out=0;
  for(uint8_t i=0;i<s->mono_count;i++)if(s->mono_stack[i].id<4096u)
   s->mono_stack[out++]=s->mono_stack[i];
@@ -1002,7 +1030,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
   * A missed edge cannot make a key sound after its actual contact is up.
   * MIDI and sequencer gates, including sustain, remain independently owned.
   * This runs ONCE per 128-frame block and does not change CXS/FX PCM math. */
- if(ru_mono_panel_reconcile(s,keys))mono_resume(s);
+ if(ru_mono_panel_reconcile(s,keys)){
+  if(ru_note_panel_repairs<UINT32_MAX)++ru_note_panel_repairs;
+  mono_resume(s);
+ }
 #endif
  uint32_t changed=keys^s->keys;
  /* Releases use each voice's original pitch; changing octave cannot strand a key. */
@@ -1798,8 +1829,10 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
 #endif
 #if ETCH_CPU1_FX_LIVE_LAB
   if(ru_c2_fx){
-   /* Publish the first FX half while CPU0 starts the next synth half. */
-   if(f==63u)ru_cpu1_fx_send(0u,64u);
+   /* The corresponding settings snapshot and all 64 dry frames are now
+    * committed. Only CPU1 may mutate the FX state until completion. */
+   if(f==63u)ru_cpu1_fx_send(0u,ETCH_NATIVE_FRAMES);
+   else if(f==127u)ru_cpu1_fx_publish(ETCH_NATIVE_FRAMES);
    continue;
   }
 #endif
@@ -1808,10 +1841,6 @@ static void render_internal(struct etch_native_audio *s,const struct etch_native
 #if ETCH_CPU1_FX_LIVE_LAB
  if(ru_c2_fx){
   uint32_t finished=ru_cpu1_fx_collect();
-  if(finished==64u){
-   ru_cpu1_fx_send(64u,ETCH_NATIVE_FRAMES);
-   finished=ru_cpu1_fx_collect();
-  }
   /* CPU1 has been stopped before a failed/unfinished span is reclaimed.
    * Never restart it while CPU0 owns the FX state after a fault. */
   for(uint32_t f=finished;f<ETCH_NATIVE_FRAMES;f++)ru_fx_c2_process_one(f);
