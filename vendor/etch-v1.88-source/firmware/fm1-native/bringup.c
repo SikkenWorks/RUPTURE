@@ -1520,6 +1520,7 @@ static void native_seq_led_refresh(void){
   const uint16_t bit=(uint16_t)(1u<<b);
   fm1_led_key(b,(leds.solid&bit)!=0u);
   native_seq_led_dim(b,(leds.glow&bit)!=0u);
+  native_seq_led_mid(b,0u);
  }
  #ifdef RUPTURE_BUILD
  fm1_led_key(0u,rupture_octave_led(0u,native_controls.octave,fm1_in.buttons));
@@ -1530,6 +1531,8 @@ static void native_seq_led_refresh(void){
 #endif
  native_seq_led_dim(0u,0);
  native_seq_led_dim(1u,0);
+ native_seq_led_mid(0u,0u);
+ native_seq_led_mid(1u,0u);
  if(boot_wave){
   /* Keys 0..26, then function LEDs 0..13: a single, visibly travelling
    * wave. Only these 41 cheap matrix writes run during boot. */
@@ -1544,7 +1547,13 @@ static void native_seq_led_refresh(void){
      (uint8_t)etch_led_octave(b,native_controls.octave,fm1_in.buttons)*3u:
      (leds.solid&bit)?3u:(leds.glow&bit)?1u:0u;
 #endif
-   level=ru_led_boot_wave_level(boot_wave_ms,(uint8_t)(27u+b),level);
+   uint8_t wave_level=ru_led_boot_wave_level(boot_wave_ms,(uint8_t)(27u+b),level);
+   /* Cap the decorative pulse, retaining full brightness for real presses
+    * and the normal status level once this button's pulse has passed. */
+   uint32_t wave_start=(uint32_t)(27u+b)*RU_LED_BOOT_WAVE_STEP_MS;
+   if(wave_level==3u && !(fm1_in.buttons&bit) &&
+      boot_wave_ms-wave_start<RU_LED_BOOT_WAVE_TAIL_MS)wave_level=2u;
+   level=wave_level;
    fm1_led_key(b,level==3u);
    native_seq_led_dim(b,level==1u);
    native_seq_led_mid(b,level==2u);
@@ -6226,14 +6235,12 @@ void fm1_cstart(void){
 #endif
  int32_t pot=fm1_adc_read(FM1_ADC_MASTER);
  if(pot>=0)native_controls.gain=(uint16_t)(pot*32767/1023);
- /* POPFIX: start zero-filled DMA and settle codec bias before turning on
-  * the LED bank. The LED and codec current steps must not coincide.
-  * PC6 remains gated until LEDs are established and steady for 400 ms. */
+ /* Establish the panel load before powering the codec. PC6 alone
+  * has not been shown to isolate LED transients at the jack. */
  uint8_t boot_audio=(uint8_t)(!muted&&!native_keyboard_mode&&etch_recovery_may_run_audio(native_recovery_reason));
- if(boot_audio){
-  fm1_irq_off();native_start();fm1_irq_enable_all();
-  for(uint32_t ms=0u;ms<ETCH_OUTPUT_CODEC_PRE_LED_MS;ms+=10u){fm1_wdt_feed();fm1_delay_ms(10u);}
- }
+#ifndef RUPTURE_BUILD
+ if(boot_audio){fm1_irq_off();native_start();fm1_irq_enable_all();}
+#endif
  native_seq_led_refresh();
 #ifdef RUPTURE_BUILD
  if(!safe && !native_keyboard_mode){
@@ -6242,7 +6249,8 @@ void fm1_cstart(void){
    * and the extra 500 ms screen-quiet interval at their proven durations. */
   uint32_t ru_boot_led_last_ms=etch_ms;
   while((uint32_t)(etch_ms-ru_boot_intro_since_ms)<RU_INTRO_DURATION_MS ||
-        (boot_audio && !native_screen_gate.ready && !native_screen_gate.timed_out)){
+        (boot_audio && !native_audio_clock_live && !native_tripped) ||
+        (boot_audio && native_audio_clock_live && !native_screen_gate.ready && !native_screen_gate.timed_out)){
 #if ETCH_NATIVE_UAC && ETCH_NATIVE_UAC_48K
    /* USB-C capture uses the exact foreground FIR service it normally has;
     * don't let its staging ring back up while the intro is visible. */
@@ -6261,7 +6269,11 @@ void fm1_cstart(void){
      * full-panel wave here, not from the timer or audio ISR. */
     ru_boot_led_last_ms=etch_ms;native_seq_led_refresh();
    }
-   if(boot_audio){
+   if(boot_audio && !native_audio_clock_live && !native_tripped &&
+      etch_output_led_quiet_ready(native_led_seen,fm1_ticks(),native_led_last_change_ticks)){
+    fm1_irq_off();native_start();fm1_irq_enable_all();
+   }
+   if(boot_audio && native_audio_clock_live){
     native_output_poll();
     if(!native_screen_gate.ready)
      (void)etch_output_screen_advance(&native_screen_gate,fm1_ticks(),

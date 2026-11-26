@@ -1,13 +1,13 @@
 {
-  "version": "2.0.60",
+  "version": "2.0.61",
   "project": "RUPTURE",
   "synthesis": "Cycle Exchange Synthesis (CXS) / bandlimited SAW",
   "firmware_identity": "FM-1_968",
-  "firmware_file": "RUPTURE-V2.0.60-STABLE.fwsc",
+  "firmware_file": "RUPTURE-V2.0.61-STABLE.fwsc",
   "firmware_bytes": 610086,
-  "firmware_sha256": "2709ec076f3c51263b6cc5867e1f8a8d961d0f33ff451299135ebb16316c461f",
-  "app_bytes": 522748,
-  "app_sha256": "a4403c93afc423f2ae87caa25e4de6952dd209441fb640d7feb55f1cdd472766",
+  "firmware_sha256": "292478d7b6abf835490595658ff77726d723410c7f6c21ed7bfd3a3017fdd941",
+  "app_bytes": 522924,
+  "app_sha256": "d44a17016834148ff511dad5b3478ead62500c44cf1be7a00fc47f104027e2e2",
   "native_screens": 126,
   "physical_fm1_verified": false,
   "auto_save_debounce_ms": 20000,
@@ -198,7 +198,7 @@
     "ota_loader_byte_equal_v119": true,
     "existing_audio_fx_dsp_modified": false
   },
-  "release_feature": "Silent-DMA storage handoff; power-off analogue pop remains unqualified",
+  "release_feature": "Panel LEDs settle before codec startup",
   "save_routing": {
     "main": "PROJECTS",
     "sound_shape": "PROJECTS",
@@ -330,7 +330,7 @@
   },
   "release_stage": "SOFTWARE_RC_PENDING_HARDWARE_VALIDATION",
   "release_ready": false,
-  "release_note": "Fade final PCM down, require both distinct DMA halves zero, then keep I2S and analogue enable unchanged through storage. Guard unwrapped catalog reads and nested pauses. Failed handoff blocks flash and requires explicit audio rearm. No physical power-off suppression is claimed.",
+  "release_note": "V2.0.61 finishes the startup LED wave before codec initialization and reduces the function button animation peak. Physical verification pending.",
   "headroom_qualification": "Native link/app allocation audits pass. Real DSP overhead and analogue jack behavior are unmeasured.",
   "v180": {
     "reverb_engines": [
@@ -1425,11 +1425,11 @@
     "no_dma_lates_guaranteed": false,
     "host_underrun_already_occurred_reversible": false
   },
-  "experimental_firmware_file": "RUPTURE-V2.0.60-CORE2-EXPERIMENTAL.fwsc",
+  "experimental_firmware_file": "RUPTURE-V2.0.61-CORE2-EXPERIMENTAL.fwsc",
   "experimental_firmware_bytes": 610086,
-  "experimental_firmware_sha256": "6773bd1fd88acee695d5da561507606e735ffe492b24f1bc0279c6efee5ddb0f",
-  "experimental_app_bytes": 529852,
-  "experimental_app_sha256": "39c2d8b7fbe9eaf8dcb2a12f011a14eddab330a96ba7d11501f0d0e6d5b443f5",
+  "experimental_firmware_sha256": "c4b4063778a9376b20cab0d22dd30c2c6f24f2364d141a46ada3d628872dc9cb",
+  "experimental_app_bytes": 529900,
+  "experimental_app_sha256": "a65ba1b9fb13cfa0540122375101d3d2c316ad17df5b8e3bb1df3eab7393fc2a",
   "cpu1_dual_fwsc_v236": {
     "fwsc_count_per_iteration": 2,
     "stable_filename": "RUPTURE-V2.0.36-STABLE.fwsc",
@@ -2610,6 +2610,11 @@
     "poweroff_pop_fixed": false,
     "physical_fm1_verified": false,
     "synthesis_fx_store_hal_source_hashes_file": "tests/v260_preserved_sources.json",
-    "audit": "docs/AUDIO-OUTPUT-AUDIT-V2.0.60.md"
+    "audit": "docs/AUDIO-OUTPUT-AUDIT-V2.0.61.md"
+  },
+  "led_startup_v261": {
+    "panel_quiet_ms_before_codec": 400,
+    "boot_button_peak": "mid",
+    "physical_verified": false
   }
 }
